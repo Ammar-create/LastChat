@@ -210,4 +210,38 @@ class MemorySummaryModelsTest {
         assertEquals("update", updates[0].action)
         assertEquals("User favorite color is purple", updates[0].content)
     }
+
+    @Test
+    fun parseAskOrUpdateResponse_handlesFlatAndConversationalShapes() {
+        val current = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(icon = "star", title = "Preferences", content = "Likes blue"),
+                MemorySummarySection(icon = "devices", title = "Devices", content = "Lenovo Tab M9")
+            )
+        )
+
+        // 1. Flat title and content
+        val flatJson = """{"title": "Preferences", "content": "Favorite color is purple"}"""
+        val (parsed1, _) = parseAskOrUpdateResponse(flatJson, current)!!
+        assertEquals("Favorite color is purple", parsed1.sections.first { it.title == "Preferences" }.content)
+        assertEquals("Lenovo Tab M9", parsed1.sections.first { it.title == "Devices" }.content)
+
+        // 2. Strips thinking tags
+        val thinkResponse = """
+            <think>
+            The user wants to update their favorite color.
+            ```json
+            {"broken": true}
+            ```
+            </think>
+            {"action": "update_section", "target_section": "Preferences", "section": {"icon": "star", "title": "Preferences", "content": "Updated via think"}}
+        """.trimIndent()
+        val (parsed2, _) = parseAskOrUpdateResponse(thinkResponse, current)!!
+        assertEquals("Updated via think", parsed2.sections.first { it.title == "Preferences" }.content)
+
+        // 3. Conversational natural language text fallback
+        val textFallback = "I have updated your favorite color to purple in Preferences."
+        val (parsed3, _) = parseAskOrUpdateResponse(textFallback, current)!!
+        assertEquals("I have updated your favorite color to purple in Preferences.", parsed3.sections.first { it.title == "Preferences" }.content)
+    }
 }

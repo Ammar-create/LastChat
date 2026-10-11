@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.memory.MemoryVectorMath
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -244,17 +245,14 @@ class MemorySummaryService(
                     ?: return Result.failure(IllegalStateException("No valid model or provider with API key found for assistant ${assistant.name}"))
                 val providerHandler = providerManager.getProviderByType(provider)
 
-                // 1. Perform targeted semantic search (RAG) to find relevant memories for grounding
-                val relevantMemories = try {
-                    memoryRepository.retrieveRelevantMemories(
-                        assistantId = assistantId,
-                        query = userInstruction,
-                        limit = 6,
-                        similarityThreshold = 0.35f,
-                    ).map { it.content }
-                } catch (e: Exception) {
-                    emptyList()
-                }
+                // 1. Perform fast, offline keyword retrieval over local memories (no external embedding call)
+                val allMemories = memoryRepository.getCombinedMemoriesOfAssistant(assistantId)
+                val relevantMemories = allMemories
+                    .map { it to MemoryVectorMath.keywordScore(userInstruction, it.content) }
+                    .filter { it.second > 0f }
+                    .sortedByDescending { it.second }
+                    .take(6)
+                    .map { it.first.content }
 
                 val tokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000)
                 val systemPrompt = assistant.customMemorySummaryPrompt
@@ -282,15 +280,18 @@ class MemorySummaryService(
 
                 val rawResponse = response.choices.firstOrNull()?.message?.toContentText()
                     ?.takeIf { it.isNotBlank() }
-                    ?: return Result.failure(IllegalStateException("Empty askOrUpdate response"))
+                    ?: return Result.failure(IllegalStateException("Empty askOrUpdate response from model"))
+
+                Log.d(TAG, "askOrUpdate raw model response: $rawResponse")
 
                 val (updatedSummary, rawUpdates) = parseAskOrUpdateResponse(rawResponse, currentSummary)
-                    ?: return Result.failure(IllegalStateException("Could not parse askOrUpdate response"))
+                    ?: return Result.failure(IllegalStateException("Could not parse askOrUpdate response: ${rawResponse.take(150)}"))
 
-                // 2. Synchronize raw memory updates to SQLite database if specified
+                // 2. Synchronize raw memory updates to SQLite database if specified (using offline keyword matching)
                 if (rawUpdates.isNotEmpty()) {
                     isSyncingRawUpdates = true
                     try {
+                        val assistantMemories = memoryRepository.getMemoriesOfAssistant(assistantId)
                         for (update in rawUpdates) {
                             when (update.action.lowercase()) {
                                 "create", "add" -> {
@@ -303,13 +304,11 @@ class MemorySummaryService(
                                     val content = update.content?.trim()
                                     val search = update.search?.trim() ?: content
                                     if (!content.isNullOrBlank() && !search.isNullOrBlank()) {
-                                        val candidates = memoryRepository.retrieveRelevantMemories(
-                                            assistantId = assistantId,
-                                            query = search,
-                                            limit = 1,
-                                            similarityThreshold = 0.35f,
-                                        )
-                                        val target = candidates.firstOrNull()
+                                        val target = assistantMemories
+                                            .map { it to MemoryVectorMath.keywordScore(search, it.content) }
+                                            .filter { it.second > 0f }
+                                            .maxByOrNull { it.second }?.first
+
                                         if (target != null && target.id > 0) {
                                             memoryRepository.updateContent(target.id, content)
                                         } else {
@@ -320,13 +319,11 @@ class MemorySummaryService(
                                 "delete", "remove" -> {
                                     val search = update.search?.trim()
                                     if (!search.isNullOrBlank()) {
-                                        val candidates = memoryRepository.retrieveRelevantMemories(
-                                            assistantId = assistantId,
-                                            query = search,
-                                            limit = 1,
-                                            similarityThreshold = 0.35f,
-                                        )
-                                        val target = candidates.firstOrNull()
+                                        val target = assistantMemories
+                                            .map { it to MemoryVectorMath.keywordScore(search, it.content) }
+                                            .filter { it.second > 0f }
+                                            .maxByOrNull { it.second }?.first
+
                                         if (target != null && target.id > 0) {
                                             memoryRepository.deleteMemory(target.id)
                                         }
