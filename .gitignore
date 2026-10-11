@@ -31,3 +31,6 @@ temp_aar/
 
 # Local antigravity refs
 .agy-refs/
+
+# Local agent playbook
+AGENTS.md
