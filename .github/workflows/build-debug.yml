@@ -84,10 +84,18 @@ jobs:
           }
           EOF
 
+      - name: Configure swap
+        run: |
+          sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
       - name: Build Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --no-parallel --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
