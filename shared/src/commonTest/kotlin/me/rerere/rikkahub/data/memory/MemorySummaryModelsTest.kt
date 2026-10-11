@@ -140,4 +140,74 @@ class MemorySummaryModelsTest {
         assertContains(askPrompt, "USER INSTRUCTION: \"Remove old tablet notes\"")
         assertContains(askPrompt, "TARGET TOKEN BUDGET: Approximately 1500 tokens.")
     }
+
+    @Test
+    fun applySectionPatch_handlesUpdateAddAndDelete() {
+        val initial = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(icon = "devices", title = "Devices", content = "Lenovo Tab M9"),
+                MemorySummarySection(icon = "heart", title = "Interests", content = "Gaming")
+            )
+        )
+
+        // 1. Update section
+        val updatePatch = MemorySectionPatch(
+            action = "update_section",
+            targetSection = "Devices",
+            section = MemorySummarySection(icon = "devices", title = "Devices", content = "Lenovo Tab M9 (Android 13)")
+        )
+        val afterUpdate = applySectionPatch(initial, updatePatch)
+        assertEquals("Lenovo Tab M9 (Android 13)", afterUpdate.sections.first { it.title == "Devices" }.content)
+
+        // 2. Add section
+        val addPatch = MemorySectionPatch(
+            action = "add_section",
+            section = MemorySummarySection(icon = "code", title = "Projects", content = "LastChat agent")
+        )
+        val afterAdd = applySectionPatch(afterUpdate, addPatch)
+        assertEquals(3, afterAdd.sections.size)
+        assertEquals("Projects", afterAdd.sections[2].title)
+
+        // 3. Delete section
+        val deletePatch = MemorySectionPatch(
+            action = "delete_section",
+            targetSection = "Interests"
+        )
+        val afterDelete = applySectionPatch(afterAdd, deletePatch)
+        assertEquals(2, afterDelete.sections.size)
+        assertNull(afterDelete.sections.firstOrNull { it.title == "Interests" })
+    }
+
+    @Test
+    fun parseAskOrUpdateResponse_parsesBlockDelta() {
+        val current = MemorySummaryData(
+            sections = listOf(MemorySummarySection(icon = "star", title = "Preferences", content = "Blue color"))
+        )
+        val deltaJson = """
+            {
+              "action": "update_section",
+              "target_section": "Preferences",
+              "section": {
+                "icon": "star",
+                "title": "Preferences",
+                "content": "Favorite color is purple"
+              },
+              "raw_memory_updates": [
+                {
+                  "action": "update",
+                  "search": "favorite color",
+                  "content": "User favorite color is purple"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = parseAskOrUpdateResponse(deltaJson, current)
+        assertNotNull(parsed)
+        val (summary, updates) = parsed
+        assertEquals("Favorite color is purple", summary.sections[0].content)
+        assertEquals(1, updates.size)
+        assertEquals("update", updates[0].action)
+        assertEquals("User favorite color is purple", updates[0].content)
+    }
 }

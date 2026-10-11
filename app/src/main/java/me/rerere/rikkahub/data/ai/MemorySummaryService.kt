@@ -34,6 +34,7 @@ import me.rerere.rikkahub.data.memory.buildAskOrUpdatePrompt
 import me.rerere.rikkahub.data.memory.buildFullSummarizerUserPrompt
 import me.rerere.rikkahub.data.memory.buildIncrementalSummarizerPrompt
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
+import me.rerere.rikkahub.data.memory.parseAskOrUpdateResponse
 import me.rerere.rikkahub.data.memory.renderMemorySummaryToMarkdown
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -51,6 +52,8 @@ class MemorySummaryService(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val updateMutexes = ConcurrentHashMap<String, Mutex>()
     private val debounceJobs = ConcurrentHashMap<String, Job>()
+    @Volatile
+    private var isSyncingRawUpdates = false
 
     private fun getMutex(assistantId: String): Mutex {
         return updateMutexes.computeIfAbsent(assistantId) { Mutex() }
@@ -241,6 +244,18 @@ class MemorySummaryService(
                     ?: return Result.failure(IllegalStateException("No valid model or provider with API key found for assistant ${assistant.name}"))
                 val providerHandler = providerManager.getProviderByType(provider)
 
+                // 1. Perform targeted semantic search (RAG) to find relevant memories for grounding
+                val relevantMemories = try {
+                    memoryRepository.retrieveRelevantMemories(
+                        assistantId = assistantId,
+                        query = userInstruction,
+                        limit = 6,
+                        similarityThreshold = 0.35f,
+                    ).map { it.content }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
                 val tokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000)
                 val systemPrompt = assistant.customMemorySummaryPrompt
                     ?.takeIf { it.isNotBlank() }
@@ -250,6 +265,7 @@ class MemorySummaryService(
                     currentSummary = currentSummary,
                     userInstruction = userInstruction,
                     tokenBudget = tokenBudget,
+                    relevantMemories = relevantMemories,
                 )
 
                 val response = providerHandler.generateText(
@@ -268,14 +284,66 @@ class MemorySummaryService(
                     ?.takeIf { it.isNotBlank() }
                     ?: return Result.failure(IllegalStateException("Empty askOrUpdate response"))
 
-                val parsed = parseMemorySummaryJson(rawResponse)
+                val (updatedSummary, rawUpdates) = parseAskOrUpdateResponse(rawResponse, currentSummary)
                     ?: return Result.failure(IllegalStateException("Could not parse askOrUpdate response"))
 
-                val renderedMd = renderMemorySummaryToMarkdown(parsed)
-                val tokenCount = ContextTokenEstimator.textTokens(renderedMd, model)
-                persistSummary(assistantId, parsed, tokenCount)
+                // 2. Synchronize raw memory updates to SQLite database if specified
+                if (rawUpdates.isNotEmpty()) {
+                    isSyncingRawUpdates = true
+                    try {
+                        for (update in rawUpdates) {
+                            when (update.action.lowercase()) {
+                                "create", "add" -> {
+                                    val content = update.content?.trim()
+                                    if (!content.isNullOrBlank()) {
+                                        memoryRepository.addMemory(assistantId, content)
+                                    }
+                                }
+                                "update", "modify" -> {
+                                    val content = update.content?.trim()
+                                    val search = update.search?.trim() ?: content
+                                    if (!content.isNullOrBlank() && !search.isNullOrBlank()) {
+                                        val candidates = memoryRepository.retrieveRelevantMemories(
+                                            assistantId = assistantId,
+                                            query = search,
+                                            limit = 1,
+                                            similarityThreshold = 0.35f,
+                                        )
+                                        val target = candidates.firstOrNull()
+                                        if (target != null && target.id > 0) {
+                                            memoryRepository.updateContent(target.id, content)
+                                        } else {
+                                            memoryRepository.addMemory(assistantId, content)
+                                        }
+                                    }
+                                }
+                                "delete", "remove" -> {
+                                    val search = update.search?.trim()
+                                    if (!search.isNullOrBlank()) {
+                                        val candidates = memoryRepository.retrieveRelevantMemories(
+                                            assistantId = assistantId,
+                                            query = search,
+                                            limit = 1,
+                                            similarityThreshold = 0.35f,
+                                        )
+                                        val target = candidates.firstOrNull()
+                                        if (target != null && target.id > 0) {
+                                            memoryRepository.deleteMemory(target.id)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        isSyncingRawUpdates = false
+                    }
+                }
 
-                Result.success(parsed)
+                val renderedMd = renderMemorySummaryToMarkdown(updatedSummary)
+                val tokenCount = ContextTokenEstimator.textTokens(renderedMd, model)
+                persistSummary(assistantId, updatedSummary, tokenCount)
+
+                Result.success(updatedSummary)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "askOrUpdate failed for $assistantId", e)
@@ -293,6 +361,7 @@ class MemorySummaryService(
         memoryContent: String,
     ) {
         scope.launch {
+            if (isSyncingRawUpdates) return@launch
             try {
                 val settings = settingsStore.settingsFlow.first()
                 val assistant = settings.getAssistantById(assistantId) ?: return@launch

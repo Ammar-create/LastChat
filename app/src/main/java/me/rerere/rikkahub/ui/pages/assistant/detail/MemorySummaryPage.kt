@@ -83,6 +83,7 @@ import me.rerere.rikkahub.data.memory.MemorySummaryData
 import me.rerere.rikkahub.data.memory.MemorySummarySection
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.base64Encode
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -522,11 +523,11 @@ fun MemorySummaryPage(
                             DiveDeeperCard(
                                 action = action,
                                 onClick = {
-                                    // Start a chat seeded with this prompt
+                                    vm.switchToAssistant(assistantId)
                                     navBackStack.navigate(
                                         Screen.Chat(
                                             id = java.util.UUID.randomUUID().toString(),
-                                            text = action.prompt,
+                                            text = action.prompt.base64Encode(),
                                         )
                                     )
                                 }

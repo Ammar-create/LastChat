@@ -107,6 +107,13 @@ class AssistantDetailVM(
         }
     }
 
+    fun switchToAssistant(id: String) {
+        val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return
+        viewModelScope.launch {
+            settingsStore.updateAssistant(uuid)
+        }
+    }
+
     val assistant: StateFlow<Assistant> = settingsStore
         .settingsFlow
         .map { settings ->

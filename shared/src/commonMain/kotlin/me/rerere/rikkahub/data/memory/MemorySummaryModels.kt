@@ -71,6 +71,156 @@ enum class MemoryChangeType {
     DELETED,
 }
 
+@Serializable
+data class RawMemoryAction(
+    val action: String = "create", // "create", "update", "delete"
+    val search: String? = null,
+    val content: String? = null,
+)
+
+@Serializable
+data class MemorySummaryWithUpdates(
+    val title: String = "Your Summary",
+    val subtitle: String = "A quick view of what I remember about you.",
+    val sections: List<MemorySummarySection> = emptyList(),
+    @SerialName("dive_deeper")
+    val diveDeeper: List<DiveDeeperAction> = emptyList(),
+    @SerialName("raw_memory_updates")
+    val rawMemoryUpdates: List<RawMemoryAction> = emptyList(),
+)
+
+@Serializable
+data class MemorySectionPatch(
+    val action: String = "update_section", // "update_section", "add_section", "delete_section", "full_rewrite"
+    @SerialName("target_section")
+    val targetSection: String? = null,
+    val section: MemorySummarySection? = null,
+    @SerialName("raw_memory_updates")
+    val rawMemoryUpdates: List<RawMemoryAction> = emptyList(),
+    @SerialName("dive_deeper")
+    val diveDeeper: List<DiveDeeperAction>? = null,
+    @SerialName("full_summary")
+    val fullSummary: MemorySummaryData? = null,
+)
+
+/**
+ * Applies a block-level delta patch to MemorySummaryData.
+ */
+fun applySectionPatch(
+    current: MemorySummaryData,
+    patch: MemorySectionPatch,
+): MemorySummaryData {
+    if (patch.fullSummary != null && patch.fullSummary.sections.isNotEmpty()) {
+        return patch.fullSummary
+    }
+
+    val updatedSections = current.sections.toMutableList()
+    when (patch.action.lowercase()) {
+        "add_section", "create_section", "create", "add" -> {
+            patch.section?.let { newSection ->
+                val existingIndex = updatedSections.indexOfFirst {
+                    it.title.equals(newSection.title, ignoreCase = true)
+                }
+                if (existingIndex >= 0) {
+                    updatedSections[existingIndex] = newSection
+                } else {
+                    updatedSections.add(newSection)
+                }
+            }
+        }
+        "update_section", "update", "modify" -> {
+            patch.section?.let { updatedSection ->
+                val target = patch.targetSection ?: updatedSection.title
+                val index = updatedSections.indexOfFirst {
+                    it.title.equals(target, ignoreCase = true) ||
+                    it.title.contains(target, ignoreCase = true) ||
+                    target.contains(it.title, ignoreCase = true)
+                }
+                if (index >= 0) {
+                    updatedSections[index] = updatedSection
+                } else {
+                    updatedSections.add(updatedSection)
+                }
+            }
+        }
+        "delete_section", "delete", "remove" -> {
+            val target = patch.targetSection ?: patch.section?.title
+            if (!target.isNullOrBlank()) {
+                updatedSections.removeAll {
+                    it.title.equals(target, ignoreCase = true) ||
+                    it.title.contains(target, ignoreCase = true) ||
+                    target.contains(it.title, ignoreCase = true)
+                }
+            }
+        }
+    }
+
+    val updatedDiveDeeper = patch.diveDeeper ?: current.diveDeeper
+    return current.copy(
+        sections = updatedSections,
+        diveDeeper = updatedDiveDeeper,
+    )
+}
+
+/**
+ * Parses response from the "Ask or update" bar, supporting both block-level patches and full updates.
+ */
+fun parseAskOrUpdateResponse(
+    raw: String,
+    currentSummary: MemorySummaryData,
+): Pair<MemorySummaryData, List<RawMemoryAction>>? {
+    if (raw.isBlank()) return null
+    val cleaned = extractJsonPayload(raw)
+
+    // 1. Try parsing as block-level patch
+    try {
+        val patch = memorySummaryJsonFormat.decodeFromString<MemorySectionPatch>(cleaned)
+        if (patch.action.isNotBlank() && (patch.section != null || patch.targetSection != null || patch.fullSummary != null)) {
+            val updatedSummary = applySectionPatch(currentSummary, patch)
+            return updatedSummary to patch.rawMemoryUpdates
+        }
+    } catch (_: Exception) {}
+
+    // 2. Try parsing as full summary with updates
+    try {
+        val full = memorySummaryJsonFormat.decodeFromString<MemorySummaryWithUpdates>(cleaned)
+        if (full.sections.isNotEmpty()) {
+            val data = MemorySummaryData(
+                title = full.title,
+                subtitle = full.subtitle,
+                sections = full.sections,
+                diveDeeper = full.diveDeeper.ifEmpty { currentSummary.diveDeeper },
+            )
+            return data to full.rawMemoryUpdates
+        }
+    } catch (_: Exception) {}
+
+    // 3. Fallback to markdown parser
+    val mdFallback = parseMarkdownFallback(raw) ?: return null
+    return mdFallback to emptyList()
+}
+
+/**
+ * Parses raw LLM response text into MemorySummaryData alongside any raw memory updates.
+ */
+fun parseMemorySummaryWithUpdates(raw: String): Pair<MemorySummaryData, List<RawMemoryAction>>? {
+    if (raw.isBlank()) return null
+    val cleaned = extractJsonPayload(raw)
+    return try {
+        val parsed = memorySummaryJsonFormat.decodeFromString<MemorySummaryWithUpdates>(cleaned)
+        val data = MemorySummaryData(
+            title = parsed.title,
+            subtitle = parsed.subtitle,
+            sections = parsed.sections,
+            diveDeeper = parsed.diveDeeper,
+        )
+        data to parsed.rawMemoryUpdates
+    } catch (_: Exception) {
+        val fallback = parseMarkdownFallback(raw) ?: return null
+        fallback to emptyList()
+    }
+}
+
 /**
  * Parses raw LLM response text into MemorySummaryData.
  * Resilient against markdown code-fences (```json ... ```) and leading/trailing chatter.
@@ -285,20 +435,41 @@ fun buildIncrementalSummarizerPrompt(
 fun buildAskOrUpdatePrompt(
     currentSummary: MemorySummaryData,
     userInstruction: String,
-    tokenBudget: Int
+    tokenBudget: Int,
+    relevantMemories: List<String> = emptyList(),
 ): String {
-    val currentJson = memorySummaryJsonFormat.encodeToString(MemorySummaryData.serializer(), currentSummary)
+    val sectionsOverview = currentSummary.sections.joinToString("\n") { s ->
+        "Section: [${s.title}] (icon: ${s.icon})\nContent: ${s.content}\n"
+    }
     return buildString {
-        appendLine("The user has requested an edit or update to their memory summary.")
+        appendLine("You are the Memory Profile Manager.")
+        appendLine("The user has requested an update, elaboration, or category change to their memory summary.")
         appendLine("USER INSTRUCTION: \"$userInstruction\"")
         appendLine("TARGET TOKEN BUDGET: Approximately $tokenBudget tokens.")
         appendLine()
-        appendLine("CURRENT SUMMARY JSON:")
-        appendLine(currentJson)
+        if (relevantMemories.isNotEmpty()) {
+            appendLine("RELEVANT STORED MEMORIES (retrieved from memory database via semantic search):")
+            relevantMemories.forEachIndexed { i, mem ->
+                appendLine("- $mem")
+            }
+            appendLine()
+        }
+        appendLine("CURRENT SECTIONS IN MEMORY SUMMARY:")
+        appendLine(sectionsOverview.ifBlank { "No sections exist yet." })
         appendLine()
-        appendLine("INSTRUCTIONS:")
-        appendLine("1. Apply the user's requested instruction directly to the summary (e.g. modify sections, update details, rephrase, or prune).")
-        appendLine("2. Maintain overall coherence and do justice to all other recorded information.")
-        appendLine("3. Respond ONLY with the updated JSON object matching the same schema.")
+        appendLine("INSTRUCTIONS (BLOCK-LEVEL DELTA EFFICIENCY):")
+        appendLine("Do NOT rewrite the entire summary document. Respond with a JSON delta affecting ONLY the relevant section:")
+        appendLine("- To update/expand an existing section: {\"action\": \"update_section\", \"target_section\": \"Section Name\", \"section\": {\"icon\": \"icon_name\", \"title\": \"Section Name\", \"content\": \"Updated or elaborated content...\"}}")
+        appendLine("- To add a new category: {\"action\": \"add_section\", \"section\": {\"icon\": \"icon_name\", \"title\": \"New Category Name\", \"content\": \"New category content...\"}}")
+        appendLine("- To delete a category: {\"action\": \"delete_section\", \"target_section\": \"Section Name\"}")
+        appendLine()
+        appendLine("If the user instruction alters, creates, or deletes a durable factual detail (e.g. favorite color, school, project, location), also include 'raw_memory_updates' to synchronize the SQLite database:")
+        appendLine("  \"raw_memory_updates\": [")
+        appendLine("    {\"action\": \"create\", \"content\": \"User's favorite color is purple\"},")
+        appendLine("    {\"action\": \"update\", \"search\": \"favorite color\", \"content\": \"User's favorite color is purple\"},")
+        appendLine("    {\"action\": \"delete\", \"search\": \"old note to remove\"}")
+        appendLine("  ]")
+        appendLine()
+        appendLine("Respond ONLY with the JSON object.")
     }
 }
