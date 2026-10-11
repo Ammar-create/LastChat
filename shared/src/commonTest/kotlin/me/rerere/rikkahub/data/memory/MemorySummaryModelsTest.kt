@@ -244,4 +244,108 @@ class MemorySummaryModelsTest {
         val (parsed3, _) = parseAskOrUpdateResponse(textFallback, current)!!
         assertEquals("I have updated your favorite color to purple in Preferences.", parsed3.sections.first { it.title == "Preferences" }.content)
     }
+
+    @Test
+    fun parseAskOrUpdateResponse_handlesStringDiveDeeperAndNestedSection() {
+        val current = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(icon = "sparkles", title = "Identity", content = "Ammar"),
+                MemorySummarySection(icon = "heart", title = "Emotional History & Interpersonal Dynamics", content = "Initial dynamics")
+            )
+        )
+
+        val rawResponse = """
+            {
+              "action": "update_section",
+              "target_section": "Emotional History & Interpersonal Dynamics",
+              "section": {
+                "icon": "heart",
+                "title": "Emotional History & Interpersonal Dynamics",
+                "content": "Ammar's relational history is defined by intense loyalty."
+              },
+              "raw_memory_updates": [
+                {
+                  "action": "create",
+                  "content": "Ammar refers to Cupita"
+                }
+              ],
+              "dive_deeper": [
+                "Reflect on the prose of Ali and Ayesha.",
+                "Discuss boundaries with Shery."
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = parseAskOrUpdateResponse(rawResponse, current)
+        assertNotNull(parsed)
+        val (summary, updates) = parsed
+        val target = summary.sections.first { it.title == "Emotional History & Interpersonal Dynamics" }
+        assertEquals("Ammar's relational history is defined by intense loyalty.", target.content)
+        assertEquals(1, updates.size)
+        assertEquals("Ammar refers to Cupita", updates[0].content)
+        assertEquals(2, summary.diveDeeper.size)
+        assertEquals("Reflect on the prose of Ali and Ayesha.", summary.diveDeeper[0].prompt)
+    }
+
+    @Test
+    fun parseAskOrUpdateResponse_handlesAddSectionWithNestedSection() {
+        val current = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(icon = "sparkles", title = "Identity, Aspirations & Personal Arc", content = "Identity content")
+            )
+        )
+
+        val rawResponse = """
+            {
+              "action": "add_section",
+              "section": {
+                "icon": "heart",
+                "title": "Formative Bonds: Shery & The Lahore Cousin",
+                "content": "Ammar's relational history is defined by loyalty."
+              }
+            }
+        """.trimIndent()
+
+        val parsed = parseAskOrUpdateResponse(rawResponse, current)
+        assertNotNull(parsed)
+        val (summary, _) = parsed
+        assertEquals(2, summary.sections.size)
+        assertEquals("Identity, Aspirations & Personal Arc", summary.sections[0].title)
+        assertEquals("Identity content", summary.sections[0].content)
+        assertEquals("Formative Bonds: Shery & The Lahore Cousin", summary.sections[1].title)
+        assertEquals("Ammar's relational history is defined by loyalty.", summary.sections[1].content)
+    }
+
+    @Test
+    fun sanitizeMemorySummaryData_healsCorruptedJsonContent() {
+        val corrupted = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(
+                    icon = "sparkles",
+                    title = "Identity",
+                    content = """{"action": "add_section", "section": {"icon": "heart", "title": "Formative Bonds", "content": "Clean healed content"}}"""
+                )
+            )
+        )
+
+        val healed = sanitizeMemorySummaryData(corrupted)
+        assertEquals("Formative Bonds", healed.sections[0].title)
+        assertEquals("Clean healed content", healed.sections[0].content)
+    }
+
+    @Test
+    fun parseAskOrUpdateResponse_neverDumpsRawJsonAsConversationalText() {
+        val current = MemorySummaryData(
+            sections = listOf(
+                MemorySummarySection(icon = "sparkles", title = "Identity", content = "Real content")
+            )
+        )
+
+        // Malformed JSON that looks like JSON should NOT be treated as plain conversational text and set as content
+        val brokenJson = """{"action": "unknown_action", "some_broken_payload": true}"""
+        val parsed = parseAskOrUpdateResponse(brokenJson, current)
+        // If it can't be parsed, it must NOT corrupt the section content with the raw JSON string
+        assertNull(parsed)
+        assertEquals("Real content", current.sections[0].content)
+    }
 }

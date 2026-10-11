@@ -3,11 +3,13 @@ package me.rerere.rikkahub.data.memory
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 
 private val memorySummaryJsonFormat = Json {
     ignoreUnknownKeys = true
@@ -36,7 +38,7 @@ data class MemorySummarySection(
 data class DiveDeeperAction(
     val icon: String = "code",
     val title: String,
-    val subtitle: String,
+    val subtitle: String = "",
     val prompt: String,
 )
 
@@ -109,6 +111,216 @@ data class MemorySectionPatch(
 )
 
 /**
+ * Checks whether text appears to be raw JSON payload rather than clean markdown or conversational prose.
+ */
+fun looksLikeRawJson(text: String): Boolean {
+    val trimmed = text.trim()
+    return (trimmed.startsWith("{") && trimmed.contains("\"")) ||
+            trimmed.contains("\"action\":") ||
+            trimmed.contains("\"target_section\":") ||
+            (trimmed.contains("\"section\":") && trimmed.contains("\"content\":"))
+}
+
+/**
+ * Converts escaped JSON special sequences back to normal characters.
+ */
+fun unescapeJsonString(s: String): String {
+    return s.replace("\\n", "\n")
+        .replace("\\r", "\r")
+        .replace("\\t", "\t")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\")
+}
+
+/**
+ * Normalizes JSON by removing thoughts, extracting fences, and escaping literal newlines inside quotes.
+ */
+fun sanitizeJsonString(text: String): String {
+    var clean = stripThinkingTags(text).trim()
+    clean = extractJsonPayload(clean)
+
+    val sb = StringBuilder(clean.length + 32)
+    var inString = false
+    var escape = false
+    for (i in clean.indices) {
+        val ch = clean[i]
+        if (ch == '"' && !escape) {
+            inString = !inString
+            sb.append(ch)
+        } else if (inString) {
+            when (ch) {
+                '\n' -> sb.append("\\n")
+                '\r' -> { /* ignore */ }
+                '\t' -> sb.append("\\t")
+                else -> sb.append(ch)
+            }
+        } else {
+            sb.append(ch)
+        }
+
+        if (ch == '\\' && !escape) {
+            escape = true
+        } else {
+            escape = false
+        }
+    }
+    return sb.toString().trim()
+}
+
+/**
+ * Auto-heals section content that accidentally had raw JSON dumped into it.
+ */
+fun tryHealCorruptedJsonContent(rawContent: String): Pair<String?, String>? {
+    val clean = sanitizeJsonString(rawContent)
+    try {
+        val element = memorySummaryJsonFormat.parseToJsonElement(clean)
+        if (element is JsonObject) {
+            val sectionObj = element["section"] as? JsonObject
+            if (sectionObj != null) {
+                val content = sectionObj["content"]?.jsonPrimitive?.contentOrNull
+                val title = sectionObj["title"]?.jsonPrimitive?.contentOrNull
+                    ?: element["target_section"]?.jsonPrimitive?.contentOrNull
+                if (!content.isNullOrBlank()) {
+                    return title to content
+                }
+            }
+            val rootContent = element["content"]?.jsonPrimitive?.contentOrNull
+            if (!rootContent.isNullOrBlank()) {
+                val title = element["title"]?.jsonPrimitive?.contentOrNull
+                    ?: element["target_section"]?.jsonPrimitive?.contentOrNull
+                return title to rootContent
+            }
+        }
+    } catch (_: Exception) {}
+
+    // Fallback regex extraction if JSON parser failed
+    val contentRegex = Regex("\"content\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+    val contentMatch = contentRegex.find(clean)
+    if (contentMatch != null) {
+        val rawEscaped = contentMatch.groupValues[1]
+        val unescaped = unescapeJsonString(rawEscaped)
+        val titleMatch = Regex("\"title\"\\s*:\\s*\"([^\"]+)\"").find(clean)
+            ?: Regex("\"target_section\"\\s*:\\s*\"([^\"]+)\"").find(clean)
+        val title = titleMatch?.groupValues?.getOrNull(1)
+        return title to unescaped
+    }
+
+    return null
+}
+
+/**
+ * Sanitizes a single section, auto-healing any raw JSON corruption in its content.
+ */
+fun sanitizeMemorySummarySection(section: MemorySummarySection): MemorySummarySection {
+    val trimmed = section.content.trim()
+    if (looksLikeRawJson(trimmed)) {
+        val healed = tryHealCorruptedJsonContent(trimmed)
+        if (healed != null) {
+            val newTitle = healed.first ?: section.title
+            return section.copy(
+                title = if (section.title.isBlank() || section.title.equals("Preferences", ignoreCase = true) || section.title.equals("Your Summary", ignoreCase = true)) {
+                    newTitle
+                } else {
+                    newTitle
+                },
+                content = healed.second,
+            )
+        }
+    }
+    return section
+}
+
+/**
+ * Sanitizes all sections in MemorySummaryData.
+ */
+fun sanitizeMemorySummaryData(data: MemorySummaryData): MemorySummaryData {
+    val sanitized = data.sections.map { sanitizeMemorySummarySection(it) }
+    return data.copy(sections = sanitized)
+}
+
+/**
+ * Flexibly parses dive deeper actions from either strings or objects.
+ */
+fun parseDiveDeeperActions(element: JsonElement?): List<DiveDeeperAction> {
+    if (element !is JsonArray) return emptyList()
+    return element.mapNotNull { item ->
+        when (item) {
+            is JsonPrimitive -> {
+                val str = item.contentOrNull?.trim()
+                if (!str.isNullOrBlank()) {
+                    DiveDeeperAction(
+                        icon = guessIconForTitle(str),
+                        title = str.take(60),
+                        subtitle = "",
+                        prompt = str,
+                    )
+                } else null
+            }
+            is JsonObject -> {
+                val prompt = item["prompt"]?.jsonPrimitive?.contentOrNull
+                    ?: item["title"]?.jsonPrimitive?.contentOrNull
+                if (!prompt.isNullOrBlank()) {
+                    val title = item["title"]?.jsonPrimitive?.contentOrNull ?: prompt.take(60)
+                    val subtitle = item["subtitle"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val icon = item["icon"]?.jsonPrimitive?.contentOrNull ?: guessIconForTitle(title)
+                    DiveDeeperAction(
+                        icon = icon,
+                        title = title,
+                        subtitle = subtitle,
+                        prompt = prompt,
+                    )
+                } else null
+            }
+            else -> null
+        }
+    }
+}
+
+/**
+ * Flexibly parses raw memory database actions from objects or strings.
+ */
+fun parseRawMemoryActions(element: JsonElement?): List<RawMemoryAction> {
+    if (element !is JsonArray) return emptyList()
+    return element.mapNotNull { item ->
+        when (item) {
+            is JsonObject -> {
+                val action = item["action"]?.jsonPrimitive?.contentOrNull ?: "create"
+                val search = item["search"]?.jsonPrimitive?.contentOrNull
+                val content = item["content"]?.jsonPrimitive?.contentOrNull
+                if (!content.isNullOrBlank() || !search.isNullOrBlank()) {
+                    RawMemoryAction(action = action, search = search, content = content)
+                } else null
+            }
+            is JsonPrimitive -> {
+                val content = item.contentOrNull?.trim()
+                if (!content.isNullOrBlank()) {
+                    RawMemoryAction(action = "create", content = content)
+                } else null
+            }
+            else -> null
+        }
+    }
+}
+
+/**
+ * Extracts a MemorySummarySection from a JsonElement.
+ */
+fun parseSectionFromElement(
+    element: JsonElement?,
+    defaultTitle: String? = null,
+): MemorySummarySection? {
+    if (element !is JsonObject) return null
+    val content = element["content"]?.jsonPrimitive?.contentOrNull?.trim()
+    if (content.isNullOrBlank()) return null
+    val title = element["title"]?.jsonPrimitive?.contentOrNull?.trim()
+        ?: defaultTitle
+        ?: "Category"
+    val icon = element["icon"]?.jsonPrimitive?.contentOrNull?.trim()
+        ?: guessIconForTitle(title)
+    return MemorySummarySection(icon = icon, title = title, content = content)
+}
+
+/**
  * Applies a block-level delta patch to MemorySummaryData.
  */
 fun applySectionPatch(
@@ -116,13 +328,16 @@ fun applySectionPatch(
     patch: MemorySectionPatch,
 ): MemorySummaryData {
     if (patch.fullSummary != null && patch.fullSummary.sections.isNotEmpty()) {
-        return patch.fullSummary
+        return sanitizeMemorySummaryData(patch.fullSummary)
     }
 
-    val updatedSections = current.sections.toMutableList()
-    when (patch.action.lowercase()) {
-        "add_section", "create_section", "create", "add" -> {
-            patch.section?.let { newSection ->
+    val updatedSections = current.sections.map { sanitizeMemorySummarySection(it) }.toMutableList()
+    val action = patch.action.lowercase().trim()
+    val newSection = patch.section?.let { sanitizeMemorySummarySection(it) }
+
+    when {
+        action in listOf("add_section", "create_section", "create", "add", "new_section", "new", "insert") -> {
+            if (newSection != null) {
                 val existingIndex = updatedSections.indexOfFirst {
                     it.title.equals(newSection.title, ignoreCase = true)
                 }
@@ -133,28 +348,29 @@ fun applySectionPatch(
                 }
             }
         }
-        "update_section", "update", "modify" -> {
-            patch.section?.let { updatedSection ->
-                val target = patch.targetSection ?: updatedSection.title
+        action in listOf("delete_section", "remove_section", "delete", "remove", "drop") -> {
+            val target = patch.targetSection ?: newSection?.title
+            if (!target.isNullOrBlank()) {
+                updatedSections.removeAll {
+                    it.title.equals(target, ignoreCase = true) ||
+                    it.title.contains(target, ignoreCase = true) ||
+                    target.contains(it.title, ignoreCase = true)
+                }
+            }
+        }
+        else -> {
+            // Default: update_section, edit, modify, or unspecified
+            if (newSection != null) {
+                val target = patch.targetSection ?: newSection.title
                 val index = updatedSections.indexOfFirst {
                     it.title.equals(target, ignoreCase = true) ||
                     it.title.contains(target, ignoreCase = true) ||
                     target.contains(it.title, ignoreCase = true)
                 }
                 if (index >= 0) {
-                    updatedSections[index] = updatedSection
+                    updatedSections[index] = newSection
                 } else {
-                    updatedSections.add(updatedSection)
-                }
-            }
-        }
-        "delete_section", "delete", "remove" -> {
-            val target = patch.targetSection ?: patch.section?.title
-            if (!target.isNullOrBlank()) {
-                updatedSections.removeAll {
-                    it.title.equals(target, ignoreCase = true) ||
-                    it.title.contains(target, ignoreCase = true) ||
-                    target.contains(it.title, ignoreCase = true)
+                    updatedSections.add(newSection)
                 }
             }
         }
@@ -175,46 +391,36 @@ fun parseAskOrUpdateResponse(
     currentSummary: MemorySummaryData,
 ): Pair<MemorySummaryData, List<RawMemoryAction>>? {
     if (raw.isBlank()) return null
-    val cleaned = extractJsonPayload(raw)
+    val stripped = stripThinkingTags(raw).trim()
+    val sanitized = sanitizeJsonString(stripped)
 
-    // 1. Try parsing as block-level patch
+    // Stage 1: Try decoding with lenient JsonObject / JsonElement parsing
     try {
-        val patch = memorySummaryJsonFormat.decodeFromString<MemorySectionPatch>(cleaned)
-        if (patch.action.isNotBlank() && (patch.section != null || patch.targetSection != null || patch.fullSummary != null)) {
-            val updatedSummary = applySectionPatch(currentSummary, patch)
-            return updatedSummary to patch.rawMemoryUpdates
-        }
-    } catch (_: Exception) {}
-
-    // 2. Try parsing as dynamic JsonObject to handle flat fields, alternate keys, or single-item sections
-    try {
-        val element = memorySummaryJsonFormat.parseToJsonElement(cleaned)
+        val element = memorySummaryJsonFormat.parseToJsonElement(sanitized)
         if (element is JsonObject) {
-            val rawUpdates = try {
-                val updatesEl = element["raw_memory_updates"] ?: element["rawMemoryUpdates"]
-                if (updatesEl is JsonArray) {
-                    memorySummaryJsonFormat.decodeFromJsonElement<List<RawMemoryAction>>(updatesEl)
-                } else emptyList()
-            } catch (_: Exception) {
-                emptyList()
-            }
+            val action = element["action"]?.jsonPrimitive?.contentOrNull ?: "update_section"
+            val targetSection = element["target_section"]?.jsonPrimitive?.contentOrNull
+                ?: element["target"]?.jsonPrimitive?.contentOrNull
+                ?: element["section_title"]?.jsonPrimitive?.contentOrNull
 
-            // Check if it's a full summary with "sections"
+            val rawUpdates = parseRawMemoryActions(element["raw_memory_updates"] ?: element["rawMemoryUpdates"])
+            val diveDeeper = parseDiveDeeperActions(element["dive_deeper"] ?: element["diveDeeper"])
+
+            // Check if full summary with "sections"
             val sectionsEl = element["sections"]
             if (sectionsEl is JsonArray && sectionsEl.isNotEmpty()) {
-                val parsedSections = try {
-                    memorySummaryJsonFormat.decodeFromJsonElement<List<MemorySummarySection>>(sectionsEl)
-                } catch (_: Exception) {
-                    emptyList()
+                val parsedSections = sectionsEl.mapNotNull { secEl ->
+                    parseSectionFromElement(secEl)
                 }
                 if (parsedSections.isNotEmpty()) {
-                    if (parsedSections.size == 1) {
+                    if (parsedSections.size == 1 && action in listOf("update_section", "add_section")) {
                         val singleSection = parsedSections[0]
                         val patch = MemorySectionPatch(
-                            action = "update_section",
-                            targetSection = singleSection.title,
+                            action = action,
+                            targetSection = targetSection ?: singleSection.title,
                             section = singleSection,
                             rawMemoryUpdates = rawUpdates,
+                            diveDeeper = diveDeeper.ifEmpty { null },
                         )
                         return applySectionPatch(currentSummary, patch) to rawUpdates
                     } else {
@@ -222,38 +428,54 @@ fun parseAskOrUpdateResponse(
                             title = element["title"]?.jsonPrimitive?.contentOrNull ?: currentSummary.title,
                             subtitle = element["subtitle"]?.jsonPrimitive?.contentOrNull ?: currentSummary.subtitle,
                             sections = parsedSections,
-                            diveDeeper = currentSummary.diveDeeper,
+                            diveDeeper = diveDeeper.ifEmpty { currentSummary.diveDeeper },
                         )
-                        return fullData to rawUpdates
+                        return sanitizeMemorySummaryData(fullData) to rawUpdates
                     }
                 }
             }
 
-            // Check if it has flat content/title or target_section
-            val contentStr = element["content"]?.jsonPrimitive?.contentOrNull
-                ?: element["section"]?.jsonPrimitive?.contentOrNull
-            val titleStr = element["title"]?.jsonPrimitive?.contentOrNull
-                ?: element["target_section"]?.jsonPrimitive?.contentOrNull
-                ?: element["section_title"]?.jsonPrimitive?.contentOrNull
-            val actionStr = element["action"]?.jsonPrimitive?.contentOrNull ?: "update_section"
+            // Parse section object
+            val sectionObj = element["section"] as? JsonObject
+            var section = parseSectionFromElement(sectionObj, defaultTitle = targetSection ?: element["title"]?.jsonPrimitive?.contentOrNull)
+            if (section == null) {
+                // Flat content at root
+                section = parseSectionFromElement(element, defaultTitle = targetSection)
+            }
+            if (section == null) {
+                // String section
+                val secPrim = (element["section"] as? JsonPrimitive)?.contentOrNull?.trim()
+                if (!secPrim.isNullOrBlank()) {
+                    val title = targetSection ?: element["title"]?.jsonPrimitive?.contentOrNull ?: "Category"
+                    section = MemorySummarySection(icon = guessIconForTitle(title), title = title, content = secPrim)
+                }
+            }
 
-            if (!contentStr.isNullOrBlank()) {
-                val resolvedTitle = titleStr ?: currentSummary.sections.firstOrNull()?.title ?: "Preferences"
-                val resolvedIcon = element["icon"]?.jsonPrimitive?.contentOrNull ?: guessIconForTitle(resolvedTitle)
+            if (section != null || action in listOf("delete_section", "remove_section", "delete", "remove")) {
                 val patch = MemorySectionPatch(
-                    action = actionStr,
-                    targetSection = resolvedTitle,
-                    section = MemorySummarySection(icon = resolvedIcon, title = resolvedTitle, content = contentStr),
+                    action = action,
+                    targetSection = targetSection ?: section?.title,
+                    section = section,
                     rawMemoryUpdates = rawUpdates,
+                    diveDeeper = diveDeeper.ifEmpty { null },
                 )
                 return applySectionPatch(currentSummary, patch) to rawUpdates
             }
         }
     } catch (_: Exception) {}
 
-    // 3. Try parsing as full summary with updates
+    // Stage 2: Try decoding directly as MemorySectionPatch
     try {
-        val full = memorySummaryJsonFormat.decodeFromString<MemorySummaryWithUpdates>(cleaned)
+        val patch = memorySummaryJsonFormat.decodeFromString<MemorySectionPatch>(sanitized)
+        if (patch.action.isNotBlank() && (patch.section != null || patch.targetSection != null || patch.fullSummary != null)) {
+            val updatedSummary = applySectionPatch(currentSummary, patch)
+            return updatedSummary to patch.rawMemoryUpdates
+        }
+    } catch (_: Exception) {}
+
+    // Stage 3: Try decoding directly as MemorySummaryWithUpdates
+    try {
+        val full = memorySummaryJsonFormat.decodeFromString<MemorySummaryWithUpdates>(sanitized)
         if (full.sections.isNotEmpty()) {
             val data = MemorySummaryData(
                 title = full.title,
@@ -261,28 +483,56 @@ fun parseAskOrUpdateResponse(
                 sections = full.sections,
                 diveDeeper = full.diveDeeper.ifEmpty { currentSummary.diveDeeper },
             )
-            return data to full.rawMemoryUpdates
+            return sanitizeMemorySummaryData(data) to full.rawMemoryUpdates
         }
     } catch (_: Exception) {}
 
-    // 4. Fallback to markdown header parser
+    // Stage 4: Regex fallback for malformed JSON deltas
+    try {
+        val actionMatch = Regex("\"action\"\\s*:\\s*\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(sanitized)
+        val titleMatch = Regex("\"title\"\\s*:\\s*\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(sanitized)
+        val targetMatch = Regex("\"target_section\"\\s*:\\s*\"([^\"]+)\"", RegexOption.IGNORE_CASE).find(sanitized)
+        val contentMatch = Regex("\"content\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").find(sanitized)
+
+        if (contentMatch != null) {
+            val action = actionMatch?.groupValues?.getOrNull(1) ?: "update_section"
+            val title = titleMatch?.groupValues?.getOrNull(1)
+                ?: targetMatch?.groupValues?.getOrNull(1)
+                ?: "Category"
+            val target = targetMatch?.groupValues?.getOrNull(1) ?: title
+            val content = unescapeJsonString(contentMatch.groupValues[1])
+            val icon = guessIconForTitle(title)
+
+            val patch = MemorySectionPatch(
+                action = action,
+                targetSection = target,
+                section = MemorySummarySection(icon = icon, title = title, content = content),
+            )
+            return applySectionPatch(currentSummary, patch) to emptyList()
+        }
+    } catch (_: Exception) {}
+
+    // Stage 5: Markdown header parser fallback
     val mdFallback = parseMarkdownFallback(raw)
     if (mdFallback != null && mdFallback.sections.isNotEmpty()) {
-        return mdFallback to emptyList()
+        return sanitizeMemorySummaryData(mdFallback) to emptyList()
     }
 
-    // 5. Ultimate fallback: if LLM returned plain conversational text,
-    // match the most relevant section and update its content gracefully instead of erroring out.
-    val strippedText = stripThinkingTags(raw).trim()
-    if (strippedText.isNotBlank()) {
+    // Stage 6: Conversational text fallback — STRICTLY DISALLOW RAW JSON STRINGS
+    // If stripped text looks like JSON, do NOT dump it into content!
+    if (looksLikeRawJson(stripped)) {
+        return null
+    }
+
+    if (stripped.isNotBlank()) {
         val targetSection = currentSummary.sections.firstOrNull { sec ->
-            strippedText.contains(sec.title, ignoreCase = true)
+            stripped.contains(sec.title, ignoreCase = true)
         } ?: currentSummary.sections.firstOrNull()
 
         if (targetSection != null) {
             val updatedSections = currentSummary.sections.map { sec ->
                 if (sec == targetSection) {
-                    sec.copy(content = strippedText)
+                    sec.copy(content = stripped)
                 } else sec
             }
             return currentSummary.copy(sections = updatedSections) to emptyList()
@@ -297,7 +547,7 @@ fun parseAskOrUpdateResponse(
  */
 fun parseMemorySummaryWithUpdates(raw: String): Pair<MemorySummaryData, List<RawMemoryAction>>? {
     if (raw.isBlank()) return null
-    val cleaned = extractJsonPayload(raw)
+    val cleaned = sanitizeJsonString(raw)
     return try {
         val parsed = memorySummaryJsonFormat.decodeFromString<MemorySummaryWithUpdates>(cleaned)
         val data = MemorySummaryData(
@@ -306,10 +556,10 @@ fun parseMemorySummaryWithUpdates(raw: String): Pair<MemorySummaryData, List<Raw
             sections = parsed.sections,
             diveDeeper = parsed.diveDeeper,
         )
-        data to parsed.rawMemoryUpdates
+        sanitizeMemorySummaryData(data) to parsed.rawMemoryUpdates
     } catch (_: Exception) {
         val fallback = parseMarkdownFallback(raw) ?: return null
-        fallback to emptyList()
+        sanitizeMemorySummaryData(fallback) to emptyList()
     }
 }
 
@@ -319,11 +569,12 @@ fun parseMemorySummaryWithUpdates(raw: String): Pair<MemorySummaryData, List<Raw
  */
 fun parseMemorySummaryJson(raw: String): MemorySummaryData? {
     if (raw.isBlank()) return null
-    val cleaned = extractJsonPayload(raw)
+    val cleaned = sanitizeJsonString(raw)
     return try {
-        memorySummaryJsonFormat.decodeFromString<MemorySummaryData>(cleaned)
+        val parsed = memorySummaryJsonFormat.decodeFromString<MemorySummaryData>(cleaned)
+        sanitizeMemorySummaryData(parsed)
     } catch (_: Exception) {
-        parseMarkdownFallback(raw)
+        parseMarkdownFallback(raw)?.let { sanitizeMemorySummaryData(it) }
     }
 }
 
@@ -331,14 +582,15 @@ fun parseMemorySummaryJson(raw: String): MemorySummaryData? {
  * Renders MemorySummaryData to clean markdown for injection into conversation context.
  */
 fun renderMemorySummaryToMarkdown(data: MemorySummaryData): String {
-    if (data.sections.isEmpty()) return ""
+    val clean = sanitizeMemorySummaryData(data)
+    if (clean.sections.isEmpty()) return ""
     return buildString {
-        appendLine("# ${data.title}")
-        if (data.subtitle.isNotBlank()) {
-            appendLine(data.subtitle)
+        appendLine("# ${clean.title}")
+        if (clean.subtitle.isNotBlank()) {
+            appendLine(clean.subtitle)
         }
         appendLine()
-        data.sections.forEach { section ->
+        clean.sections.forEach { section ->
             appendLine("## ${section.title}")
             appendLine(section.content.trim())
             appendLine()
@@ -350,7 +602,7 @@ fun renderMemorySummaryToMarkdown(data: MemorySummaryData): String {
  * Strips reasoning/thinking tags (e.g. <think>...</think>) from raw LLM responses.
  */
 fun stripThinkingTags(text: String): String {
-    return text.replace(Regex("<think>.*?</think>", RegexOption.DOT_MATCHES_ALL), "").trim()
+    return text.replace(Regex("<think>.*?(</think>|$)", RegexOption.DOT_MATCHES_ALL), "").trim()
 }
 
 /**
@@ -430,7 +682,7 @@ fun guessIconForTitle(title: String): String {
     val lower = title.lowercase()
     return when {
         "pref" in lower || "habit" in lower -> "star"
-        "interest" in lower || "entertainment" in lower || "hobby" in lower || "music" in lower || "anime" in lower -> "heart"
+        "interest" in lower || "entertainment" in lower || "hobby" in lower || "music" in lower || "anime" in lower || "bond" in lower || "emotion" in lower || "relat" in lower -> "heart"
         "tech" in lower || "code" in lower || "dev" in lower || "stack" in lower || "hardware" in lower -> "code"
         "device" in lower || "tablet" in lower || "phone" in lower || "pc" in lower -> "devices"
         "context" in lower || "goal" in lower || "current" in lower || "work" in lower || "study" in lower -> "target"
@@ -510,7 +762,8 @@ fun buildIncrementalSummarizerPrompt(
     memoryContent: String,
     tokenBudget: Int
 ): String {
-    val currentJson = memorySummaryJsonFormat.encodeToString(MemorySummaryData.serializer(), currentSummary)
+    val cleanSummary = sanitizeMemorySummaryData(currentSummary)
+    val currentJson = memorySummaryJsonFormat.encodeToString(MemorySummaryData.serializer(), cleanSummary)
     return buildString {
         appendLine("A memory change occurred. Update the existing memory summary incrementally.")
         appendLine("CHANGE TYPE: ${changeType.name}")
@@ -537,7 +790,8 @@ fun buildAskOrUpdatePrompt(
     tokenBudget: Int,
     relevantMemories: List<String> = emptyList(),
 ): String {
-    val sectionsOverview = currentSummary.sections.joinToString("\n") { s ->
+    val cleanSummary = sanitizeMemorySummaryData(currentSummary)
+    val sectionsOverview = cleanSummary.sections.joinToString("\n") { s ->
         "Section: [${s.title}] (icon: ${s.icon})\nContent: ${s.content}\n"
     }
     return buildString {

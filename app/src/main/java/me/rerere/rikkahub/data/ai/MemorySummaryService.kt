@@ -37,6 +37,7 @@ import me.rerere.rikkahub.data.memory.buildIncrementalSummarizerPrompt
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
 import me.rerere.rikkahub.data.memory.parseAskOrUpdateResponse
 import me.rerere.rikkahub.data.memory.renderMemorySummaryToMarkdown
+import me.rerere.rikkahub.data.memory.sanitizeMemorySummaryData
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import java.util.concurrent.ConcurrentHashMap
@@ -444,8 +445,9 @@ class MemorySummaryService(
         data: MemorySummaryData,
         tokenCount: Int,
     ) {
-        val jsonStr = Json.encodeToString(MemorySummaryData.serializer(), data)
-        val markdown = renderMemorySummaryToMarkdown(data)
+        val clean = sanitizeMemorySummaryData(data)
+        val jsonStr = Json.encodeToString(MemorySummaryData.serializer(), clean)
+        val markdown = renderMemorySummaryToMarkdown(clean)
         memorySummaryDao.upsert(
             MemorySummaryEntity(
                 assistantId = assistantId,
