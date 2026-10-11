@@ -14,8 +14,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import me.rerere.ai.context.ContextTokenEstimator
+import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessage
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -31,6 +35,7 @@ import me.rerere.rikkahub.data.memory.buildFullSummarizerUserPrompt
 import me.rerere.rikkahub.data.memory.buildIncrementalSummarizerPrompt
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
 import me.rerere.rikkahub.data.memory.renderMemorySummaryToMarkdown
+import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import java.util.concurrent.ConcurrentHashMap
 
@@ -41,6 +46,7 @@ class MemorySummaryService(
     private val memoryRepository: MemoryRepository,
     private val memorySummaryDao: MemorySummaryDao,
     private val providerManager: ProviderManager,
+    private val secretKeyManager: SecretKeyManager,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val updateMutexes = ConcurrentHashMap<String, Mutex>()
@@ -48,6 +54,20 @@ class MemorySummaryService(
 
     private fun getMutex(assistantId: String): Mutex {
         return updateMutexes.computeIfAbsent(assistantId) { Mutex() }
+    }
+
+    private fun resolveModelAndProvider(
+        settings: Settings,
+        assistant: Assistant,
+    ): Pair<Model, ProviderSetting>? {
+        val model = settings.findModelById(settings.summarizerModelId)
+            ?: settings.findModelById(assistant.backgroundModelId)
+            ?: settings.findModelById(assistant.chatModelId)
+            ?: settings.findModelById(settings.chatModelId)
+            ?: return null
+        val rawProvider = model.findProvider(settings.providers) ?: return null
+        val populatedProvider = secretKeyManager.populateProviderSecrets(rawProvider)
+        return model to populatedProvider
     }
 
     fun getSummaryFlow(assistantId: String): Flow<MemorySummaryEntity?> {
@@ -64,7 +84,7 @@ class MemorySummaryService(
     suspend fun fullRegenerate(assistantId: String): Result<MemorySummaryData> {
         return getMutex(assistantId).withLock {
             try {
-                val settings = settingsStore.settingsFlowRaw.first()
+                val settings = settingsStore.settingsFlow.first()
                 val assistant = settings.getAssistantById(assistantId)
                     ?: return Result.failure(IllegalStateException("Assistant $assistantId not found"))
 
@@ -80,13 +100,8 @@ class MemorySummaryService(
                     return Result.success(emptyData)
                 }
 
-                val backgroundModelId = settings.summarizerModelId
-                    ?: assistant.backgroundModelId
-                    ?: settings.chatModelId
-                val model = settings.findModelById(backgroundModelId)
-                    ?: return Result.failure(IllegalStateException("No summarizer model configured"))
-                val provider = model.findProvider(settings.providers)
-                    ?: return Result.failure(IllegalStateException("No provider for summarizer model"))
+                val (model, provider) = resolveModelAndProvider(settings, assistant)
+                    ?: return Result.failure(IllegalStateException("No valid model or provider with API key found for assistant ${assistant.name}"))
                 val providerHandler = providerManager.getProviderByType(provider)
 
                 val tokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000)
@@ -149,17 +164,12 @@ class MemorySummaryService(
                 val currentSummary = parseMemorySummaryJson(existingEntity.summaryJson)
                     ?: return@withLock fullRegenerateInternal(assistantId)
 
-                val settings = settingsStore.settingsFlowRaw.first()
+                val settings = settingsStore.settingsFlow.first()
                 val assistant = settings.getAssistantById(assistantId)
                     ?: return Result.failure(IllegalStateException("Assistant $assistantId not found"))
 
-                val backgroundModelId = settings.summarizerModelId
-                    ?: assistant.backgroundModelId
-                    ?: settings.chatModelId
-                val model = settings.findModelById(backgroundModelId)
-                    ?: return Result.failure(IllegalStateException("No summarizer model configured"))
-                val provider = model.findProvider(settings.providers)
-                    ?: return Result.failure(IllegalStateException("No provider for summarizer model"))
+                val (model, provider) = resolveModelAndProvider(settings, assistant)
+                    ?: return Result.failure(IllegalStateException("No valid model or provider with API key found for assistant ${assistant.name}"))
                 val providerHandler = providerManager.getProviderByType(provider)
 
                 val tokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000)
@@ -223,17 +233,12 @@ class MemorySummaryService(
                         regenerated.getOrThrow()
                     }
 
-                val settings = settingsStore.settingsFlowRaw.first()
+                val settings = settingsStore.settingsFlow.first()
                 val assistant = settings.getAssistantById(assistantId)
                     ?: return Result.failure(IllegalStateException("Assistant $assistantId not found"))
 
-                val backgroundModelId = settings.summarizerModelId
-                    ?: assistant.backgroundModelId
-                    ?: settings.chatModelId
-                val model = settings.findModelById(backgroundModelId)
-                    ?: return Result.failure(IllegalStateException("No summarizer model configured"))
-                val provider = model.findProvider(settings.providers)
-                    ?: return Result.failure(IllegalStateException("No provider for summarizer model"))
+                val (model, provider) = resolveModelAndProvider(settings, assistant)
+                    ?: return Result.failure(IllegalStateException("No valid model or provider with API key found for assistant ${assistant.name}"))
                 val providerHandler = providerManager.getProviderByType(provider)
 
                 val tokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000)
@@ -289,7 +294,7 @@ class MemorySummaryService(
     ) {
         scope.launch {
             try {
-                val settings = settingsStore.settingsFlowRaw.first()
+                val settings = settingsStore.settingsFlow.first()
                 val assistant = settings.getAssistantById(assistantId) ?: return@launch
                 if (!assistant.enableMemory || !assistant.enableMemorySummary) return@launch
 
@@ -323,18 +328,13 @@ class MemorySummaryService(
     }
 
     private suspend fun fullRegenerateInternal(assistantId: String): Result<MemorySummaryData> {
-        val settings = settingsStore.settingsFlowRaw.first()
+        val settings = settingsStore.settingsFlow.first()
         val assistant = settings.getAssistantById(assistantId)
             ?: return Result.failure(IllegalStateException("Assistant $assistantId not found"))
 
         val allMemories = memoryRepository.getCombinedMemoriesOfAssistant(assistantId)
-        val backgroundModelId = settings.summarizerModelId
-            ?: assistant.backgroundModelId
-            ?: settings.chatModelId
-        val model = settings.findModelById(backgroundModelId)
-            ?: return Result.failure(IllegalStateException("No summarizer model configured"))
-        val provider = model.findProvider(settings.providers)
-            ?: return Result.failure(IllegalStateException("No provider for summarizer model"))
+        val (model, provider) = resolveModelAndProvider(settings, assistant)
+            ?: return Result.failure(IllegalStateException("No valid model or provider with API key found for assistant ${assistant.name}"))
         val providerHandler = providerManager.getProviderByType(provider)
 
         val tokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000)

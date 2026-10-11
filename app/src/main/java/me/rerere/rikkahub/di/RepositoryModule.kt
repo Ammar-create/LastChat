@@ -55,7 +55,13 @@ val repositoryModule = module {
 
     single {
         val memoryRepo = get<MemoryRepository>()
-        val summaryService = MemorySummaryService(get(), memoryRepo, get(), get())
+        val summaryService = MemorySummaryService(
+            settingsStore = get(),
+            memoryRepository = memoryRepo,
+            memorySummaryDao = get(),
+            providerManager = get(),
+            secretKeyManager = get(),
+        )
         memoryRepo.onMemoryChange = { assistantId, changeType, content ->
             summaryService.onMemoryChanged(assistantId, changeType, content)
         }

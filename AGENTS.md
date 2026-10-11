@@ -22,16 +22,16 @@ This document serves as the persistent technical playbook for any AI agent or de
 ## 2. Hard Rule: Single APK for Tablet Only (Never All 8)
 
 When creating or modifying any CI/CD workflow, building an APK, or packaging an Android project:
-- **Build ONLY the tablet's native architecture (`arm64-v8a`, `stableDebug` flavor).**
+- **Build ONLY the tablet's native architecture (`arm64-v8a`, `devDebug` flavor).**
 - **NEVER build or upload all 8 combinations (`**/*.apk`).**
   - Building both `dev` and `stable` flavors across 3 ABIs (`arm64-v8a`, `armeabi-v7a`, `x86_64`) plus universal APKs produces 8 APKs totaling **850MB+**, wasting bandwidth, runner time, and causing OutOfMemory crashes.
 - **Gradle Task:**
   ```bash
-  ./gradlew :app:assembleStableDebug -Plastchat.abi.splits=true --no-parallel --stacktrace
+  ./gradlew :app:assembleDevDebug -Plastchat.abi.splits=true --no-parallel --stacktrace
   ```
 - **Artifact Path in `actions/upload-artifact@v4`:**
   ```yaml
-  path: app/build/outputs/apk/stable/debug/*arm64-v8a*.apk
+  path: app/build/outputs/apk/dev/debug/*arm64-v8a*.apk
   ```
   This produces a single, fast **~110 MB** download specifically built for the Lenovo Tab M9.
 

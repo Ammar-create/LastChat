@@ -435,7 +435,8 @@ internal fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 
-fun Settings.findModelById(uuid: Uuid): Model? {
+fun Settings.findModelById(uuid: Uuid?): Model? {
+    if (uuid == null) return null
     return providers.findModelById(uuid)
 }
 
