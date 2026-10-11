@@ -1326,7 +1326,7 @@ class GenerationHandler(
             selectedMessages.addAll(imageArchivedMessages)
             if (assistant.enableMemory) {
                 val memorySummary = if (assistant.enableMemorySummary) {
-                    memoryRepo.getMemorySummary(assistant.id)?.rawMarkdown?.takeIf { it.isNotBlank() }
+                    memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
                 } else null
 
                 val memorySelection = selectSmartMemoryContext(
@@ -1440,7 +1440,7 @@ class GenerationHandler(
 
         if (assistant.enableMemory && selectedMemoryPromptText.isBlank()) {
             val memorySummary = if (assistant.enableMemorySummary) {
-                memoryRepo.getMemorySummary(assistant.id)?.rawMarkdown?.takeIf { it.isNotBlank() }
+                memoryRepo.getMemorySummary(assistant.id.toString())?.rawMarkdown?.takeIf { it.isNotBlank() }
             } else null
 
             if (selectedMemories.isNotEmpty() || ModelAbility.TOOL in model.abilities || !memorySummary.isNullOrBlank()) {

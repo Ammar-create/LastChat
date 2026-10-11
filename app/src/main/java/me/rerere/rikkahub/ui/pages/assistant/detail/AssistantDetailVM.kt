@@ -28,6 +28,8 @@ import me.rerere.rikkahub.data.model.Avatar
 import me.rerere.rikkahub.data.model.Tag
 import me.rerere.rikkahub.data.repository.AppStorageRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.ai.MemorySummaryService
+import me.rerere.rikkahub.data.db.entity.MemorySummaryEntity
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"

@@ -8,6 +8,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.data.ai.tools.LocalToolOption
 import me.rerere.rikkahub.data.ai.tools.LocalToolOptionListSerializer
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.data.memory.MemorySummaryCadence
 
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle

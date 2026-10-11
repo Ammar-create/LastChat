@@ -472,7 +472,7 @@ fun AssistantDetailPage(
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId,
                     onNavigateToSummarizerSettings = { rootNavController.navigate(Screen.SettingModels) },
-                    onNavigateToMemorySummary = { rootNavController.navigate(Screen.MemorySummary(assistant.id)) },
+                    onNavigateToMemorySummary = { rootNavController.navigate(Screen.MemorySummary(assistant.id.toString())) },
                 )
             }
 

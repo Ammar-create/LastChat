@@ -506,6 +506,11 @@ fun Settings.getAssistantById(id: Uuid): Assistant? {
     return assistants.find { it.id == id }
 }
 
+fun Settings.getAssistantById(id: String): Assistant? {
+    val uuid = runCatching { Uuid.parse(id) }.getOrNull() ?: return null
+    return getAssistantById(uuid)
+}
+
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
     val ui = (assistant ?: getCurrentAssistant()).uiSettings
     val effectiveShowModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon
