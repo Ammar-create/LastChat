@@ -63,6 +63,7 @@ val viewModelModule = module {
             providerManager = get(),
             appStorageRepository = get(),
             embeddingService = get(),
+            memorySummaryService = get(),
         )
     }
     viewModel<ShareHandlerVM> {

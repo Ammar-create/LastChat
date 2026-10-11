@@ -313,6 +313,7 @@ internal fun Settings.normalizeMemorySettings(): Settings = copy(
             assistant.copy(
                 ragLimit = assistant.ragLimit.coerceAtLeast(1),
                 ragSimilarityThreshold = finiteThreshold,
+                memorySummaryTokenBudget = assistant.memorySummaryTokenBudget.coerceIn(200, 10000),
             )
         }
     },
