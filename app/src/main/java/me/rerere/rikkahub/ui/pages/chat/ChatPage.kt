@@ -1274,10 +1274,23 @@ private fun ChatPageContent(
     val avatarStage = LocalAvatarStage.current
     val messageCount = conversation.messageNodes.size
     var lastSeenMessageCount by remember(conversation.id) { mutableStateOf(messageCount) }
-    LaunchedEffect(messageCount) {
-        if (messageCount > lastSeenMessageCount) avatarStage.emit(AvatarStage.EventKind.MessageArrived)
-        lastSeenMessageCount = messageCount
+    val userMessageCount = remember(conversation.messageNodes) {
+        conversation.currentMessages.count { it.role == me.rerere.ai.core.MessageRole.USER }
     }
+    var lastSeenUserCount by remember(conversation.id) { mutableStateOf(userMessageCount) }
+    LaunchedEffect(messageCount) {
+        if (messageCount > lastSeenMessageCount) {
+            // A send can land together with the reply's first node: count user turns.
+            val sentByUser = userMessageCount > lastSeenUserCount
+            avatarStage.emit(
+                if (sentByUser) AvatarStage.EventKind.MessageSent else AvatarStage.EventKind.MessageArrived
+            )
+        }
+        lastSeenMessageCount = messageCount
+        lastSeenUserCount = userMessageCount
+    }
+    // What's in the composer (length, current line) — avatars may read along, rarely.
+    LaunchedEffect(composerText) { avatarStage.updateComposer(composerText) }
     LaunchedEffect(chatListState) {
         snapshotFlow { chatListState.isScrollInProgress }
             .distinctUntilChanged()

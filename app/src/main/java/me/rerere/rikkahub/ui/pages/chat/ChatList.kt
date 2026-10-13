@@ -165,7 +165,9 @@ private fun List<MessageNode>.messageNodesSignature(): Long {
             for (part in msg.parts) {
                 hash = when (part) {
                     is me.rerere.ai.ui.UIMessagePart.Text ->
-                        (hash xor 1L xor part.text.length.toLong()) * 1099511628211L
+                        // Content hash, not just length: an edit that keeps the length
+                        // (a typo fix) must still refresh the turn. String caches its hash.
+                        (hash xor 1L xor part.text.length.toLong() xor (part.text.hashCode().toLong() shl 20)) * 1099511628211L
                     is me.rerere.ai.ui.UIMessagePart.ToolCall ->
                         (hash xor 2L xor part.toolCallId.hashCode().toLong()
                             xor part.arguments.length.toLong()) * 1099511628211L
@@ -693,6 +695,10 @@ private fun SharedTransitionScope.ChatListNormal(
             forceBottomAttachPending = false
         }
 
+        // Only the newest message of each role keeps a moving avatar; older ones rest.
+        val newestAssistantGroup = displayGroups.indexOfLast { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+        val newestUserGroup = displayGroups.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
+
         val assistant = remember(settings.assistants, conversation.assistantId) {
             settings.getAssistantById(conversation.assistantId)
         }
@@ -818,6 +824,10 @@ private fun SharedTransitionScope.ChatListNormal(
                                     previousGroup = previousGroup,
                                 )
                             }
+                            CompositionLocalProvider(
+                                me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarAnimate provides
+                                    (index == newestAssistantGroup || index == newestUserGroup),
+                            ) {
                             ChatMessageTurn(
                                 group = group,
                                 isLastTurn = isLastTurn,
@@ -837,6 +847,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onExpandedStreamingCodeBlockChanged = null,
                                 modifier = Modifier,
                             )
+                            }
                         }
                         // Show truncate indicator if any node in this group is at the truncate point
                         val hasTruncateNode = truncateTargetNodeId != null && group.nodes.any { it.id == truncateTargetNodeId }

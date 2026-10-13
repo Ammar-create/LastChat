@@ -335,9 +335,14 @@ object GenericalSeat {
         return if (out.size >= 3 || (keepAll && out.size >= 2)) out else null
     }
 
-    fun draw(scope: DrawScope, eye: SeatedEye, tint: Color, he: Float) {
+    /**
+     * [eyeColor] fills the eye and its outline (white by default); the fade toward the
+     * eye's own "down" on the surface is [fade] — the eye colour tinted by the body
+     * surface ([MarkColors.genericalEyeFade]).
+     */
+    fun draw(scope: DrawScope, eye: SeatedEye, eyeColor: Color, fade: Color, he: Float) {
         val brush = Brush.linearGradient(
-            colors = listOf(Color.White, MarkColors.shade(tint, 0.82f)),
+            colors = listOf(eyeColor, fade),
             start = eye.gradStart,
             end = eye.gradEnd,
         )
@@ -345,7 +350,7 @@ object GenericalSeat {
         // Reference stroke 5 on the 500 viewBox, nudged to ~5.9 (still under 7).
         scope.drawPath(
             eye.path,
-            color = Color.White,
+            color = eyeColor,
             style = Stroke(width = 5.9f * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
     }

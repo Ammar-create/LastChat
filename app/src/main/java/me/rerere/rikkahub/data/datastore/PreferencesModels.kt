@@ -432,6 +432,26 @@ internal fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
     }
 }
 
+/**
+ * Generical's old default picture → its animated mark. Only touches the default
+ * Generical character while it still has the untouched stock picture; any avatar the
+ * user picked stays as it is.
+ */
+internal fun Settings.migrateGenericalDefaultAvatar(): Settings {
+    val stock = Avatar.Resource(R.drawable.default_generical_pfp)
+    var changed = false
+    val updated = assistants.map { assistant ->
+        val isGenerical = assistant.id == DEFAULT_ASSISTANT_ID || assistant.name == "Generical"
+        if (isGenerical && assistant.avatar == stock) {
+            changed = true
+            assistant.copy(avatar = Avatar.Animated.defaultGenerical())
+        } else {
+            assistant
+        }
+    }
+    return if (changed) copy(assistants = updated) else this
+}
+
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 
 fun Settings.findModelById(uuid: Uuid): Model? {
@@ -714,7 +734,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
     Assistant(
         id = DEFAULT_ASSISTANT_ID,
         name = "Generical",
-        avatar = Avatar.Resource(R.drawable.default_generical_pfp),
+        avatar = Avatar.Animated.defaultGenerical(),
         temperature = 0.6f,
         uiSettings = me.rerere.rikkahub.data.model.AssistantUISettings(newChatShowAvatar = false),
         enableTimeAwareness = true,

@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ripple
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -385,63 +387,26 @@ fun ChatDrawerContent(
                         val haptics = rememberPremiumHaptics()
                         val assistantName = currentAssistant.name.ifEmpty { defaultAssistantName }
 
-                        Surface(
-                            color = itemColor,
-                            shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+                        DrawerAssistantPill(
+                            assistantName = assistantName,
+                            avatar = currentAssistant.avatar,
+                            containerColor = itemColor,
+                            avatarSize = assistantAvatarSize,
+                            onNameClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                if (settings.assistants.size > 1) {
+                                    showCharacterPicker = true
+                                }
+                            },
+                            onAvatarClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                                dismissDrawerAfterSelection()
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(actionButtonSize),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(start = 12.dp, end = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxSize()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            haptics.perform(HapticPattern.Pop)
-                                            if (settings.assistants.size > 1) {
-                                                showCharacterPicker = true
-                                            }
-                                        },
-                                    contentAlignment = Alignment.CenterStart,
-                                ) {
-                                    Text(
-                                        text = assistantName,
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                        ),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(assistantAvatarSize)
-                                        .clip(rememberAvatarShape(false))
-                                        .clickable {
-                                            haptics.perform(HapticPattern.Pop)
-                                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                                            dismissDrawerAfterSelection()
-                                        },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    DrawerAvatarVisual(
-                                        name = assistantName,
-                                        avatar = currentAssistant.avatar,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                }
-                            }
-                        }
+                        )
 
                         DrawerAction(
                             icon = {
@@ -615,24 +580,11 @@ fun CollapsedChatSideRail(
 
             Spacer(Modifier.weight(1f))
 
-            Surface(
+            DrawerRailAssistantButton(
+                assistantName = assistantName,
+                avatar = currentAssistant.avatar,
                 onClick = onOpenAssistant,
-                shape = CircleShape,
-                color = Color.Transparent,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    DrawerAvatarVisual(
-                        name = assistantName,
-                        avatar = currentAssistant.avatar,
-                        modifier = Modifier.fillMaxSize(),
-                        forceCircle = true
-                    )
-                }
-            }
+            )
 
             DrawerAction(
                 icon = { LastChatSettingsIcon(contentDescription = null) },
@@ -673,6 +625,127 @@ private fun DrawerAction(
                 Box(modifier = Modifier.size(iconSize)) {
                     icon()
                 }
+            }
+        }
+    }
+}
+
+/** Bottom bar of the expanded drawer: character name (opens the picker) + avatar. */
+@Composable
+internal fun DrawerAssistantPill(
+    assistantName: String,
+    avatar: Avatar,
+    containerColor: Color,
+    avatarSize: Dp,
+    onNameClick: () -> Unit,
+    onAvatarClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = containerColor,
+        shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill,
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 12.dp, end = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onNameClick),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(
+                    text = assistantName,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+
+            val avatarIsMark = avatar is Avatar.Animated
+            Box(
+                modifier = Modifier
+                    .size(avatarSize)
+                    .then(
+                        // Animated marks float free (no crop); an unbounded ripple
+                        // stands in for the shape.
+                        if (avatarIsMark) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = false, radius = avatarSize / 2 + 4.dp),
+                                onClick = onAvatarClick,
+                            )
+                        } else {
+                            Modifier
+                                .clip(rememberAvatarShape(false))
+                                .clickable(onClick = onAvatarClick)
+                        }
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                DrawerAvatarVisual(
+                    name = assistantName,
+                    avatar = avatar,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+/** Character button at the bottom of the collapsed side rail. */
+@Composable
+internal fun DrawerRailAssistantButton(
+    assistantName: String,
+    avatar: Avatar,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (avatar is Avatar.Animated) {
+        // Animated mark: no circular surface clipping it; it floats like in chat.
+        Box(
+            modifier = modifier
+                .size(48.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = ripple(bounded = false, radius = 28.dp),
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            DrawerAvatarVisual(
+                name = assistantName,
+                avatar = avatar,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+    } else {
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = Color.Transparent,
+            modifier = modifier.size(48.dp)
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                DrawerAvatarVisual(
+                    name = assistantName,
+                    avatar = avatar,
+                    modifier = Modifier.fillMaxSize(),
+                    forceCircle = true
+                )
             }
         }
     }

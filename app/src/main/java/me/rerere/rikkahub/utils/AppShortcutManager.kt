@@ -120,7 +120,7 @@ class AppShortcutManager(
                 Icon.createWithResource(context, avatar.id)
             }
             is Avatar.Animated -> {
-                createTextIcon(fallbackName)
+                createMarkIcon(avatar) ?: createTextIcon(fallbackName)
             }
             is Avatar.Dummy -> {
                 // Create icon with first letter of name
@@ -173,6 +173,22 @@ class AppShortcutManager(
         }
         
         return Icon.createWithAdaptiveBitmap(resultBitmap)
+    }
+
+    /**
+     * Animated mark as a still adaptive icon: the calm mark on a light backdrop, sized
+     * inside the launcher's safe zone (no circle crop of the mark itself).
+     */
+    private fun createMarkIcon(avatar: Avatar.Animated): Icon? {
+        val size = 324 // 108 dp adaptive canvas at 3x
+        val mark = me.rerere.rikkahub.ui.components.avatar.animated.MarkBitmap
+            .render(context, avatar, size, markFraction = 0.6f) ?: return null
+        val bitmap = createBitmap(size, size)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(0xFFF1F1F4.toInt())
+        canvas.drawBitmap(mark, 0f, 0f, null)
+        mark.recycle()
+        return Icon.createWithAdaptiveBitmap(bitmap)
     }
 
     /**

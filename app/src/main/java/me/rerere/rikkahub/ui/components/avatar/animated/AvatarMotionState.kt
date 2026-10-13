@@ -10,8 +10,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.geometry.Offset
 import kotlin.math.exp
 import kotlin.math.hypot
@@ -20,6 +23,12 @@ import kotlin.math.min
 import kotlin.random.Random
 
 val LocalAvatarMotionHints = compositionLocalOf { AvatarMotionHints() }
+
+/**
+ * Whether animated avatars below should move. Chat sets it to false for every message
+ * except the newest one (per role), so older avatars rest as still marks.
+ */
+val LocalAvatarAnimate = compositionLocalOf { true }
 
 /**
  * Everything the renderer needs for one frame. Gaze is in screen convention
@@ -270,29 +279,40 @@ internal class ExpressionDirector(private val rng: Random) {
     }
 }
 
-/** Procedural blink: quick close, short hold, softer open. */
+/**
+ * Procedural blink, deliberately irregular: log-normal gaps (mostly 2–6 s, sometimes a
+ * long stare), each blink with its own speed and depth (some don't close fully),
+ * occasional double / rare triple blinks, fewer blinks while concentrating, and blinks
+ * that ride gaze shifts, turns and expression changes. After any blink the next
+ * spontaneous one is re-drawn, so requested and spontaneous blinks never stack into
+ * a rhythm.
+ */
 internal class Blinker(private val rng: Random) {
     var closed = 0f; private set
     private var phase = -1f
     private var closeT = 0.07f
     private var holdT = 0.03f
     private var openT = 0.12f
-    private var next = 1.5f + rng.nextFloat() * 2f
-    private var again = false
+    private var depth = 1f
+    private var next = 0.8f + rng.nextFloat() * 3f
+    private var repeats = 0
     private var gapLeft = -1f
     private var sinceLast = 10f
 
     fun request(double: Boolean = false, minGap: Float = 1.4f) {
         if (phase >= 0f || gapLeft >= 0f || sinceLast < minGap) return
-        begin(double, drowsy = false)
+        begin(if (double) 1 else 0, drowsy = false)
     }
 
-    private fun begin(double: Boolean, drowsy: Boolean) {
+    private fun begin(extra: Int, drowsy: Boolean) {
         phase = 0f
-        again = double
-        closeT = if (drowsy) 0.16f else 0.06f + rng.nextFloat() * 0.03f
-        holdT = if (drowsy) 0.12f else 0.02f + rng.nextFloat() * 0.03f
-        openT = if (drowsy) 0.28f else 0.11f + rng.nextFloat() * 0.04f
+        repeats = extra
+        val speed = 0.8f + rng.nextFloat() * 0.5f // per-blink tempo
+        closeT = if (drowsy) 0.15f + rng.nextFloat() * 0.08f else (0.05f + rng.nextFloat() * 0.03f) * speed
+        holdT = if (drowsy) 0.1f + rng.nextFloat() * 0.12f else (0.01f + rng.nextFloat() * 0.05f) * speed
+        openT = if (drowsy) 0.25f + rng.nextFloat() * 0.12f else (0.1f + rng.nextFloat() * 0.07f) * speed
+        // ~1 in 8 blinks is a lazy half-blink.
+        depth = if (!drowsy && rng.nextFloat() < 0.12f) 0.65f + rng.nextFloat() * 0.25f else 1f
     }
 
     fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean) {
@@ -300,19 +320,25 @@ internal class Blinker(private val rng: Random) {
         if (phase < 0f) {
             if (gapLeft >= 0f) {
                 gapLeft -= dt
-                if (gapLeft < 0f) begin(false, drowsy)
+                if (gapLeft < 0f) begin(repeats, drowsy)
             } else {
                 next -= dt
                 if (next <= 0f && life != MarkLifecycle.Sleeping) {
-                    // Rare double-blink (~7%).
-                    begin(double = !drowsy && rng.nextFloat() < 0.07f, drowsy = drowsy)
+                    val r = rng.nextFloat()
+                    val extra = when {
+                        drowsy -> 0
+                        r < 0.015f -> 2
+                        r < 0.10f -> 1
+                        else -> 0
+                    }
+                    begin(extra, drowsy = drowsy)
                 }
             }
         }
         if (phase >= 0f) {
             phase += dt
             val total = closeT + holdT + openT
-            closed = when {
+            closed = depth * when {
                 phase < closeT -> (phase / closeT).let { it * it }
                 phase < closeT + holdT -> 1f
                 phase < total -> ((total - phase) / openT).let { it * (2f - it) }
@@ -322,9 +348,9 @@ internal class Blinker(private val rng: Random) {
                 phase = -1f
                 closed = 0f
                 sinceLast = 0f
-                if (again) {
-                    again = false
-                    gapLeft = 0.1f + rng.nextFloat() * 0.06f
+                if (repeats > 0) {
+                    repeats--
+                    gapLeft = 0.07f + rng.nextFloat() * 0.12f
                 } else {
                     next = nextInterval(life, drowsy)
                 }
@@ -333,15 +359,24 @@ internal class Blinker(private val rng: Random) {
     }
 
     private fun nextInterval(life: MarkLifecycle, drowsy: Boolean): Float {
-        // Skewed: mostly 2.5–6 s, now and then a long stare.
-        val u = rng.nextFloat()
-        val base = 2.4f + 3.6f * u * u + if (rng.nextFloat() < 0.12f) 3.5f else 0f
+        // Log-normal, median ~3.4 s; Box–Muller from two uniforms (no java.util.Random).
+        val u1 = rng.nextFloat().coerceAtLeast(1e-4f)
+        val u2 = rng.nextFloat()
+        val n = kotlin.math.sqrt(-2f * kotlin.math.ln(u1)) * kotlin.math.cos(2f * PI_F * u2)
+        var base = 3.4f * kotlin.math.exp(0.42f * n)
+        if (rng.nextFloat() < 0.08f) base += 3f + rng.nextFloat() * 5f // a long stare now and then
+        base = base.coerceIn(1.1f, 13f)
         return when {
-            drowsy -> base * 1.8f
-            life == MarkLifecycle.Working -> base * 0.7f
-            life == MarkLifecycle.Thinking -> base * 1.2f
+            drowsy -> base * 1.7f
+            // Concentrating: blinks get rarer (they come at gaze shifts instead).
+            life == MarkLifecycle.Working || life == MarkLifecycle.Thinking -> base * (1.25f + rng.nextFloat() * 0.3f)
+            life == MarkLifecycle.Streaming -> base * 1.1f
             else -> base
         }
+    }
+
+    private companion object {
+        const val PI_F = 3.1415927f
     }
 }
 
@@ -355,6 +390,27 @@ internal class Blinker(private val rng: Random) {
 class AvatarMotionState(private val rng: Random = Random.Default) {
     var frame by mutableStateOf(MotionFrame())
         private set
+
+    /**
+     * False = shown static (e.g. an older chat message): the mark eases to its rest
+     * pose and neutral face, then the frame loop stops. True again = it eases back
+     * into motion from that rest pose. Never a cut either way.
+     */
+    var animate by mutableStateOf(true)
+        internal set
+
+    /** 0 = fully live … 1 = fully at rest. */
+    private var settle = 0f
+
+    /** At rest, neutral, nothing in flight: safe to stop ticking. */
+    internal val isSettled: Boolean
+        get() = !animate && settle >= 1f && expr.to == "Neutral" && !expr.morphing
+
+    /** Start already at rest (an avatar that first appears as a static one). */
+    internal fun startSettled() {
+        animate = false
+        settle = 1f
+    }
 
     val lifecycle: MarkLifecycle get() = director.lifecycle
 
@@ -395,6 +451,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var pokeCount = 0
     private var pokeWindow = 0f
     private var pendingPokes = 0
+    private var followLeft = 0f
+    private var followCheckIn = 6f
+    private var curiousDone = false
+    private var attendedTypingAt = -100f
 
     private class Social(
         val other: Long,
@@ -409,24 +469,31 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
     /** Called from the pointer handler (main thread). */
     fun poke() {
-        pendingPokes++
+        if (animate) pendingPokes++
     }
 
-    internal fun tick(dtIn: Float, hints: AvatarMotionHints, nowMs: Long) {
+    internal fun tick(dtIn: Float, rawHints: AvatarMotionHints, nowMs: Long) {
         val dt = dtIn.coerceIn(0f, 0.1f)
         time += dt
+        val live = animate
+        settle = if (live) max(0f, settle - dt / SETTLE_IN_SEC) else min(1f, settle + dt / SETTLE_OUT_SEC)
+        // A static avatar winds down as if nothing were going on.
+        val hints = if (live) rawHints else QUIET_HINTS
         val desired = MarkLifecycleMapper.resolve(hints)
         director.setDesired(desired)
 
         // ---- stimulus / drowsiness ----
         val prev = prevHints
         var stimulus = prev != null && prev != hints
-        if (prev != null && hints.isTyping && !prev.isTyping) onTypingStarted()
+        if (live && prev != null && hints.isTyping && !prev.isTyping) onTypingStarted()
         prevHints = hints
-        stimulus = processStageEvents() || stimulus
+        stimulus = processStageEvents(live) || stimulus
+        if (live) typingUpdate(dt, hints, nowMs)
         if (pendingPokes > 0) {
-            stimulus = true
-            repeat(pendingPokes) { onPoke() }
+            if (live) {
+                stimulus = true
+                repeat(pendingPokes) { onPoke() }
+            }
             pendingPokes = 0
         }
         val calmLife = director.lifecycle == MarkLifecycle.Idle && desired == MarkLifecycle.Idle
@@ -442,15 +509,32 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
         director.drowsy = drowsy
 
-        aliveUpdate(dt, nowMs)
+        if (live) {
+            aliveUpdate(dt, nowMs)
+        } else {
+            reaction = null
+            reactionQueue = null
+            followLeft = 0f
+            if (social != null) {
+                social = null
+                gaze.releaseFocus()
+            }
+        }
 
         // ---- body ----
         val body = director.update(dt)
         if (director.clipBlink) blink.request()
+        director.takeGazeCue()?.let { c ->
+            // A busy beat asked to look somewhere (turn, the pill, the text, away in thought).
+            if (live && social == null && followLeft <= 0f && !gaze.focused) {
+                gaze.focus(c.x, c.y, c.holdSec, priority = 1)
+            }
+        }
 
         // ---- gaze ----
         gaze.update(dt, director.lifecycle, drowsy)
-        if (gaze.bigShift && rng.nextFloat() < 0.3f) blink.request()
+        // Big eye jumps often carry a blink (people blink as they look somewhere new).
+        if (gaze.bigShift && rng.nextFloat() < 0.4f) blink.request(minGap = 0.9f)
 
         // ---- expression ----
         expr.want(currentExpressionTarget())
@@ -469,19 +553,22 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
         stage?.setCalm(stageId, calmLife && social == null && reaction == null && !drowsy)
 
+        // Blend toward the static rest pose (weight eased so it starts and lands softly).
+        val w = MotionDirector.easeInOutCubic(settle)
+        val keep = 1f - w
         frame = MotionFrame(
-            body = body,
-            headLookX = gaze.headX,
-            headLookY = gaze.headY,
-            leadX = (gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f,
-            leadY = (gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f,
-            lid = lid,
+            body = body.lerpTo(BodyPose.REST, w),
+            headLookX = gaze.headX * keep,
+            headLookY = gaze.headY * keep,
+            leadX = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep,
+            leadY = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep,
+            lid = lid + (1f - lid) * w,
             exprFrom = expr.from,
             exprTo = expr.to,
             exprT = expr.eased,
             lifecycle = director.lifecycle,
-            eyeGap = gapKnob,
-            eyeScale = scaleKnob,
+            eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
+            eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
             timeSec = time,
         )
     }
@@ -489,6 +576,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     // ----------------------------------------------------------- alive layer
 
     private fun currentExpressionTarget(): String {
+        if (!animate) return "Neutral"
         reaction?.let { return it }
         val life = director.lifecycle
         if (drowsy) return "Neutral"
@@ -661,16 +749,117 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         return Offset(me.windowW * 0.5f, me.windowH * 0.93f)
     }
 
+    // ------------------------------------------------------- composer (typing)
+
+    /** Where the caret roughly is: the bottom input, left → right as the line grows. */
+    private fun caretPoint(): Offset? {
+        val st = stage ?: return null
+        val me = st.entry(stageId) ?: return null
+        if (me.windowW <= 0f || me.windowH <= 0f) return null
+        val perLine = CARET_CHARS_PER_LINE
+        val frac = (st.composerLineLen % perLine) / perLine.toFloat()
+        return Offset(me.windowW * (0.12f + 0.76f * frac), me.windowH * 0.93f)
+    }
+
+    private fun startFollow(sec: Float) {
+        if (social != null || caretPoint() == null) return
+        followLeft = sec
+        attendedTypingAt = time
+    }
+
     private fun onTypingStarted() {
-        if (typingCooldown > 0f || rng.nextFloat() > 0.5f) return
-        typingCooldown = 6f
-        val at = windowBottom() ?: return
+        if (typingCooldown > 0f) return
+        val r = rng.nextFloat()
+        when {
+            // Now and then: read along while you type.
+            r < 0.14f -> {
+                typingCooldown = 8f
+                startFollow(2.5f + rng.nextFloat() * 2.5f)
+            }
+            // Often just a quick look down at the input.
+            r < 0.5f -> {
+                typingCooldown = 6f
+                val at = windowBottom() ?: return
+                val (gx, gy) = lookAt(at)
+                gaze.focus(gx, gy, 1.0f + rng.nextFloat() * 0.8f, priority = 2)
+                attendedTypingAt = time
+            }
+            // Otherwise, nothing at all.
+        }
+    }
+
+    /**
+     * Rare, quiet reactions to the composer: following the caret for a few seconds,
+     * one small curious tilt when a message gets long. Never more than one at once.
+     */
+    private fun typingUpdate(dt: Float, hints: AvatarMotionHints, nowMs: Long) {
+        val st = stage ?: return
+        if (followLeft > 0f) {
+            followLeft -= dt
+            val paused = nowMs - st.composerLastKeyMs > 1600L
+            if (!hints.isTyping || paused || followLeft <= 0f || social != null) {
+                followLeft = 0f
+                // Done reading along: drift back up, sometimes with a blink.
+                gaze.releaseFocus()
+                if (rng.nextFloat() < 0.3f) blink.request()
+            } else {
+                caretPoint()?.let { p ->
+                    val (gx, gy) = lookAt(p)
+                    gaze.focus(gx, gy, 0.35f, priority = 2)
+                }
+            }
+        }
+        if (!hints.isTyping) {
+            if (st.composerLen == 0) curiousDone = false
+            followCheckIn = 5f + rng.nextFloat() * 5f
+            return
+        }
+        // Mid-message: a slim chance to start reading along.
+        followCheckIn -= dt
+        if (followCheckIn <= 0f) {
+            followCheckIn = 6f + rng.nextFloat() * 8f
+            if (followLeft <= 0f && social == null && reaction == null && rng.nextFloat() < 0.1f) {
+                startFollow(2f + rng.nextFloat() * 2.5f)
+            }
+        }
+        // A long message: once per message, maybe, a small "oh, interesting" tilt.
+        val longMessage = st.composerLen > 160 ||
+            (st.composerBurstStartMs > 0L && nowMs - st.composerBurstStartMs > 20_000L)
+        if (!curiousDone && longMessage) {
+            curiousDone = true
+            if (rng.nextFloat() < 0.35f && social == null && followLeft <= 0f && reaction == null) {
+                caretPoint()?.let { p ->
+                    val (gx, gy) = lookAt(p)
+                    gaze.focus(gx, gy, 1.3f + rng.nextFloat() * 0.6f, priority = 2)
+                }
+                director.gesture(MotionDirector.Gesture.Tilt)
+                if (rng.nextFloat() < 0.45f) setReaction("Surprised", 0.55f)
+                attendedTypingAt = time
+            }
+        }
+    }
+
+    /** Message sent: sometimes a short look at it, a blink, a tiny pleased beat. */
+    private fun onMessageSent(e: AvatarStage.Event) {
+        if (social != null) return
+        if (followLeft > 0f) {
+            followLeft = 0f
+            gaze.releaseFocus()
+        }
+        val wasWatching = time - attendedTypingAt < 10f
+        if (rng.nextFloat() > if (wasWatching) 0.5f else 0.25f) return
+        val me = stage?.entry(stageId)
+        val at = e.at ?: me?.let { Offset(it.windowW * 0.72f, it.windowH * 0.8f) } ?: return
         val (gx, gy) = lookAt(at)
-        gaze.focus(gx, gy, 1.0f + rng.nextFloat() * 0.8f, priority = 2)
+        gaze.focus(gx, gy, 0.6f + rng.nextFloat() * 0.3f, priority = 2)
+        if (rng.nextFloat() < 0.5f) blink.request(minGap = 0.4f)
+        val calm = director.lifecycle == MarkLifecycle.Idle || director.lifecycle == MarkLifecycle.Listening
+        if (calm && reaction == null && rng.nextFloat() < 0.3f) setReaction("Happy", 0.7f)
+        eventCooldown = 6f
     }
 
     /** Returns true if any event arrived (counts as a stimulus). */
-    private fun processStageEvents(): Boolean {
+    private fun processStageEvents(live: Boolean): Boolean {
         val st = stage ?: return false
         if (lastEventSeq < 0L) {
             lastEventSeq = st.latestSeq
@@ -679,8 +868,13 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val evs = st.eventsAfter(lastEventSeq)
         if (evs.isEmpty()) return false
         lastEventSeq = evs.last().seq
+        if (!live) return false
         val calm = director.lifecycle == MarkLifecycle.Idle || director.lifecycle == MarkLifecycle.Listening
         for (e in evs) {
+            if (e.kind == AvatarStage.EventKind.MessageSent) {
+                onMessageSent(e)
+                continue
+            }
             if (!calm || social != null || eventCooldown > 0f) continue
             when (e.kind) {
                 AvatarStage.EventKind.MessageArrived -> if (rng.nextFloat() < 0.45f) {
@@ -694,6 +888,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     eventCooldown = 12f
                 }
                 AvatarStage.EventKind.UserTyping -> onTypingStarted()
+                AvatarStage.EventKind.MessageSent -> Unit
             }
         }
         return true
@@ -736,6 +931,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         setReaction("Surprised", 0.5f)
     }
 
+    private companion object {
+        const val SETTLE_OUT_SEC = 0.8f
+        const val SETTLE_IN_SEC = 0.6f
+        const val CARET_CHARS_PER_LINE = 34
+        val QUIET_HINTS = AvatarMotionHints()
+        val REST_FRAME = MotionFrame()
+    }
+
     private fun mapClipExpression(e: String): String? = when (e.lowercase()) {
         "neutral" -> "Neutral"
         "happy" -> "Happy"
@@ -751,6 +954,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     internal suspend fun run(hints: State<AvatarMotionHints>) {
         var last = withFrameNanos { it }
         while (true) {
+            if (isSettled) {
+                // Static and at rest: no frames at all until it should move again.
+                snapshotFlow { animate }.first { it }
+                last = withFrameNanos { it }
+            }
             withFrameNanos { now ->
                 val dt = ((now - last) / 1_000_000_000.0).toFloat()
                 last = now
@@ -767,6 +975,8 @@ fun rememberAvatarMotionState(
     hintsOverride: AvatarMotionHints? = null,
     /** False for Create Avatar calm tiles — no loops at all. */
     enabled: Boolean = true,
+    /** False = static (eases to rest, then stops); see [AvatarMotionState.animate]. */
+    animate: Boolean = true,
 ): AvatarMotionState {
     val local = LocalAvatarMotionHints.current
     val hints = (hintsOverride ?: local).let { base ->
@@ -779,7 +989,8 @@ fun rememberAvatarMotionState(
     // Hints flow through a State so a change never restarts (and never cancels
     // mid-blink / mid-glance) the motion loop — that restart was one of the hard cuts.
     val hintsState = rememberUpdatedState(hints)
-    val state = remember { AvatarMotionState() }
+    val state = remember { AvatarMotionState().also { if (!animate) it.startSettled() } }
+    SideEffect { state.animate = animate }
     LaunchedEffect(enabled) {
         if (!enabled) return@LaunchedEffect
         state.run(hintsState)

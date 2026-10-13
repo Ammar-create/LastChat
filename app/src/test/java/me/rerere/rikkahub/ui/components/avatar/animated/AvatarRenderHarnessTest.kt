@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -203,6 +204,24 @@ class AvatarRenderHarnessTest {
         }
     }
 
+    /** Every expression at rest on every picker shape (one strip per mode × shape). */
+    @Test
+    fun renderExpressionGallery() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val exprs = listOf(
+            "Neutral", "Happy", "Surprised", "Sad", "Eyes closed", "Bored",
+            "confused", "skeptical", "hurt or cute", "pouty", "angered or concentrated",
+        )
+        for (mode in listOf("grok", "generical")) {
+            for (shape in MarkShapes.SHAPES) {
+                stripCapture("gallery_${mode}_$shape", shape, mode, exprs.map { e ->
+                    MotionFrame(exprFrom = e, exprTo = e, exprT = 1f)
+                })
+            }
+        }
+    }
+
     /**
      * Live motion through lifecycle changes (idle → thinking → streaming → idle → typing),
      * sampled from the real [AvatarMotionState] with a fixed seed: every frame is the
@@ -319,6 +338,177 @@ class AvatarRenderHarnessTest {
                                     modifier = Modifier.size((cell * 0.8f).dp), debugFrame = fb)
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Swatch vs render: every eye swatch (both modes, two bodies) and every body swatch
+     * (both modes, plus the legacy "cyan + #009FE0" pair) as calm marks; the contact
+     * sheet script puts the swatch next to each render and checks the pixels.
+     */
+    @Test
+    fun renderColorSwatches() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val bodies = listOf("indigo" to "#7C5CFF", "orange" to "#FF781C")
+        for (mode in listOf("generical", "grok")) {
+            for ((bodyName, bodyHex) in bodies) {
+                for (eyeHex in eyeSwatches(mode)) {
+                    val isDefault = eyeHex.equals(MarkColors.defaultEyeHex(mode), true)
+                    capture("eyeswatch_${mode}_${bodyName}_${eyeHex.drop(1)}", 120, 120) {
+                        Box(Modifier.fillMaxSize().background(Color(0xFF14171C)), contentAlignment = Alignment.Center) {
+                            AnimatedMarkAvatar(
+                                shapeId = "blob", eyeType = mode, colorHex = bodyHex, colorPreset = bodyName,
+                                eyeColorHex = if (isDefault) null else eyeHex, isLoading = false,
+                                calmPreview = true, modifier = Modifier.size(104.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            val bodyCases = MarkColors.PRESETS.entries.map { Triple(it.key, it.value, it.key as String?) } +
+                Triple("legacycyan", "#009FE0", "cyan")
+            for ((tag, h, preset) in bodyCases) {
+                capture("bodyswatch_${mode}_$tag", 120, 120) {
+                    Box(Modifier.fillMaxSize().background(Color(0xFF14171C)), contentAlignment = Alignment.Center) {
+                        AnimatedMarkAvatar(
+                            shapeId = "square", eyeType = mode, colorHex = h, colorPreset = preset,
+                            isLoading = false, calmPreview = true, modifier = Modifier.size(104.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /** The default Generical mark, at profile size and chat size. */
+    @Test
+    fun renderDefaultGenerical() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val d = me.rerere.rikkahub.data.model.Avatar.Animated.defaultGenerical()
+        capture("default_generical", 220, 130) {
+            Row(Modifier.fillMaxSize().background(Color(0xFF14171C)), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(130.dp), contentAlignment = Alignment.Center) {
+                    AnimatedMarkAvatar(d.shape, d.eyeType, d.colorHex, false, colorPreset = d.colorPreset,
+                        eyeColorHex = d.eyeColorHex, calmPreview = true, modifier = Modifier.size(96.dp))
+                }
+                Box(Modifier.size(90.dp), contentAlignment = Alignment.Center) {
+                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                        name = "Generical", value = d, modifier = Modifier.size(36.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Chat column: older assistant / user turns are static, only the newest of each role
+     * moves. Rendered through the real UIAvatar + LocalAvatarAnimate, at the same clock.
+     */
+    @Test
+    fun renderChatNewestStrip() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val gen = me.rerere.rikkahub.data.model.Avatar.Animated.defaultGenerical()
+        val grok = me.rerere.rikkahub.data.model.Avatar.Animated(shape = "square", eyeType = "grok", colorHex = "#2A92FE", colorPreset = "blue")
+        for ((tag, av) in listOf("generical" to gen, "grok" to grok)) {
+            capture("chat_newest_$tag", 360, 330) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.fillMaxSize().background(Color(0xFF14171C)).padding(12.dp),
+                ) {
+                    for (i in 0 until 4) {
+                        val newest = i == 3
+                        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.runtime.CompositionLocalProvider(LocalAvatarAnimate provides newest) {
+                                me.rerere.rikkahub.ui.components.ui.UIAvatar(name = "A", value = av, modifier = Modifier.size(36.dp))
+                            }
+                            Box(
+                                Modifier.padding(start = 10.dp)
+                                    .size(width = (180 + 30 * (i % 2)).dp, height = 48.dp)
+                                    .background(if (newest) Color(0xFF2B3340) else Color(0xFF222831)),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Newest → older and back: real [AvatarMotionState], busy pose, then animate=false
+     * (eases to rest), then animate=true (eases back in). 0.1 s per frame.
+     */
+    @Test
+    fun renderSettleStrips() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        for ((mode, shape) in listOf("grok" to "blob", "generical" to "heart", "grok" to "square", "generical" to "blob")) {
+            val st = AvatarMotionState(Random(11))
+            val dt = 1f / 60f
+            var ms = 0L
+            var t = 0f
+            while (t < 3.4f) { st.tick(dt, AvatarMotionHints(isGenerating = true, hasStreamedTokens = t > 1.5f), ms); ms += 16; t += dt }
+            val out = ArrayList<MotionFrame>()
+            val log = StringBuilder()
+            fun run(sec: Float, hints: AvatarMotionHints) {
+                var u = 0f
+                var next = 0f
+                while (u < sec) {
+                    if (u >= next) {
+                        out += st.frame
+                        val f = st.frame
+                        log.append("%.2f anim=%s settled=%s y=%.1f p=%.1f r=%.1f s=%.3f lid=%.2f %s->%s %.2f look=(%.2f,%.2f)\n".format(
+                            out.size * 0.1f, st.animate, st.isSettled, f.body.yaw, f.body.pitch, f.body.roll, f.body.scale,
+                            f.lid, f.exprFrom, f.exprTo, f.exprT, f.headLookX, f.headLookY))
+                        next += 0.1f
+                    }
+                    st.tick(dt, hints, ms); ms += 16; u += dt
+                }
+            }
+            st.animate = false
+            run(1.2f, AvatarMotionHints(isGenerating = true, hasStreamedTokens = true))
+            run(0.4f, AvatarMotionHints())
+            st.animate = true
+            run(1.6f, AvatarMotionHints())
+            File(outDir, "settle_${mode}_$shape.txt").writeText(log.toString())
+            out.chunked(16).forEachIndexed { i, row ->
+                stripCapture("settle_${mode}_${shape}_$i", shape, mode, row, cellDp = 80)
+            }
+        }
+    }
+
+    /** Side drawer: expanded bottom pill + collapsed rail button with animated marks. */
+    @Test
+    fun renderSidePanelButtons() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val gen = me.rerere.rikkahub.data.model.Avatar.Animated.defaultGenerical()
+        val grok = me.rerere.rikkahub.data.model.Avatar.Animated(shape = "star", eyeType = "grok", colorHex = "#FF781C", colorPreset = "orange")
+        capture("side_panel", 360, 200) {
+            Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.size(width = 80.dp, height = 200.dp).background(Color(0xFF1B1F26)),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
+                ) {
+                    me.rerere.rikkahub.ui.pages.chat.DrawerRailAssistantButton("Generical", gen, onClick = {})
+                    me.rerere.rikkahub.ui.pages.chat.DrawerRailAssistantButton("Star", grok, onClick = {})
+                }
+                androidx.compose.foundation.layout.Column(
+                    Modifier.size(width = 280.dp, height = 200.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
+                ) {
+                    for ((n, a) in listOf("Generical" to gen, "Star" to grok)) {
+                        me.rerere.rikkahub.ui.pages.chat.DrawerAssistantPill(
+                            assistantName = n, avatar = a,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            avatarSize = 30.dp, onNameClick = {}, onAvatarClick = {},
+                            modifier = Modifier.padding(horizontal = 8.dp).size(width = 260.dp, height = 42.dp),
+                        )
                     }
                 }
             }

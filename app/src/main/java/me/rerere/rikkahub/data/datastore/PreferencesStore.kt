@@ -162,6 +162,7 @@ class SettingsStore(
     // One-time migration flags
     private var hasPersistedLegacyModeMigration = false
     private var hasPersistedLegacySummarizerMigration = false
+    private var hasPersistedGenericalAvatarMigration = false
 
     val settingsFlowRaw = dataStore.data
         .catch { exception ->
@@ -372,6 +373,18 @@ class SettingsStore(
             migrated.normalizeFontSettings()
         }
         .map { settings ->
+            val migrated = settings.migrateGenericalDefaultAvatar()
+            if (!hasPersistedGenericalAvatarMigration) {
+                hasPersistedGenericalAvatarMigration = true
+                if (migrated != settings) {
+                    scope.launch(Dispatchers.IO) {
+                        persistAssistantsMigration(migrated)
+                    }
+                }
+            }
+            migrated
+        }
+        .map { settings ->
             val migrated = settings.migrateLegacyModesToSkills()
             if (!hasPersistedLegacyModeMigration) {
                 hasPersistedLegacyModeMigration = true
@@ -436,6 +449,15 @@ class SettingsStore(
             preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
             preferences[MODES] = JsonInstant.encodeToString(settings.modes)
             preferences[SKILLS] = JsonInstant.encodeToString(settings.skills)
+        }
+    }
+
+    /**
+     * Persist the one-time Generical default avatar migration.
+     */
+    private suspend fun persistAssistantsMigration(settings: Settings) {
+        dataStore.edit { preferences ->
+            preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
         }
     }
 

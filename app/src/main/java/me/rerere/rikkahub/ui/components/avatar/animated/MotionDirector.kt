@@ -7,6 +7,15 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
+/** Procedural motion that is gentle throughout: a busy phase may hand over any time. */
+class CalmProceduralSource(
+    override val name: String,
+    override val duration: Float,
+    private val fn: (Float) -> BodyPose,
+) : MotionSource {
+    override fun pose(t: Float): BodyPose = fn((t / duration).coerceIn(0f, 1f))
+}
+
 /**
  * One body pose. Rotation in degrees (pitch: + looks down, yaw: + looks right, roll),
  * posY = clip bob (desktop units), squash per axis, scale relative to rest size
@@ -298,6 +307,7 @@ class MotionDirector(
     fun update(dtIn: Float): BodyPose {
         val dt = dtIn.coerceIn(0f, 0.1f)
         lifeSec += dt
+        clock += dt
         clipBlink = false
         stackChanged = false
         handOverDelta = 0f
@@ -417,10 +427,7 @@ class MotionDirector(
             MarkLifecycle.Listening -> if (rng.nextFloat() < 0.65f || lastKind() != "hold") {
                 hold("listen", BodyPose(pitch = range(2f, 5f), yaw = gauss(3f), roll = gauss(2f)), range(2f, 5f), fade)
             } else clipBeat("Idle_B", 0.3f, 0.5f, fade, "idleB") ?: hold("listen", BodyPose(pitch = 3f), 3f, fade)
-            MarkLifecycle.Thinking -> busyBeat(listOf("Working_C", "Working_D"), 0.5f, 0.8f, 0.25f, fade)
-            MarkLifecycle.Working -> busyBeat(listOf("Working_A", "Working_B", "Working_C", "Working_D", "Working_F"), 0.55f, 0.85f, 0.15f, fade)
-            // Streaming_C is a 0.3 s whip-spin — too loud next to text that is arriving.
-            MarkLifecycle.Streaming -> busyBeat(listOf("Streaming_A", "Idle_B"), 0.4f, 0.7f, 0.25f, fade)
+            MarkLifecycle.Thinking, MarkLifecycle.Working, MarkLifecycle.Streaming -> busyBeat(life, fade)
             MarkLifecycle.Finished -> clipBeat(if (rng.nextBoolean()) "Done_A" else "Done_C", 0.4f, 0.55f, fade, "done")
                 ?: idleBeat(fade)
             MarkLifecycle.Failed -> clipBeat(if (lastKind() == "blocked") "Blocked_B" else "Blocked_A", 0.6f, 0.8f, fade, "blocked")
@@ -465,15 +472,171 @@ class MotionDirector(
             range(1.8f, 5.5f), fade)
     }
 
-    private fun busyBeat(names: List<String>, ampMin: Float, ampMax: Float, holdChance: Float, fade: Float): Layer {
-        if (lastKind() != "hold" && rng.nextFloat() < holdChance) {
-            return hold("focus", BodyPose(pitch = range(2f, 6f), yaw = gauss(5f), roll = gauss(3f)), range(0.8f, 1.8f), fade)
+    // ------------------------------------------------------------ busy repertoire
+    //
+    // No authored Working/Streaming clips any more: their slow side-to-side sway was
+    // the one thing that read as a loop. A busy phase is a stream of small, distinct
+    // beats picked by weighted chance with per-kind cooldowns, each with its own
+    // random size, side, timing and fade, so nothing lines up into a rhythm.
+
+    /** A look the body beat would like the eyes to make (consumed by the motion state). */
+    data class GazeCue(val x: Float, val y: Float, val holdSec: Float)
+
+    /** Set when a beat starts that wants the eyes somewhere; cleared on read. */
+    var gazeCue: GazeCue? = null
+        private set
+
+    fun takeGazeCue(): GazeCue? = gazeCue.also { gazeCue = null }
+
+    private val lastUsed = HashMap<String, Float>()
+    private var clock = 0f
+    /** Turn side we are currently on (beats prefer to go somewhere new). */
+    private var lastSide = 0f
+
+    private fun ago(kind: String) = clock - (lastUsed[kind] ?: -1000f)
+
+    private fun busyBeat(life: MarkLifecycle, fade: Float): Layer {
+        val busyFor = lifeSec
+        val last = lastKind()
+        // Base weights per phase; cooldowns scale them down after use.
+        val base: List<Pair<String, Float>> = when (life) {
+            MarkLifecycle.Thinking -> listOf(
+                "turn" to 0.22f, "lookAround" to 0.2f, "ponder" to 0.2f, "pause" to 0.16f,
+                "tilt" to 0.12f, "nod" to 0.05f, "pill" to 0.05f,
+            )
+            MarkLifecycle.Streaming -> listOf(
+                "read" to 0.28f, "turn" to 0.16f, "pause" to 0.18f, "nod" to 0.1f,
+                "tilt" to 0.1f, "lookAround" to 0.12f, "bob" to 0.06f,
+            )
+            else -> listOf(
+                "turn" to 0.24f, "lookAround" to 0.18f, "pause" to 0.13f, "ponder" to 0.1f,
+                "tilt" to 0.1f, "nod" to 0.07f, "pill" to 0.1f, "bob" to 0.06f, "spin" to 0.02f,
+            )
         }
-        val pool = names.filter { it !in MarkClipEngine.brandStareClips && clipLookup(it) != null }
-        val fresh = pool.filter { it != recentClips.lastOrNull() }.ifEmpty { pool }
-        if (fresh.isEmpty()) return hold("focus", BodyPose(pitch = 4f), 1.5f, fade)
-        val name = fresh[rng.nextInt(fresh.size)]
-        return clipBeat(name, ampMin, ampMax, fade, "busy") ?: hold("focus", BodyPose(pitch = 4f), 1.5f, fade)
+        val cool = mapOf(
+            "turn" to 3f, "lookAround" to 7f, "ponder" to 9f, "pause" to 2f, "tilt" to 6f,
+            "nod" to 8f, "pill" to 14f, "read" to 3f, "bob" to 12f, "spin" to 45f,
+        )
+        val opts = base.mapNotNull { (k, w) ->
+            if (k == last && k != "pause") return@mapNotNull null
+            if (k == "spin" && (busyFor < 6f || ago("spin") < 45f)) return@mapNotNull null
+            // The activity pill only gets attention once the work has run a while.
+            if (k == "pill" && busyFor < 5f) return@mapNotNull null
+            val c = cool[k] ?: 3f
+            val a = ago(k)
+            val f = if (a >= c) 1f else (a / c).coerceIn(0.05f, 1f)
+            // Two pauses in a row are fine now and then, three never.
+            val extra = if (k == "pause" && recentKinds.takeLast(2).all { it == "pause" }) 0f else 1f
+            (k to w * f * f * extra).takeIf { it.second > 0f }
+        }.ifEmpty { listOf("pause" to 1f) }
+        val kind = weighted(opts)
+        lastUsed[kind] = clock
+        val side = pickSide()
+        val layer = when (kind) {
+            "turn" -> {
+                // A real turn: ease to an angle, settle there a moment.
+                val yaw = side * range(12f, 30f)
+                val p = BodyPose(pitch = range(-1f, 4f), yaw = yaw, roll = -side * range(0f, 4f))
+                gazeCue = GazeCue(side * range(0.3f, 0.7f), range(-0.05f, 0.25f), range(0.6f, 1.6f))
+                hold("turn", p, logRange(0.9f, 3.2f), range(0.55f, 1.1f), kind = "turn")
+            }
+            "lookAround" -> keyframed("lookAround", fade) {
+                // 2–4 stops at irregular places and irregular times.
+                val stops = 2 + rng.nextInt(3)
+                var s = side
+                List(stops) {
+                    s = if (rng.nextFloat() < 0.7f) -s else s
+                    BodyPose(pitch = range(-1f, 6f), yaw = s * range(5f, 24f), roll = gauss(2.5f)) to logRange(0.5f, 1.7f)
+                }
+            }
+            "ponder" -> {
+                // Thoughtful: head a little up and to the left (never up-right), eyes away.
+                val p = BodyPose(pitch = -range(1f, 4f), yaw = -range(6f, 16f), roll = range(3f, 8f))
+                gazeCue = GazeCue(-range(0.35f, 0.65f), -range(0.05f, 0.25f), range(1f, 2.2f))
+                hold("ponder", p, logRange(1.4f, 3.4f), range(0.8f, 1.3f), kind = "ponder")
+            }
+            "tilt" -> hold("tiltB", BodyPose(pitch = range(0f, 3f), yaw = side * range(2f, 8f), roll = side * range(5f, 10f)),
+                logRange(1f, 2.6f), range(0.6f, 1f), kind = "tilt")
+            "pill" -> {
+                // Glance down-right at the activity pill / timeline, as if checking on it.
+                val p = BodyPose(pitch = range(6f, 11f), yaw = range(4f, 12f), roll = -range(0f, 3f))
+                gazeCue = GazeCue(range(0.15f, 0.45f), range(0.45f, 0.7f), range(1.2f, 2.2f))
+                hold("pill", p, logRange(1.2f, 2.6f), range(0.6f, 0.95f), kind = "pill")
+            }
+            "read" -> {
+                // Following the text as it arrives: down, drifting along a line or two.
+                val y0 = range(6f, 10f)
+                gazeCue = GazeCue(range(-0.1f, 0.35f), range(0.35f, 0.55f), range(1f, 2f))
+                keyframed("read", range(0.5f, 0.8f)) {
+                    var x = range(-6f, -1f)
+                    List(1 + rng.nextInt(3)) {
+                        x += range(3f, 9f)
+                        BodyPose(pitch = y0 + gauss(1f), yaw = x, roll = gauss(1.5f)) to logRange(0.6f, 1.6f)
+                    }
+                }
+            }
+            "nod" -> {
+                val d = range(0.6f, 0.95f)
+                val deep = range(4f, 8f)
+                val twice = rng.nextFloat() < 0.35f
+                Layer(ProceduralSource("nodB", d * if (twice) 1.6f else 1f) { u ->
+                    val k = if (twice) sin(PI.toFloat() * 2f * u).let { it * it } * (1f - 0.4f * u) else sin(PI.toFloat() * u).let { it * it }
+                    BodyPose(pitch = deep * k, yaw = side * 2f)
+                }, 0f, d * if (twice) 1.6f else 1f, 1f, 0.25f, "nod")
+            }
+            "bob" -> {
+                // A small "got it" bounce (squash, not a size change).
+                val d = range(0.55f, 0.8f)
+                Layer(ProceduralSource("bob", d) { u ->
+                    val k = sin(PI.toFloat() * u)
+                    BodyPose(posY = -0.03f * k, squashX = 1f - 0.03f * k, squashY = 1f + 0.03f * k, pitch = -2f * k)
+                }, 0f, d, 1f, 0.2f, "bob")
+            }
+            "spin" -> {
+                val d = range(1.4f, 1.9f)
+                Layer(ProceduralSource("spinB", d) { u ->
+                    val e = easeInOutCubic(u)
+                    BodyPose(pitch = sin(PI.toFloat() * u) * 3f, yaw = side * 360f * e, roll = -side * sin(PI.toFloat() * u) * 4f)
+                }, 0f, d, 1f, 0.35f, "spin")
+            }
+            else -> hold("pause", BodyPose(pitch = range(0f, 4f), yaw = gauss(3f).coerceIn(-6f, 6f), roll = gauss(2f).coerceIn(-4f, 4f)),
+                logRange(0.6f, 2.8f), range(0.7f, 1.3f), kind = "pause")
+        }
+        return layer
+    }
+
+    /** Prefer the other side, but not always (a run of same-side beats is natural too). */
+    private fun pickSide(): Float {
+        val s = if (lastSide == 0f) (if (rng.nextBoolean()) 1f else -1f)
+        else if (rng.nextFloat() < 0.68f) -lastSide else lastSide
+        lastSide = s
+        return s
+    }
+
+    /** Log-uniform: short values common, long ones possible. */
+    private fun logRange(a: Float, b: Float): Float =
+        (kotlin.math.ln(a) + (kotlin.math.ln(b) - kotlin.math.ln(a)) * rng.nextFloat()).let { kotlin.math.exp(it) }
+
+    /**
+     * Stops reached with eased moves and held; total length is the sum. Moves take a
+     * random 35–55 % of each segment so the pace keeps changing.
+     */
+    private fun keyframed(name: String, fade: Float, build: () -> List<Pair<BodyPose, Float>>): Layer {
+        val stops = build()
+        val starts = FloatArray(stops.size)
+        val moveFrac = FloatArray(stops.size) { range(0.35f, 0.55f) }
+        var acc = 0f
+        for (i in stops.indices) { starts[i] = acc; acc += stops[i].second }
+        val total = acc
+        val src = CalmProceduralSource(name, total) { u ->
+            val t = u * total
+            val i = (0 until stops.size).lastOrNull { starts[it] <= t } ?: 0
+            val from = if (i == 0) stops[0].first else stops[i - 1].first
+            val seg = stops[i].second
+            val k = ((t - starts[i]) / (seg * moveFrac[i])).coerceIn(0f, 1f)
+            if (i == 0) stops[0].first else from.lerpTo(stops[i].first, smootherstep(k))
+        }
+        return Layer(src, 0f, total, 1f, fade, name)
     }
 
     private fun clipBeat(

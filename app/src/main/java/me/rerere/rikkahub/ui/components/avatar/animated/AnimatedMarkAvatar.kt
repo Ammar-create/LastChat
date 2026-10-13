@@ -13,6 +13,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -44,6 +45,11 @@ fun AnimatedMarkAvatar(
     /** Null = mode default eye color. */
     eyeColorHex: String? = null,
     calmPreview: Boolean = false,
+    /**
+     * False = static (older chat messages): eases to the rest pose and stops; flipping
+     * back to true eases into motion again. Ignored for calm previews / harness frames.
+     */
+    animate: Boolean = true,
     modifier: Modifier = Modifier,
     /** Render-harness hook: freeze the live path at this clip pose. Null in the app. */
     debugPose: ClipSample? = null,
@@ -55,26 +61,18 @@ fun AnimatedMarkAvatar(
     runCatching { AvatarPackData.ensureLoaded(context) }
 
     val frozen = calmPreview || debugPose != null || debugFrame != null
+    val live = animate && !frozen
     val motionState = rememberAvatarMotionState(
         isLoading = if (frozen) false else isLoading,
         isTyping = if (frozen) false else isTyping,
         enabled = !frozen,
+        animate = live,
     )
     val isGrok = eyeType.equals("grok", ignoreCase = true)
-    val baseColor = MarkColors.resolveFill(colorHex, colorPreset)
-    val customEye = eyeColorHex?.takeIf { it.isNotBlank() }?.let { MarkColors.hexToColor(it) }
-    val genericalTint = customEye ?: MarkColors.deriveGenericalEyeTint(
-        if (colorPreset.equals("cyan", ignoreCase = true) ||
-            MarkColors.normalizeHex(colorHex).equals(MarkColors.DEFAULT_GENERICAL_HEX, true)
-        ) MarkColors.hexToColor(MarkColors.DEFAULT_GENERICAL_HEX)
-        else baseColor
-    )
-    val grokEyeFill = customEye ?: MarkColors.grokEyeFill(colorPreset, colorHex)
-    val genericalBody = when {
-        colorPreset.equals("cyan", ignoreCase = true) -> MarkColors.hexToColor(MarkColors.DEFAULT_GENERICAL_HEX)
-        colorHex.isNotBlank() -> MarkColors.hexToColor(colorHex)
-        else -> MarkColors.hexToColor(MarkColors.DEFAULT_GENERICAL_HEX)
-    }
+    // Swatch colour == rendered colour (see MarkColors).
+    val bodyColor = MarkColors.bodyColor(colorHex, colorPreset, eyeType)
+    val eyeColor = MarkColors.eyeColor(eyeType, eyeColorHex, colorHex, colorPreset)
+    val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor)
 
     // Shape swap (editor) gets a soft settle; first appearance never pops in size.
     val morphAnim = remember { Animatable(1f) }
@@ -90,6 +88,7 @@ fun AnimatedMarkAvatar(
     val stage = LocalAvatarStage.current
     val view = LocalView.current
     val stageId = remember { stage.newId() }
+    val liveNow = rememberUpdatedState(live)
     if (!frozen) {
         motionState.stage = stage
         motionState.stageId = stageId
@@ -98,26 +97,34 @@ fun AnimatedMarkAvatar(
         }
     }
     val signature = "$shapeId|${eyeType.lowercase()}"
+    val lastBounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+    fun register() {
+        val b = lastBounds[0]
+        if (!liveNow.value || b == null || b.width <= 0f || b.height <= 0f) {
+            stage.remove(stageId)
+            return
+        }
+        val root = view.rootView
+        stage.update(
+            id = stageId,
+            windowKey = System.identityHashCode(root),
+            center = b.center,
+            radius = minOf(b.width, b.height) / 2f,
+            signature = signature,
+            windowW = root.width.toFloat(),
+            windowH = root.height.toFloat(),
+        )
+    }
+    // Static avatars are not on the stage (nobody glances at a statue); when one comes
+    // alive again it re-registers right away, not on the next layout pass.
+    if (!frozen) LaunchedEffect(live) { register() }
 
     var boxModifier = modifier
     if (!frozen) {
         boxModifier = boxModifier
             .onGloballyPositioned { coords ->
-                val b = coords.boundsInWindow()
-                if (b.width > 0f && b.height > 0f) {
-                    val root = view.rootView
-                    stage.update(
-                        id = stageId,
-                        windowKey = System.identityHashCode(root),
-                        center = b.center,
-                        radius = minOf(b.width, b.height) / 2f,
-                        signature = signature,
-                        windowW = root.width.toFloat(),
-                        windowH = root.height.toFloat(),
-                    )
-                } else {
-                    stage.remove(stageId)
-                }
+                lastBounds[0] = coords.boundsInWindow()
+                register()
             }
             .pointerInput(Unit) {
                 // Observe pokes without consuming, so parent click handlers still work.
@@ -145,16 +152,15 @@ fun AnimatedMarkAvatar(
                 f = f,
                 calm = calmPreview,
                 morph = if (frozen) 1f else morphAnim.value,
-                grokBody = baseColor,
-                grokEye = grokEyeFill,
-                genericalBody = genericalBody,
-                genericalTint = genericalTint,
+                body = bodyColor,
+                eye = eyeColor,
+                eyeFade = eyeFade,
             )
         }
     }
 }
 
-private val CALM_FRAME = MotionFrame()
+internal val CALM_FRAME = MotionFrame()
 
 /** Harness: a raw clip pose as a frame (expression from the clip, eyes open). */
 private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
@@ -172,17 +178,16 @@ private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
     exprTo = ExpressionDirector.normalize(c.expression),
 )
 
-private fun DrawScope.drawMark(
+internal fun DrawScope.drawMark(
     shape: GrokShape,
     shapeId: String,
     isGrok: Boolean,
     f: MotionFrame,
     calm: Boolean,
     morph: Float,
-    grokBody: Color,
-    grokEye: Color,
-    genericalBody: Color,
-    genericalTint: Color,
+    body: Color,
+    eye: Color,
+    eyeFade: Color,
 ) {
     val he = AvatarPackData.grok.headCenter
     val bodyRaw = AvatarPackData.parseSvgPath(shape.pathData)
@@ -216,7 +221,7 @@ private fun DrawScope.drawMark(
     Soft3DMark.drawBody(
         drawScope = this,
         bodyPath = bodyCentered,
-        fill = if (isGrok) grokBody else genericalBody,
+        fill = body,
         solid = shape.solid,
         clip = clip,
         gazeX = 0f,
@@ -267,14 +272,14 @@ private fun DrawScope.drawMark(
         }
         if (lid >= 0.07f) {
             Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
-                if (ok(left)) drawPath(left, grokEye)
-                if (ok(right)) drawPath(right, grokEye)
+                if (ok(left)) drawPath(left, eye)
+                if (ok(right)) drawPath(right, eye)
             }
         }
         return
     }
 
-    // Generical: morph → seat on the surface → gradient fill + white outline.
+    // Generical: morph → seat on the surface → eye-colour fill fading into the surface tint.
     val closure = (1f - lid).coerceIn(0f, 1f)
     val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
     val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
@@ -295,8 +300,8 @@ private fun DrawScope.drawMark(
         rollDeg = roll,
     )
     val drawEyes: DrawScope.() -> Unit = {
-        le?.let { GenericalSeat.draw(this, it, genericalTint, he) }
-        re?.let { GenericalSeat.draw(this, it, genericalTint, he) }
+        le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }
+        re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }
     }
     if (calm) {
         Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false, drawEyes)

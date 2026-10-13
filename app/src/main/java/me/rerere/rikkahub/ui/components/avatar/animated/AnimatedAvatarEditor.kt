@@ -60,18 +60,19 @@ fun AnimatedAvatarEditor(
     onDismiss: () -> Unit,
     onSave: (Avatar.Animated) -> Unit,
 ) {
-    val initialShape = initialAvatar?.shape ?: "blob"
+    val start = initialAvatar ?: Avatar.Animated.defaultGenerical()
+    val initialShape = start.shape
     var shape by remember {
         mutableStateOf(
             if (initialShape == "teardrop" || initialShape == "droplet") "blob"
             else initialShape
         )
     }
-    var eyeType by remember { mutableStateOf(initialAvatar?.eyeType ?: "generical") }
-    var colorHex by remember { mutableStateOf(initialAvatar?.colorHex ?: MarkColors.DEFAULT_GENERICAL_HEX) }
-    var colorPreset by remember {
-        mutableStateOf<String?>(initialAvatar?.colorPreset ?: "cyan")
-    }
+    var eyeType by remember { mutableStateOf(start.eyeType) }
+    // Canonical pair: the selected swatch is exactly the colour on screen.
+    val startBody = remember { MarkColors.canonicalBody(start.colorHex, start.colorPreset, start.eyeType) }
+    var colorHex by remember { mutableStateOf(startBody.first) }
+    var colorPreset by remember { mutableStateOf(startBody.second) }
     var eyeColorHex by remember { mutableStateOf(initialAvatar?.eyeColorHex) }
     var showColorPicker by remember { mutableStateOf(false) }
     var showEyeColorPicker by remember { mutableStateOf(false) }
@@ -89,7 +90,7 @@ fun AnimatedAvatarEditor(
     }
     if (showEyeColorPicker) {
         CustomThemeColorDialog(
-            initialHex = eyeColorHex ?: MarkColors.DEFAULT_GENERICAL_EYE_TINT,
+            initialHex = eyeColorHex ?: MarkColors.defaultEyeHex(eyeType),
             onDismiss = { showEyeColorPicker = false },
             onSave = { hex ->
                 eyeColorHex = MarkColors.normalizeHex(hex)
@@ -136,13 +137,11 @@ fun AnimatedAvatarEditor(
 }
 
 /** Mode default eye color (what `eyeColorHex == null` renders as). */
-internal fun defaultEyeHex(eyeType: String): String =
-    if (eyeType.equals("grok", true)) "#1A1A1A" else MarkColors.DEFAULT_GENERICAL_EYE_TINT
+internal fun defaultEyeHex(eyeType: String): String = MarkColors.defaultEyeHex(eyeType)
 
 /**
- * Eye-colour swatches without duplicates. The mode default is one of the presets
- * (Generical #87D2E9 = sky, Grok #1A1A1A = ink); polish3 prepended it as an extra
- * swatch, so light blue / black showed twice.
+ * Eye-colour swatches, mode default first, no duplicates (Generical default = white,
+ * Grok default = ink; both are presets too).
  */
 internal fun eyeSwatches(eyeType: String): List<String> {
     val def = defaultEyeHex(eyeType).uppercase()
@@ -237,8 +236,11 @@ internal fun AnimatedAvatarEditorContent(
                                 .clip(CircleShape)
                                 .background(color)
                                 .then(
-                                    if (color.luminance() < 0.08f) Modifier.border(1.dp, Color(0x33FFFFFF), CircleShape)
-                                    else Modifier
+                                    when {
+                                        color.luminance() < 0.08f -> Modifier.border(1.dp, Color(0x33FFFFFF), CircleShape)
+                                        color.luminance() > 0.9f -> Modifier.border(1.dp, Color(0x33000000), CircleShape)
+                                        else -> Modifier
+                                    }
                                 )
                                 // Picking the mode default stores null so it tracks the mode.
                                 .clickable { onEyeColor(if (isDefault) null else hex) },
@@ -290,7 +292,7 @@ internal fun AnimatedAvatarEditorContent(
                 ) {
                     MarkColors.PRESETS.forEach { (name, hex) ->
                         val color = MarkColors.hexToColor(hex)
-                        val selected = colorPreset == name || colorHex.equals(hex, ignoreCase = true)
+                        val selected = colorPreset == name
                         Box(
                             modifier = Modifier
                                 .size(36.dp)

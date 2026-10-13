@@ -4,11 +4,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 
+/**
+ * Mark colours. One rule everywhere: what a swatch shows is what the mark renders.
+ *
+ *  - Body: the preset hex (or the custom hex) is the flat body fill, in both eye modes.
+ *  - Grok eyes: the eye colour is the capsule fill.
+ *  - Generical eyes: the eye colour fills the eye and its outline (the part that used
+ *    to be fixed white); the soft fade toward the bottom of each eye is the body
+ *    surface showing through, so it follows the body colour.
+ */
 object MarkColors {
-    /**
-     * Persona fills from babygrok-geometry / mark-export colors.json (light theme).
-     * Generical default body stays #009FE0 (designer pick), separate from Grok cyan #1CC3B0.
-     */
+    /** Body swatches, in picker order. */
     val PRESETS = linkedMapOf(
         "black" to "#000000",
         "brown" to "#A27952",
@@ -17,20 +23,28 @@ object MarkColors {
         "yellow" to "#FFAF38",
         "green" to "#00C972",
         "cyan" to "#1CC3B0",
+        // The Generical blue — its own swatch (it used to hide behind "cyan").
+        "azure" to "#009FE0",
         "blue" to "#2A92FE",
+        // Default Generical body.
+        "indigo" to "#7C5CFF",
         "violet" to "#A97EFE",
         "magenta" to "#FF5EB1",
         "gray" to "#959595",
     )
 
-    const val DEFAULT_GENERICAL_HEX = "#009FE0"
-    const val DEFAULT_GENERICAL_EYE_TINT = "#87D2E9"
+    const val GENERICAL_BLUE_HEX = "#009FE0"
+    const val DEFAULT_GENERICAL_BODY_HEX = "#7C5CFF"
+    const val DEFAULT_GENERICAL_BODY_PRESET = "indigo"
 
-    /** Shared eye-color swatches for Grok + Generical customization. */
+    /** Mode default eye colours (what `eyeColorHex == null` renders as). */
+    const val DEFAULT_GENERICAL_EYE_HEX = "#FFFFFF"
+    const val DEFAULT_GROK_EYE_HEX = "#1A1A1A"
+
+    /** Eye swatches shared by Grok + Generical (mode default is listed first by the editor). */
     val EYE_PRESETS = linkedMapOf(
-        "default" to "",  // mode default
         "ink" to "#1A1A1A",
-        "white" to "#F5F5F5",
+        "white" to "#FFFFFF",
         "sky" to "#87D2E9",
         "mint" to "#7EE0C8",
         "gold" to "#FFD27A",
@@ -56,6 +70,43 @@ object MarkColors {
         return if (trimmed.startsWith("#")) trimmed else "#$trimmed"
     }
 
+    /**
+     * Saved body colour → (hex, preset) as the editor and renderer should see it.
+     * Older builds stored the Generical blue as `preset = "cyan", hex = #009FE0`:
+     * Generical mode rendered it blue while the selected swatch was teal (Grok mode
+     * rendered it teal). Keep what each mode actually showed: in Generical mode that
+     * pair is the "azure" swatch now; a real cyan pick (`#1CC3B0`) stays cyan.
+     */
+    fun canonicalBody(colorHex: String?, colorPreset: String?, eyeType: String = "generical"): Pair<String, String?> {
+        val hex = colorHex?.takeIf { it.isNotBlank() }?.let { normalizeHex(it).uppercase() }
+        val preset = colorPreset?.lowercase()?.takeIf { it in PRESETS }
+        val generical = !eyeType.equals("grok", true)
+        return when {
+            generical && preset == "cyan" && (hex == null || hex == GENERICAL_BLUE_HEX) -> GENERICAL_BLUE_HEX to "azure"
+            preset != null -> PRESETS.getValue(preset) to preset
+            hex != null -> hex to PRESETS.entries.firstOrNull { it.value.equals(hex, true) }?.key
+            else -> GENERICAL_BLUE_HEX to "azure"
+        }
+    }
+
+    /** Flat body fill — identical to the swatch, in both eye modes. */
+    fun bodyColor(colorHex: String?, colorPreset: String?, eyeType: String = "generical"): Color =
+        hexToColor(canonicalBody(colorHex, colorPreset, eyeType).first)
+
+    fun defaultEyeHex(eyeType: String): String =
+        if (eyeType.equals("grok", true)) DEFAULT_GROK_EYE_HEX else DEFAULT_GENERICAL_EYE_HEX
+
+    /** The colour the eyes are drawn with (custom pick or the mode default). */
+    fun eyeColor(eyeType: String, eyeColorHex: String?, colorHex: String?, colorPreset: String?): Color {
+        eyeColorHex?.takeIf { it.isNotBlank() }?.let { return hexToColor(it) }
+        return if (eyeType.equals("grok", true)) {
+            grokEyeFill(canonicalBody(colorHex, colorPreset, eyeType).second, colorHex.orEmpty())
+        } else {
+            hexToColor(DEFAULT_GENERICAL_EYE_HEX)
+        }
+    }
+
+    /** Pastel of the body colour: light bouncing off the surface into the eye. */
     fun deriveGenericalEyeTint(baseColor: Color): Color {
         val hsl = FloatArray(3)
         ColorUtils.colorToHSL(baseColor.toArgb(), hsl)
@@ -64,20 +115,22 @@ object MarkColors {
         return Color(ColorUtils.HSLToColor(hsl))
     }
 
+    /**
+     * Bottom of the Generical eye fade: the eye colour filtered by the body's surface
+     * tint (multiply). With the default white eye this is exactly the old fade.
+     */
+    fun genericalEyeFade(body: Color, eye: Color): Color {
+        val surface = shade(deriveGenericalEyeTint(body), 0.82f)
+        return Color(
+            red = eye.red * surface.red,
+            green = eye.green * surface.green,
+            blue = eye.blue * surface.blue,
+            alpha = 1f,
+        )
+    }
+
     fun presetHexOrNull(name: String?): String? =
         name?.lowercase()?.let { PRESETS[it] }
-
-    /** Resolve fill: prefer named persona gradient light fill when preset matches. */
-    fun resolveFill(colorHex: String, colorPreset: String?): Color {
-        val fromPreset = colorPreset?.lowercase()?.let { key ->
-            if (AvatarPackData.isLoaded()) {
-                AvatarPackData.grok.gradients[key]?.light ?: PRESETS[key]
-            } else {
-                PRESETS[key]
-            }
-        }
-        return hexToColor(fromPreset ?: colorHex)
-    }
 
     fun shade(color: Color, mul: Float): Color {
         return Color(
@@ -88,7 +141,7 @@ object MarkColors {
         )
     }
 
-    /** Black persona uses inverted eye fill (light theme → near-black slits). */
+    /** Black body uses inverted eye fill (light theme → near-black slits). */
     fun grokEyeFill(colorPreset: String?, colorHex: String, darkTheme: Boolean = false): Color {
         val key = colorPreset?.lowercase()
             ?: PRESETS.entries.firstOrNull {
@@ -97,7 +150,29 @@ object MarkColors {
         return if (key == "black") {
             if (darkTheme) Color(0xFFF5F5F5) else Color(0xFF111111)
         } else {
-            Color(0xFF1A1A1A)
+            hexToColor(DEFAULT_GROK_EYE_HEX)
         }
+    }
+
+    /**
+     * Colours of an animated avatar that could seed the character theme: the body,
+     * then the eyes, each only when it is a real colour (not near-white, near-black
+     * or grey) so the theme doesn't go flat.
+     */
+    fun themeCandidates(
+        eyeType: String,
+        colorHex: String?,
+        colorPreset: String?,
+        eyeColorHex: String?,
+    ): List<Color> {
+        val body = bodyColor(colorHex, colorPreset, eyeType)
+        val eye = eyeColor(eyeType, eyeColorHex, colorHex, colorPreset)
+        return listOf(body, eye).filter { isThemeFitting(it) }
+    }
+
+    fun isThemeFitting(c: Color): Boolean {
+        val hsl = FloatArray(3)
+        ColorUtils.colorToHSL(c.toArgb(), hsl)
+        return hsl[1] >= 0.18f && hsl[2] in 0.14f..0.88f
     }
 }

@@ -30,19 +30,22 @@ sealed class Avatar {
         val colorHex: String = "#009FE0",
         val colorPreset: String? = "cyan",
         /**
-         * Optional eye fill override (hex). Null = mode default
-         * (Grok dark cutout / Generical derived cyan tint).
+         * Optional eye colour override (hex). Null = mode default
+         * (Grok dark capsules / Generical white eyes).
          */
         val eyeColorHex: String? = null,
     ) : Avatar() {
+        // Field defaults above stay as they were so data that omits a field (imports,
+        // older exports) still decodes to the same avatar.
         companion object {
+            /** The Generical character's own mark: indigo blob with Generical eyes. */
             fun defaultGenerical(
                 shape: String = "blob",
             ) = Animated(
                 shape = shape,
                 eyeType = "generical",
-                colorHex = "#009FE0",
-                colorPreset = "cyan",
+                colorHex = "#7C5CFF",
+                colorPreset = "indigo",
                 eyeColorHex = null,
             )
         }

@@ -26,7 +26,7 @@ class AvatarStage(private val rng: Random = Random.Default) {
         var windowH: Float = 0f,
     )
 
-    enum class EventKind { MessageArrived, Scroll, UserTyping }
+    enum class EventKind { MessageArrived, MessageSent, Scroll, UserTyping }
 
     class Event(
         val seq: Long,
@@ -49,6 +49,28 @@ class AvatarStage(private val rng: Random = Random.Default) {
     private var lastGlanceMs = System.currentTimeMillis()
     private var glanceGapMs = 20_000L + rng.nextLong(20_000L)
     private val glances = HashMap<Long, Glance>()
+
+    // Composer (message input) snapshot — plain fields, read from frame callbacks.
+    var composerLen = 0; private set
+    /** Characters on the line the caret is on (end of text). */
+    var composerLineLen = 0; private set
+    var composerLastKeyMs = 0L; private set
+    /** When the current typing burst began (0 = not typing). */
+    var composerBurstStartMs = 0L; private set
+
+    fun updateComposer(text: CharSequence, nowMs: Long = System.currentTimeMillis()) {
+        val len = text.length
+        if (len == composerLen && len > 0) return
+        if (len == 0) {
+            composerBurstStartMs = 0L
+        } else if (composerBurstStartMs == 0L || nowMs - composerLastKeyMs > 8_000L) {
+            composerBurstStartMs = nowMs
+        }
+        composerLen = len
+        val lastBreak = text.lastIndexOf('\n')
+        composerLineLen = len - (lastBreak + 1)
+        composerLastKeyMs = nowMs
+    }
 
     fun newId(): Long = nextId++
 

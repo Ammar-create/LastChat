@@ -185,8 +185,26 @@ object WhSphereEyes {
                 neutralPair()
             else -> neutralPair()
         }
-        return base.map { it.copy(lidY = it.lidY * lidY) }
+        // Wider set only where the contours reach toward each other (closed arcs,
+        // the >< chevrons, flat squints): at the neutral spacing those read as one
+        // joined shape. Morphs blend offX, so the spacing glides with the expression.
+        val spread = spreadFor(name.lowercase())
+        return base.mapIndexed { i, e ->
+            e.copy(offX = e.offX + spread.getOrElse(i) { 0f }, lidY = e.lidY * lidY)
+        }
     }
+
+    /** Extra outward offset per eye (left, right), eye-local units; 0 = neutral spacing. */
+    private fun spreadFor(name: String): FloatArray = when (name) {
+        "happy" -> floatArrayOf(0.05f, 0.05f)
+        "sleepy", "sleeping" -> floatArrayOf(0.065f, 0.065f)
+        "squinted", "bored", "calm" -> floatArrayOf(0.05f, 0.05f)
+        "confused" -> floatArrayOf(0.1f, 0.1f)
+        "wink" -> floatArrayOf(0.055f, 0.02f)
+        else -> NO_SPREAD
+    }
+
+    private val NO_SPREAD = floatArrayOf(0f, 0f)
 
     /** Generical expression id → Grok capsule expression. */
     fun grokNameFor(expressionId: String): String = when (expressionId) {
