@@ -116,18 +116,12 @@ object MarkColors {
     }
 
     /**
-     * Bottom of the Generical eye fade: the eye colour filtered by the body's surface
-     * tint (multiply). With the default white eye this is exactly the old fade.
+     * Bottom shade of a Generical eye: the body surface itself bleeding into the
+     * eye (the live body fill, so it follows colour changes). The eye colour fills
+     * the main area above it.
      */
-    fun genericalEyeFade(body: Color, eye: Color): Color {
-        val surface = shade(deriveGenericalEyeTint(body), 0.82f)
-        return Color(
-            red = eye.red * surface.red,
-            green = eye.green * surface.green,
-            blue = eye.blue * surface.blue,
-            alpha = 1f,
-        )
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun genericalEyeFade(body: Color, eye: Color): Color = body.copy(alpha = 1f)
 
     fun presetHexOrNull(name: String?): String? =
         name?.lowercase()?.let { PRESETS[it] }

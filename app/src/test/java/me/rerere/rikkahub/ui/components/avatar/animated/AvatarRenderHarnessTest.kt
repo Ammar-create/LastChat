@@ -353,7 +353,7 @@ class AvatarRenderHarnessTest {
     fun renderColorSwatches() {
         assumeTrue(outDir != null)
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
-        val bodies = listOf("indigo" to "#7C5CFF", "orange" to "#FF781C")
+        val bodies = listOf("indigo" to "#7C5CFF", "orange" to "#FF781C", "green" to "#00C972", "black" to "#000000", "azure" to "#009FE0")
         for (mode in listOf("generical", "grok")) {
             for ((bodyName, bodyHex) in bodies) {
                 for (eyeHex in eyeSwatches(mode)) {
@@ -397,9 +397,11 @@ class AvatarRenderHarnessTest {
                         eyeColorHex = d.eyeColorHex, calmPreview = true, modifier = Modifier.size(96.dp))
                 }
                 Box(Modifier.size(90.dp), contentAlignment = Alignment.Center) {
-                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                        name = "Generical", value = d, modifier = Modifier.size(36.dp),
-                    )
+                    androidx.compose.runtime.CompositionLocalProvider(LocalAvatarAnimate provides false) {
+                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                            name = "Generical", value = d, modifier = Modifier.size(36.dp),
+                        )
+                    }
                 }
             }
         }
@@ -557,5 +559,87 @@ class AvatarRenderHarnessTest {
             }
         }
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
+    }
+
+    /** Parametric looks on every shape, both eye modes (neutral + a few base expressions). */
+    @Test
+    fun renderAccentGallery() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val rig = FaceRig(Random(3))
+        val looks = FaceAccent.entries.filter { it != FaceAccent.None }
+        for (mode in listOf("grok", "generical")) {
+            for (shape in MarkShapes.SHAPES) {
+                val frames = listOf(MotionFrame()) + looks.map { a ->
+                    MotionFrame(face = rig.staticFace(a, 0.3f))
+                } + listOf(
+                    MotionFrame(exprFrom = "Happy", exprTo = "Happy", face = rig.staticFace(FaceAccent.Glee)),
+                    MotionFrame(exprFrom = "Sad", exprTo = "Sad", face = rig.staticFace(FaceAccent.Worried)),
+                    MotionFrame(body = BodyPose(pitch = 6f, yaw = -20f, roll = 6f), face = rig.staticFace(FaceAccent.Curious)),
+                )
+                stripCapture("accent_${mode}_$shape", shape, mode, frames, cellDp = 96)
+            }
+        }
+    }
+
+    /** Assistant header: avatar left of the pill, bubbles on/off, older turns without avatar, slot transition. */
+    @Test
+    fun renderChatHeaderStrips() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val gen = me.rerere.rikkahub.data.model.Avatar.Animated.defaultGenerical()
+        @Composable
+        fun pill(w: Int) {
+            Box(
+                Modifier.size(width = w.dp, height = 30.dp)
+                    .background(Color(0xFF2E3644), androidx.compose.foundation.shape.RoundedCornerShape(15.dp))
+            )
+        }
+        @Composable
+        fun body(bubble: Boolean) {
+            Box(
+                Modifier.padding(top = 6.dp).size(width = 280.dp, height = 44.dp)
+                    .background(if (bubble) Color(0xFF262D38) else Color(0x00000000))
+            ) {
+                if (!bubble) Box(Modifier.padding(4.dp).size(width = 250.dp, height = 10.dp).background(Color(0xFF5A6270)))
+            }
+        }
+        for (bubble in listOf(true, false)) {
+            capture("chat_header_${if (bubble) "bubble" else "plain"}", 360, 520) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.fillMaxSize().background(Color(0xFF14171C)).padding(12.dp),
+                ) {
+                    // older turns (no avatar), with and without pill / name
+                    listOf(Triple(false, true, false), Triple(false, false, true), Triple(true, true, true)).forEachIndexed { i, (newest, hasPill, name) ->
+                        androidx.compose.runtime.CompositionLocalProvider(LocalAvatarAnimate provides newest) {
+                            me.rerere.rikkahub.ui.components.chat.AssistantTurnHeader(
+                                showIcon = true,
+                                avatarVisible = newest,
+                                avatarName = "Generical",
+                                avatarValue = gen,
+                                loading = false,
+                                showModelName = name,
+                                nameAlpha = 1f,
+                                pill = if (hasPill) ({ pill(150 + 20 * i) }) else null,
+                            )
+                        }
+                        body(bubble)
+                        Box(Modifier.size(1.dp, 18.dp))
+                    }
+                    // transition frames of the slot (0 → 1)
+                    Row {
+                        for (p in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {
+                            Box(Modifier.size(width = 66.dp, height = 44.dp)) {
+                                me.rerere.rikkahub.ui.components.chat.AssistantTurnHeader(
+                                    showIcon = true, avatarVisible = p > 0.5f, avatarName = "G", avatarValue = gen,
+                                    loading = false, showModelName = false, nameAlpha = 1f,
+                                    pill = { pill(18) }, avatarProgressOverride = p,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -177,6 +177,7 @@ import me.rerere.rikkahub.data.repository.ChatAttachmentManager
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage
 import me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage
+import me.rerere.rikkahub.ui.components.avatar.animated.avatarTarget
 import me.rerere.rikkahub.ui.components.avatar.animated.ProvideAvatarMotionHints
 import me.rerere.rikkahub.ui.components.avatar.animated.AvatarMotionHints
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -696,6 +697,7 @@ fun ChatPage(
     LaunchedEffect(vm) {
         vm.errorFlow.collect { error ->
             toaster.show(error.toLocalInferenceUserMessage(context) ?: genericErrorMessage, type = ToastType.Error)
+            AvatarStage.Global.emit(AvatarStage.EventKind.Error)
         }
     }
 
@@ -1193,6 +1195,7 @@ fun ChatPage(
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ChatPageContent(
     inputState: ChatInputState,
@@ -1289,6 +1292,27 @@ private fun ChatPageContent(
         lastSeenMessageCount = messageCount
         lastSeenUserCount = userMessageCount
     }
+    // Keyboard and app foreground changes, for the avatars.
+    val imeOpen = WindowInsets.isImeVisible
+    LaunchedEffect(imeOpen) {
+        avatarStage.emit(if (imeOpen) AvatarStage.EventKind.KeyboardOpened else AvatarStage.EventKind.KeyboardClosed)
+    }
+    val avatarLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(avatarLifecycleOwner) {
+        var wasStopped = false
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> wasStopped = true
+                androidx.lifecycle.Lifecycle.Event.ON_START -> if (wasStopped) {
+                    wasStopped = false
+                    avatarStage.emit(AvatarStage.EventKind.AppResumed)
+                }
+                else -> Unit
+            }
+        }
+        avatarLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { avatarLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     // What's in the composer (length, current line) — avatars may read along, rarely.
     LaunchedEffect(composerText) { avatarStage.updateComposer(composerText) }
     LaunchedEffect(chatListState) {
@@ -1306,6 +1330,10 @@ private fun ChatPageContent(
                     else -> dOffset.coerceIn(-1, 1)
                 }
                 if (direction != 0) avatarStage.emit(AvatarStage.EventKind.Scroll, direction = direction)
+                // Several turns flew by in 160 ms: a fling (items per second).
+                if (kotlin.math.abs(dIndex) >= 3) {
+                    avatarStage.emit(AvatarStage.EventKind.Fling, direction = direction, magnitude = kotlin.math.abs(dIndex) / 0.16f)
+                }
             }
     }
     val density = LocalDensity.current
@@ -1937,6 +1965,7 @@ private fun ChatPageContent(
                     MinimalChatInput(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .avatarTarget(AvatarStage.Target.Composer)
                         .then(
                             if (inputMaxWidth != Dp.Unspecified) {
                                 Modifier.widthIn(max = inputMaxWidth)

@@ -599,8 +599,23 @@ internal data class StreamingRevealVisuals(
 internal data class StreamingSettleRange(
     val startOffset: Int,
     val endOffset: Int,
-    val revealedAtMillis: Long
-)
+    /** When the first character of the run was revealed. */
+    val revealedAtMillis: Long,
+    /**
+     * When the last character was revealed. Characters in between are timed
+     * linearly, so a run settles as a gradient: the newest end is the most
+     * blurred / transparent and it eases toward the older, sharp start.
+     */
+    val revealedEndMillis: Long = revealedAtMillis,
+) {
+    /** Reveal time of the character at [offset] (linear across the run). */
+    fun revealedAt(offset: Int): Long {
+        val len = endOffset - startOffset
+        if (len <= 1 || revealedEndMillis <= revealedAtMillis) return revealedEndMillis.coerceAtLeast(revealedAtMillis)
+        val f = ((offset - startOffset).toFloat() / (len - 1)).coerceIn(0f, 1f)
+        return revealedAtMillis + ((revealedEndMillis - revealedAtMillis) * f).toLong()
+    }
+}
 
 private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
 val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
@@ -1338,7 +1353,7 @@ internal fun joinStreamingSettleRun(
         nowMillis >= previous.revealedAtMillis &&
         nowMillis - previous.revealedAtMillis < settleMillis
     ) {
-        return ranges.dropLast(1) + previous.copy(endOffset = revealEnd)
+        return ranges.dropLast(1) + previous.copy(endOffset = revealEnd, revealedEndMillis = nowMillis)
     }
     return ranges + StreamingSettleRange(
         startOffset = revealStart,
@@ -1348,7 +1363,8 @@ internal fun joinStreamingSettleRun(
 }
 
 private fun List<StreamingSettleRange>.pruneStreamingSettleRanges(nowMillis: Long): List<StreamingSettleRange> {
-    return filter { range -> nowMillis - range.revealedAtMillis < STREAMING_SETTLE_MAX_MILLIS }
+    // Keep a run until its newest character has settled.
+    return filter { range -> nowMillis - range.revealedEndMillis < STREAMING_SETTLE_MAX_MILLIS }
 }
 
 private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): List<StreamingSettleRange> {
@@ -1358,6 +1374,7 @@ private fun List<StreamingSettleRange>.mergeAdjacentStreamingSettleRanges(): Lis
             val previous = merged.lastOrNull()
             if (previous != null &&
                 previous.revealedAtMillis == range.revealedAtMillis &&
+                previous.revealedEndMillis == range.revealedEndMillis &&
                 previous.endOffset == range.startOffset
             ) {
                 merged[merged.lastIndex] = previous.copy(endOffset = range.endOffset)
@@ -2640,52 +2657,71 @@ private fun AnnotatedString.Builder.applyStreamingRevealStyle(
         (STREAMING_SETTLE_ALPHA_FAST - STREAMING_SETTLE_ALPHA_SLOW) * speedProgress
 
     reveal.ranges.fastForEach { settleRange ->
-        val ageMillis = reveal.nowMillis - settleRange.revealedAtMillis
-        if (ageMillis < 0 || ageMillis >= settleDurationMillis) return@fastForEach
-
+        // Fully settled already (its newest character is old enough)?
+        if (reveal.nowMillis - settleRange.revealedEndMillis >= settleDurationMillis) return@fastForEach
         val overlapStart = maxOf(sourceStart, settleRange.startOffset)
         val overlapEnd = minOf(sourceEnd, settleRange.endOffset)
         if (overlapEnd <= overlapStart) return@fastForEach
 
-        val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
-        val visuals = streamingRevealVisuals(
-            progress = progress,
-            startAlpha = startAlpha,
-            blurEnabled = reveal.blurEnabled,
-        )
-        if (visuals.alpha >= 0.995f && visuals.blurRadius <= 0.01f) return@fastForEach
-
-        val rangeStart = outputStart + ((overlapStart - sourceStart) * outputLength / sourceLength)
-        val rangeEnd = outputStart + ((overlapEnd - sourceStart) * outputLength / sourceLength)
-        if (rangeEnd <= rangeStart) return@fastForEach
-
-        val styleStart = rangeStart.coerceIn(outputStart, outputEnd)
-        val styleEnd = rangeEnd.coerceIn(outputStart, outputEnd)
-        if (styleEnd <= styleStart) return@fastForEach
-        // One alpha and one blur for the whole run, same as a CSS filter on the
-        // span. The sharp copy stays hidden while that single blurred layer is
-        // drawn, so letters cannot stack on top of each other.
-        val renderBlur = reveal.blurEnabled &&
-            android.os.Build.VERSION.SDK_INT >= 31 &&
-            visuals.blurRadius > 1.4f &&
-            visuals.alpha < 0.995f
-        if (renderBlur) {
-            addStringAnnotation(
-                tag = STREAMING_BLUR_ANNOTATION,
-                annotation = "${visuals.blurRadius},${visuals.alpha}",
-                start = styleStart,
-                end = styleEnd,
+        // Age-based gradient across the run: split it into short segments, each
+        // with the age of its own characters (newest = most blurred / faint).
+        val overlapLength = overlapEnd - overlapStart
+        val segment = maxOf(1, (overlapLength + STREAMING_MAX_SEGMENTS_PER_RUN - 1) / STREAMING_MAX_SEGMENTS_PER_RUN)
+        var segStart = overlapStart
+        while (segStart < overlapEnd) {
+            val segEnd = minOf(overlapEnd, segStart + segment)
+            val mid = (segStart + segEnd - 1) / 2
+            val ageMillis = reveal.nowMillis - settleRange.revealedAt(mid)
+            val progress = (ageMillis / settleDurationMillis).coerceIn(0f, 1f)
+            val visuals = streamingRevealVisuals(
+                progress = progress,
+                startAlpha = startAlpha,
+                blurEnabled = reveal.blurEnabled,
             )
+            if (!(visuals.alpha >= 0.995f && visuals.blurRadius <= 0.01f)) {
+                val rangeStart = outputStart + ((segStart - sourceStart) * outputLength / sourceLength)
+                val rangeEnd = outputStart + ((segEnd - sourceStart) * outputLength / sourceLength)
+                val styleStart = rangeStart.coerceIn(outputStart, outputEnd)
+                val styleEnd = rangeEnd.coerceIn(outputStart, outputEnd)
+                if (styleEnd > styleStart) {
+                    // Blur is drawn per level (a few shared layers), so every
+                    // segment gets drawn however many there are; the sharp copy
+                    // stays hidden while its blurred level is shown.
+                    val level = streamingBlurLevel(visuals.blurRadius)
+                    val renderBlur = reveal.blurEnabled &&
+                        android.os.Build.VERSION.SDK_INT >= 31 &&
+                        level >= 0
+                    if (renderBlur) {
+                        addStringAnnotation(
+                            tag = STREAMING_BLUR_ANNOTATION,
+                            annotation = "$level,${visuals.alpha}",
+                            start = styleStart,
+                            end = styleEnd,
+                        )
+                    }
+                    addStyle(
+                        style = SpanStyle(
+                            color = reveal.color.copy(alpha = if (renderBlur) 0f else visuals.alpha),
+                        ),
+                        start = styleStart,
+                        end = styleEnd,
+                    )
+                }
+            }
+            segStart = segEnd
         }
-        addStyle(
-            style = SpanStyle(
-                color = reveal.color.copy(alpha = if (renderBlur) 0f else visuals.alpha),
-            ),
-            start = styleStart,
-            end = styleEnd,
-        )
     }
 }
+
+/** Blur radius → shared level index, or −1 when it's sharp enough to draw plainly. */
+internal fun streamingBlurLevel(blurRadius: Float): Int {
+    if (blurRadius <= STREAMING_BLUR_MIN_RADIUS) return -1
+    val f = (blurRadius / STREAMING_SETTLE_MAX_BLUR_RADIUS).coerceIn(0f, 1f)
+    return (f * STREAMING_BLUR_LAYER_COUNT).toInt().coerceIn(0, STREAMING_BLUR_LAYER_COUNT - 1)
+}
+
+private const val STREAMING_MAX_SEGMENTS_PER_RUN = 32
+private const val STREAMING_BLUR_MIN_RADIUS = 1.0f
 
 
 @Composable
@@ -2770,32 +2806,30 @@ private fun Modifier.incomingTokenBlur(
     if (layout == null || solidLayout == null || android.os.Build.VERSION.SDK_INT < 31) return this
     // FlowToken blurAndSharpen is filter: blur(5px) plus opacity on the whole
     // run. One layer, one radius. Per-glyph copies are what smeared the line.
-    val blurMaxPx = with(density) { 5.dp.toPx() }
+    val blurMaxPx = with(density) { 6.dp.toPx() }
     return this.graphicsLayer { clip = false }.drawWithContent {
         drawContent()
-        val runs = text.getStringAnnotations(STREAMING_BLUR_ANNOTATION, 0, text.length).mapNotNull { annotation ->
-            val parts = annotation.item.split(',')
-            if (parts.size != 2) return@mapNotNull null
-            val radius = parts[0].toFloatOrNull() ?: return@mapNotNull null
-            val alpha = parts[1].toFloatOrNull() ?: return@mapNotNull null
-            if (radius < 0.4f || alpha <= 0.02f) return@mapNotNull null
-            IncomingBlurRun(annotation.start, annotation.end, radius, alpha)
-        }
-        if (runs.isEmpty() || solidLayout.size.width <= 0 || solidLayout.size.height <= 0) return@drawWithContent
+        val marks = text.getStringAnnotations(STREAMING_BLUR_ANNOTATION, 0, text.length)
+        if (marks.isEmpty() || solidLayout.size.width <= 0 || solidLayout.size.height <= 0) return@drawWithContent
         val maxLength = solidLayout.layoutInput.text.length
-        runs.forEachIndexed { index, run ->
-            if (index >= layers.size) return@forEachIndexed
-            val start = run.start.coerceIn(0, maxLength)
-            val end = run.end.coerceIn(start, maxLength)
-            if (end <= start) return@forEachIndexed
-            // Selection path, not a filled box. Filling it was the gray block.
-            val glyphClip = solidLayout.getPathForRange(start, end)
-            if (glyphClip.isEmpty) return@forEachIndexed
-            val layer = layers[index]
-            val fraction = (run.radius / STREAMING_SETTLE_MAX_BLUR_RADIUS).coerceIn(0f, 1f)
+        // One layer per blur level. Inside a level each segment keeps its own
+        // opacity by drawing its glyphs at that alpha before the blur, so the
+        // gradient survives and nothing is ever skipped (skipping hid text).
+        for (level in 0 until STREAMING_BLUR_LAYER_COUNT) {
+            val inLevel = marks.mapNotNull { m ->
+                val parts = m.item.split(',')
+                if (parts.size != 2 || parts[0].toIntOrNull() != level) return@mapNotNull null
+                val alpha = parts[1].toFloatOrNull() ?: return@mapNotNull null
+                val start = m.start.coerceIn(0, maxLength)
+                val end = m.end.coerceIn(start, maxLength)
+                if (end <= start || alpha <= 0.01f) null else Triple(start, end, alpha)
+            }
+            if (inLevel.isEmpty()) continue
+            val layer = layers[level]
+            val fraction = (level + 0.5f) / STREAMING_BLUR_LAYER_COUNT
             val radiusPx = (fraction * blurMaxPx).coerceAtLeast(0.35f)
-            val pad = ceil(radiusPx).toInt() + 2
-            layer.alpha = (run.alpha * color.alpha.coerceIn(0.02f, 1f)).coerceIn(0.02f, 1f)
+            val pad = ceil(radiusPx * 2f).toInt() + 2
+            layer.alpha = color.alpha.coerceIn(0.02f, 1f)
             layer.renderEffect = BlurEffect(radiusPx, radiusPx, TileMode.Decal)
             layer.record(
                 density = this,
@@ -2803,8 +2837,14 @@ private fun Modifier.incomingTokenBlur(
                 size = IntSize(solidLayout.size.width + pad * 2, solidLayout.size.height + pad * 2),
             ) {
                 translate(pad.toFloat(), pad.toFloat()) {
-                    clipPath(glyphClip) {
-                        drawText(textLayoutResult = solidLayout)
+                    inLevel.forEach { (start, end, alpha) ->
+                        // Selection path, not a filled box. Filling it was the gray block.
+                        val glyphClip = solidLayout.getPathForRange(start, end)
+                        if (!glyphClip.isEmpty) {
+                            clipPath(glyphClip) {
+                                drawText(textLayoutResult = solidLayout, alpha = alpha)
+                            }
+                        }
                     }
                 }
             }
@@ -2837,7 +2877,7 @@ private data class IncomingBlurRun(
     val alpha: Float,
 )
 
-private const val STREAMING_BLUR_LAYER_COUNT = 3
+private const val STREAMING_BLUR_LAYER_COUNT = 5
 
 internal fun streamingRevealVisuals(
     progress: Float,
@@ -2849,8 +2889,11 @@ internal fun streamingRevealVisuals(
     // through, the glyph is half opaque and still half blurred.
     val t = progress.coerceIn(0f, 1f)
     val eased = t * t * (3f - 2f * t)
+    // Opacity and focus ease together on the same smoothstep, so across a run
+    // the newest glyphs read as both the faintest and the softest.
+    val easedAlpha = eased
     val alpha = startAlpha.coerceIn(0f, 1f) +
-        (1f - startAlpha.coerceIn(0f, 1f)) * eased
+        (1f - startAlpha.coerceIn(0f, 1f)) * easedAlpha
     return StreamingRevealVisuals(
         alpha = alpha,
         blurRadius = if (blurEnabled) {
@@ -2957,4 +3000,25 @@ private fun List<ASTNode>.trim(type: IElementType, size: Int): List<ASTNode> {
         trimmed++
     }
     return this.subList(start, end)
+}
+
+/** Harness hook: one paragraph drawn exactly like streaming text at [nowMillis]. */
+@Composable
+internal fun StreamingRevealPreview(
+    text: String,
+    ranges: List<StreamingSettleRange>,
+    nowMillis: Long,
+    charsPerSecond: Float,
+    color: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    val reveal = StreamingTextReveal(ranges, nowMillis, color, charsPerSecond, blurEnabled = true)
+    val annotated = androidx.compose.ui.text.buildAnnotatedString {
+        append(text)
+        applyStreamingRevealStyle(reveal, 0, text.length, 0, text.length)
+    }
+    CompositionLocalProvider(LocalStreamingTextReveal provides reveal) {
+        RevealText(text = annotated, modifier = modifier, style = style.copy(color = color))
+    }
 }

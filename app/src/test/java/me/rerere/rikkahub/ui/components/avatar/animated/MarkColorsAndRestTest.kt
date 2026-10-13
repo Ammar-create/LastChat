@@ -67,15 +67,13 @@ class MarkColorsAndRestTest {
     }
 
     @Test
-    fun defaultWhiteGenericalEyeKeepsTheOldSurfaceFade() {
-        val body = MarkColors.hexToColor("#7C5CFF")
-        val old = MarkColors.shade(MarkColors.deriveGenericalEyeTint(body), 0.82f)
-        val fade = MarkColors.genericalEyeFade(body, Color.White)
-        assertTrue(abs(old.red - fade.red) < 0.005f && abs(old.green - fade.green) < 0.005f && abs(old.blue - fade.blue) < 0.005f)
-        // A coloured eye fades into the surface tint, never toward white.
-        val gold = MarkColors.hexToColor("#FFD27A")
-        val goldFade = MarkColors.genericalEyeFade(body, gold)
-        assertTrue(goldFade.red <= gold.red && goldFade.green <= gold.green && goldFade.blue <= gold.blue)
+    fun genericalEyeShadeIsTheBodySurface() {
+        for (bodyHex in listOf("#7C5CFF", "#FF781C", "#00C972", "#000000")) {
+            val body = MarkColors.hexToColor(bodyHex)
+            for (eye in listOf(Color.White, MarkColors.hexToColor("#FFD27A"), MarkColors.hexToColor("#1A1A1A"))) {
+                assertEquals(hex(body), hex(MarkColors.genericalEyeFade(body, eye)))
+            }
+        }
     }
 
     @Test

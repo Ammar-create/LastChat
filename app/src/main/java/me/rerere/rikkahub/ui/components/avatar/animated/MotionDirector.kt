@@ -191,6 +191,10 @@ class MotionDirector(
     private val recentKinds = ArrayDeque<String>()
     private val recentClips = ArrayDeque<String>()
 
+    /** Mood from the motion state (valence −1…1, arousal 0…1): biases idle choices. */
+    var moodValence: Float = 0f
+    var moodArousal: Float = 0.5f
+
     /** Set by the alive brain: long idle → slower, drooping holds. */
     var drowsy: Boolean = false
 
@@ -445,10 +449,14 @@ class MotionDirector(
         }
         val last = lastKind()
         val opts = ArrayList<Pair<String, Float>>()
-        if (last != "hold") opts += "hold" to 0.40f
+        // Mood: low arousal holds still more, high arousal looks around more; a good
+        // mood tilts the head now and then.
+        val a = moodArousal.coerceIn(0f, 1f)
+        val pos = moodValence.coerceAtLeast(0f)
+        if (last != "hold") opts += "hold" to 0.40f * (1.5f - a)
         if (last != "idleB" || recentKinds.count { it == "idleB" } < 2) opts += "idleB" to 0.32f
-        if (last != "look") opts += "look" to 0.17f
-        if (last != "tilt" && last != "hold") opts += "tilt" to 0.09f
+        if (last != "look") opts += "look" to 0.17f * (0.5f + a)
+        if (last != "tilt" && last != "hold") opts += "tilt" to 0.09f * (0.7f + 0.6f * a + pos)
         return when (weighted(opts)) {
             "idleB" -> clipBeat("Idle_B", 0.55f, 1f, fade, "idleB")
             "look" -> {
@@ -469,7 +477,7 @@ class MotionDirector(
             }
             else -> null
         } ?: hold("settle", BodyPose(pitch = range(0f, 3f), yaw = gauss(3.5f).coerceIn(-7f, 7f), roll = gauss(2.5f).coerceIn(-5f, 5f)),
-            range(1.8f, 5.5f), fade)
+            range(1.8f, 5.5f) * (1.3f - 0.6f * moodArousal.coerceIn(0f, 1f)), fade)
     }
 
     // ------------------------------------------------------------ busy repertoire
@@ -480,7 +488,7 @@ class MotionDirector(
     // random size, side, timing and fade, so nothing lines up into a rhythm.
 
     /** A look the body beat would like the eyes to make (consumed by the motion state). */
-    data class GazeCue(val x: Float, val y: Float, val holdSec: Float)
+    data class GazeCue(val x: Float, val y: Float, val holdSec: Float, val kind: String = "")
 
     /** Set when a beat starts that wants the eyes somewhere; cleared on read. */
     var gazeCue: GazeCue? = null
@@ -537,7 +545,7 @@ class MotionDirector(
                 // A real turn: ease to an angle, settle there a moment.
                 val yaw = side * range(12f, 30f)
                 val p = BodyPose(pitch = range(-1f, 4f), yaw = yaw, roll = -side * range(0f, 4f))
-                gazeCue = GazeCue(side * range(0.3f, 0.7f), range(-0.05f, 0.25f), range(0.6f, 1.6f))
+                gazeCue = GazeCue(side * range(0.3f, 0.7f), range(-0.05f, 0.25f), range(0.6f, 1.6f), "turn")
                 hold("turn", p, logRange(0.9f, 3.2f), range(0.55f, 1.1f), kind = "turn")
             }
             "lookAround" -> keyframed("lookAround", fade) {
@@ -552,7 +560,7 @@ class MotionDirector(
             "ponder" -> {
                 // Thoughtful: head a little up and to the left (never up-right), eyes away.
                 val p = BodyPose(pitch = -range(1f, 4f), yaw = -range(6f, 16f), roll = range(3f, 8f))
-                gazeCue = GazeCue(-range(0.35f, 0.65f), -range(0.05f, 0.25f), range(1f, 2.2f))
+                gazeCue = GazeCue(-range(0.35f, 0.65f), -range(0.05f, 0.25f), range(1f, 2.2f), "ponder")
                 hold("ponder", p, logRange(1.4f, 3.4f), range(0.8f, 1.3f), kind = "ponder")
             }
             "tilt" -> hold("tiltB", BodyPose(pitch = range(0f, 3f), yaw = side * range(2f, 8f), roll = side * range(5f, 10f)),
@@ -560,13 +568,13 @@ class MotionDirector(
             "pill" -> {
                 // Glance down-right at the activity pill / timeline, as if checking on it.
                 val p = BodyPose(pitch = range(6f, 11f), yaw = range(4f, 12f), roll = -range(0f, 3f))
-                gazeCue = GazeCue(range(0.15f, 0.45f), range(0.45f, 0.7f), range(1.2f, 2.2f))
+                gazeCue = GazeCue(range(0.15f, 0.45f), range(0.45f, 0.7f), range(1.2f, 2.2f), "pill")
                 hold("pill", p, logRange(1.2f, 2.6f), range(0.6f, 0.95f), kind = "pill")
             }
             "read" -> {
                 // Following the text as it arrives: down, drifting along a line or two.
                 val y0 = range(6f, 10f)
-                gazeCue = GazeCue(range(-0.1f, 0.35f), range(0.35f, 0.55f), range(1f, 2f))
+                gazeCue = GazeCue(range(-0.1f, 0.35f), range(0.35f, 0.55f), range(1f, 2f), "read")
                 keyframed("read", range(0.5f, 0.8f)) {
                     var x = range(-6f, -1f)
                     List(1 + rng.nextInt(3)) {

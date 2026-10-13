@@ -194,13 +194,18 @@ object WhSphereEyes {
         }
     }
 
-    /** Extra outward offset per eye (left, right), eye-local units; 0 = neutral spacing. */
+    /**
+     * Extra outward offset per eye (left, right), eye-local units; 0 = neutral spacing.
+     * Only the contours that reach toward each other at the neutral spacing get any:
+     * closed arcs and happy arcs touch, flat squint dashes merge into one bar and the
+     * >< chevrons cross into an X. Each value is the smallest that leaves a clear gap
+     * (checked on every picker shape); everything else keeps the original spacing.
+     */
     private fun spreadFor(name: String): FloatArray = when (name) {
-        "happy" -> floatArrayOf(0.05f, 0.05f)
-        "sleepy", "sleeping" -> floatArrayOf(0.065f, 0.065f)
-        "squinted", "bored", "calm" -> floatArrayOf(0.05f, 0.05f)
-        "confused" -> floatArrayOf(0.1f, 0.1f)
-        "wink" -> floatArrayOf(0.055f, 0.02f)
+        "happy" -> floatArrayOf(0.022f, 0.022f)
+        "sleepy", "sleeping" -> floatArrayOf(0.028f, 0.028f)
+        "squinted", "bored", "calm" -> floatArrayOf(0.024f, 0.024f)
+        "confused" -> floatArrayOf(0.05f, 0.05f)
         else -> NO_SPREAD
     }
 

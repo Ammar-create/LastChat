@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -70,7 +71,12 @@ fun AnimatedMarkAvatar(
     )
     val isGrok = eyeType.equals("grok", ignoreCase = true)
     // Swatch colour == rendered colour (see MarkColors).
-    val bodyColor = MarkColors.bodyColor(colorHex, colorPreset, eyeType)
+    // Body colour glides on a change; the eye shade below follows it live.
+    val bodyColor by androidx.compose.animation.animateColorAsState(
+        targetValue = MarkColors.bodyColor(colorHex, colorPreset, eyeType),
+        animationSpec = androidx.compose.animation.core.tween(380),
+        label = "markBody",
+    )
     val eyeColor = MarkColors.eyeColor(eyeType, eyeColorHex, colorHex, colorPreset)
     val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor)
 
@@ -239,6 +245,7 @@ internal fun DrawScope.drawMark(
     if (isGrok) {
         val lidForPair = if (bodyKind == "sphere") lid * f.eyeScale.coerceIn(0.5f, 1.2f) else lid
         val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair)
+            .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, f.face.eye(i)) }
         var (left, right) = WhEyeSeat.buildSeatedGrokEyes(
             pickerId = shapeId,
             solidKind = bodyKind,
@@ -283,6 +290,8 @@ internal fun DrawScope.drawMark(
     val closure = (1f - lid).coerceIn(0f, 1f)
     val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
     val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
+    FaceRig.shapeOutline(lo.x, lo.y, 0, f.face.left)
+    FaceRig.shapeOutline(ro.x, ro.y, 1, f.face.right)
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)
     val fit = WhEyeSeat.genericalFitScale(shapeId)
     val (le, re) = GenericalSeat.seat(

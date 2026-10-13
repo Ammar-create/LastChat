@@ -51,6 +51,8 @@ data class MotionFrame(
     val eyeGap: Float = 0.94f,
     val eyeScale: Float = 1f,
     val timeSec: Float = 0f,
+    /** Parametric per-eye shaping on top of the expression (see [FaceRig]). */
+    val face: FaceParams = FaceParams.ID,
 )
 
 /**
@@ -58,12 +60,18 @@ data class MotionFrame(
  * Never parks up-right (Grok brand look).
  */
 internal class GazeDirector(private val rng: Random) {
+    private companion object { const val HEAD_ZETA = 0.74f }
+
     private var tx = 0f
     private var ty = 0f
     var eyeX = 0f; private set
     var eyeY = 0f; private set
-    private var evx = 0f
-    private var evy = 0f
+    var evx = 0f; private set
+    var evy = 0f; private set
+    // Head target lags the eyes by a beat (eyes lead, head follows).
+    private var htx = 0f
+    private var hty = 0f
+    private var headDelay = 0f
     var headX = 0f; private set
     var headY = 0f; private set
     private var hvx = 0f
@@ -105,8 +113,12 @@ internal class GazeDirector(private val rng: Random) {
         var gy = y.coerceIn(-1f, 1f)
         // No up-right parking (brand). A real target up-right still gets a softer look.
         if (gx > 0.25f && gy < -0.1f) gy *= 0.4f
-        if (hypot(gx - tx, gy - ty) > 0.55f) bigShift = true
+        val jump = hypot(gx - tx, gy - ty)
+        if (jump > 0.55f) bigShift = true
         tx = gx; ty = gy
+        // Bigger looks: the eyes go first, the head starts ~70–150 ms later.
+        headDelay = if (jump > 0.2f) 0.07f + rng.nextFloat() * 0.08f else 0f
+        if (headDelay <= 0f) { htx = tx; hty = ty }
     }
 
     fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean) {
@@ -129,6 +141,10 @@ internal class GazeDirector(private val rng: Random) {
             mx = (rng.nextFloat() - 0.5f) * 2f * amp
             my = (rng.nextFloat() - 0.5f) * 2f * amp * 0.7f
         }
+        if (headDelay > 0f) {
+            headDelay -= dt
+            if (headDelay <= 0f) { htx = tx; hty = ty }
+        }
         val eyeW = if (drowsy) 12f else 26f
         val headW = if (drowsy) 3.5f else 6.5f
         var rem = dt
@@ -138,8 +154,9 @@ internal class GazeDirector(private val rng: Random) {
             val ay = eyeW * eyeW * (ty + my - eyeY) - 2f * eyeW * evy
             evx += ax * h; evy += ay * h
             eyeX += evx * h; eyeY += evy * h
-            val bx = headW * headW * (tx * 0.82f - headX) - 2f * headW * hvx
-            val by = headW * headW * (ty * 0.82f - headY) - 2f * headW * hvy
+            // Slightly underdamped: the head overshoots a hair and settles (follow-through).
+            val bx = headW * headW * (htx * 0.82f - headX) - 2f * HEAD_ZETA * headW * hvx
+            val by = headW * headW * (hty * 0.82f - headY) - 2f * HEAD_ZETA * headW * hvy
             hvx += bx * h; hvy += by * h
             headX += hvx * h; headY += hvy * h
             rem -= h
@@ -456,6 +473,26 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var curiousDone = false
     private var attendedTypingAt = -100f
 
+    // Mood + parametric face.
+    private val mood = MoodEngine(rng)
+    private val rig = FaceRig(rng)
+    private var hourCheckIn = 0f
+    private var accentCooldown = 0f
+    private var busyAccentIn = 6f + rng.nextFloat() * 8f
+    private var mirror: Pair<FaceAccent, Float>? = null
+    private var mirrorIn = 0f
+    private var flingCooldown = 0f
+    private var forgiveIn = -1f
+    private var contactSec = 0f
+
+    /** Mood readout (tests / harness). */
+    internal val moodValence: Float get() = mood.valence
+    internal val moodArousal: Float get() = mood.arousal
+    internal val currentAccent: FaceAccent get() = rig.accent
+
+    /** Harness: show a parametric look right away. */
+    internal fun debugAccent(a: FaceAccent, sec: Float = 3f) = rig.play(a, sec)
+
     private class Social(
         val other: Long,
         val lookAt: Float,
@@ -503,7 +540,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         } else {
             quietSec += dt
         }
-        if (!drowsy && calmLife && quietSec > drowsyAfter) {
+        if (!drowsy && calmLife && quietSec > drowsyAfter * (0.55f + mood.arousal)) {
             drowsy = true
             droopIn = 6f + rng.nextFloat() * 6f
         }
@@ -527,7 +564,22 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         director.takeGazeCue()?.let { c ->
             // A busy beat asked to look somewhere (turn, the pill, the text, away in thought).
             if (live && social == null && followLeft <= 0f && !gaze.focused) {
-                gaze.focus(c.x, c.y, c.holdSec, priority = 1)
+                // Look at the real thing when it is on screen.
+                val real = when (c.kind) {
+                    "pill" -> targetCenter(AvatarStage.Target.ActivityPill)
+                    "read" -> stage?.target(AvatarStage.Target.StreamingText)?.let { r ->
+                        // Somewhere along the last lines of the arriving text.
+                        Offset(r.left + r.width * (0.15f + 0.7f * rng.nextFloat()), r.bottom - minOf(r.height, 120f) * rng.nextFloat())
+                    }
+                    else -> null
+                }
+                if (real != null) {
+                    val (gx, gy) = lookAt(real)
+                    gaze.focus(gx, gy, c.holdSec, priority = 1)
+                } else {
+                    gaze.focus(c.x, c.y, c.holdSec, priority = 1)
+                }
+                if (c.kind == "ponder" && rng.nextFloat() < 0.35f) accent(FaceAccent.Puzzled, 1.4f + rng.nextFloat())
             }
         }
 
@@ -551,6 +603,26 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         drowsyLid += (drowsyTarget - drowsyLid) * (1f - exp(-dt / if (drowsy) 2.5f else 0.3f))
         val lid = (lidKnob.coerceAtMost(1f) * body.lidOpen * drowsyLid * (1f - blink.closed)).coerceIn(0f, 1f)
 
+        // ---- mood + parametric face ----
+        hourCheckIn -= dt
+        if (hourCheckIn <= 0f) {
+            hourCheckIn = 60f
+            val h = java.util.Calendar.getInstance().apply { timeInMillis = nowMs }.get(java.util.Calendar.HOUR_OF_DAY)
+            mood.arousalBase = MoodEngine.baseForHour(h)
+        }
+        mood.update(dt, quietSec)
+        director.moodValence = mood.valence
+        director.moodArousal = mood.arousal
+        val busyNow = MotionDirector.isBusy(director.lifecycle)
+        val faceLive = rig.update(
+            dt,
+            gaze.evx, gaze.evy,
+            blink.closed,
+            valence = if (live) mood.valence * (if (busyNow) 0.5f else 1f) else 0f,
+            arousal = if (live) mood.arousal else 0.5f,
+            still = live && !gaze.bigShift && social == null,
+        )
+
         stage?.setCalm(stageId, calmLife && social == null && reaction == null && !drowsy)
 
         // Blend toward the static rest pose (weight eased so it starts and lands softly).
@@ -570,8 +642,33 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
             timeSec = time,
+            face = lerpFace(faceLive, w),
         )
     }
+
+    private fun lerpFace(f: FaceParams, w: Float): FaceParams {
+        if (w <= 0f) return f
+        fun e(p: EyeShape) = EyeShape(
+            sx = p.sx + (1f - p.sx) * w, sy = p.sy + (1f - p.sy) * w,
+            dx = p.dx * (1f - w), dy = p.dy * (1f - w), rot = p.rot * (1f - w),
+            upper = p.upper + (1f - p.upper) * w, lower = p.lower + (1f - p.lower) * w,
+            slant = p.slant * (1f - w),
+        )
+        return FaceParams(e(f.left), e(f.right))
+    }
+
+    /** Play a parametric look (with a cooldown so faces don't pile up) and let neighbours see it. */
+    private fun accent(a: FaceAccent, sec: Float, force: Boolean = false): Boolean {
+        if (!force && (accentCooldown > 0f || rig.active)) return false
+        rig.play(a, sec)
+        accentCooldown = sec + 1.5f + rng.nextFloat() * 2f
+        stage?.let { st ->
+            st.entry(stageId)?.let { me -> st.emit(AvatarStage.EventKind.AvatarAccent, at = me.center, source = stageId, extra = a.ordinal) }
+        }
+        return true
+    }
+
+    private fun targetCenter(kind: AvatarStage.Target): Offset? = stage?.target(kind)?.center
 
     // ----------------------------------------------------------- alive layer
 
@@ -594,7 +691,34 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
     private fun aliveUpdate(dt: Float, nowMs: Long) {
         lastSpinAgo += dt
+        accentCooldown -= dt
+        flingCooldown -= dt
         eventCooldown -= dt
+        mirror?.let { (a, sec) ->
+            mirrorIn -= dt
+            if (mirrorIn <= 0f) { mirror = null; accent(a, sec) }
+        }
+        if (forgiveIn > 0f) {
+            forgiveIn -= dt
+            if (forgiveIn <= 0f) {
+                // Can't stay cross for long: a blink and a small smile.
+                blink.request(minGap = 0.3f)
+                accent(FaceAccent.Glee, 1.4f, force = true)
+                mood.nudge(0.25f, 0f)
+            }
+        }
+        if (MotionDirector.isBusy(director.lifecycle)) {
+            busyAccentIn -= dt
+            if (busyAccentIn <= 0f) {
+                busyAccentIn = 7f + rng.nextFloat() * 12f
+                val r = rng.nextFloat()
+                when {
+                    r < 0.35f -> accent(FaceAccent.Focused, 1.6f + rng.nextFloat() * 2f)
+                    r < 0.5f && director.lifecycle == MarkLifecycle.Thinking -> accent(FaceAccent.Puzzled, 1.3f)
+                    r < 0.6f && director.lifecycle == MarkLifecycle.Streaming -> accent(FaceAccent.Glee, 1.2f)
+                }
+            }
+        }
         typingCooldown -= dt
         pokeWindow -= dt
         if (pokeWindow <= 0f) pokeCount = 0
@@ -693,10 +817,20 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (moodIn <= 0f) {
             moodIn = 18f + rng.nextFloat() * 35f
             if (!drowsy && reaction == null && social == null) {
+                // What the face does on its own depends on the mood.
                 val r = rng.nextFloat()
+                val v = mood.valence; val a = mood.arousal
                 when {
-                    r < 0.22f -> setReaction("Happy", 2f + rng.nextFloat() * 2f)
-                    r < 0.32f && quietSec > 45f -> setReaction("Bored", 3f + rng.nextFloat() * 3f)
+                    r < 0.18f && v > 0.25f -> setReaction("Happy", 2f + rng.nextFloat() * 2f)
+                    r < 0.3f && v > 0.25f -> accent(FaceAccent.Glee, 1.5f + rng.nextFloat())
+                    r < 0.3f && a > 0.58f -> {
+                        accent(FaceAccent.Curious, 1.6f + rng.nextFloat())
+                        director.gesture(MotionDirector.Gesture.Tilt)
+                    }
+                    r < 0.32f && a < 0.36f -> accent(FaceAccent.Drowsy, 2.5f + rng.nextFloat() * 2f)
+                    r < 0.32f && v < -0.2f -> accent(FaceAccent.Worried, 1.8f)
+                    r < 0.36f && quietSec > 45f -> setReaction("Bored", 3f + rng.nextFloat() * 3f)
+                    r < 0.4f -> accent(FaceAccent.Smug, 1.4f)
                 }
             }
         }
@@ -727,8 +861,17 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             setReaction("skeptical", 1.1f + rng.nextFloat() * 0.5f)
             if (rng.nextFloat() < 0.7f) director.gesture(MotionDirector.Gesture.Tilt)
         }
+        if (s.looking) contactSec += dt
         if (s.t >= s.end) {
             social = null
+            // Held eye contact a moment: sometimes a shy look away.
+            if (contactSec > 1f && s.skepticAt < 0f && rng.nextFloat() < 0.3f) {
+                accent(FaceAccent.Shy, 1.4f)
+                gaze.focus(if (lookAt(other.center).first > 0f) -0.45f else 0.45f, 0.4f, 1.0f, priority = 2)
+                contactSec = 0f
+                return
+            }
+            contactSec = 0f
             val (gx, _) = lookAt(other.center)
             gaze.releaseFocus(awayX = if (gx > 0f) -(0.3f + rng.nextFloat() * 0.3f) else 0.3f + rng.nextFloat() * 0.3f)
             if (rng.nextFloat() < 0.5f) blink.request()
@@ -744,6 +887,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     }
 
     private fun windowBottom(): Offset? {
+        targetCenter(AvatarStage.Target.Composer)?.let { return it }
         val me = stage?.entry(stageId) ?: return null
         if (me.windowH <= 0f) return null
         return Offset(me.windowW * 0.5f, me.windowH * 0.93f)
@@ -754,10 +898,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     /** Where the caret roughly is: the bottom input, left → right as the line grows. */
     private fun caretPoint(): Offset? {
         val st = stage ?: return null
-        val me = st.entry(stageId) ?: return null
-        if (me.windowW <= 0f || me.windowH <= 0f) return null
         val perLine = CARET_CHARS_PER_LINE
         val frac = (st.composerLineLen % perLine) / perLine.toFloat()
+        st.target(AvatarStage.Target.Composer)?.let { r ->
+            // The real input field: caret runs left → right inside it.
+            return Offset(r.left + r.width * (0.08f + 0.8f * frac), r.center.y)
+        }
+        val me = st.entry(stageId) ?: return null
+        if (me.windowW <= 0f || me.windowH <= 0f) return null
         return Offset(me.windowW * (0.12f + 0.76f * frac), me.windowH * 0.93f)
     }
 
@@ -849,7 +997,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val wasWatching = time - attendedTypingAt < 10f
         if (rng.nextFloat() > if (wasWatching) 0.5f else 0.25f) return
         val me = stage?.entry(stageId)
-        val at = e.at ?: me?.let { Offset(it.windowW * 0.72f, it.windowH * 0.8f) } ?: return
+        // If the sender's avatar is on screen below, look at it (a turn-taking look).
+        val sender = me?.let { m ->
+            stage?.neighbors(stageId, max(m.windowW, m.windowH))?.firstOrNull { it.center.y > m.center.y + m.radius }
+        }
+        val at = e.at ?: sender?.center ?: targetCenter(AvatarStage.Target.Composer)
+            ?: me?.let { Offset(it.windowW * 0.72f, it.windowH * 0.8f) } ?: return
         val (gx, gy) = lookAt(at)
         gaze.focus(gx, gy, 0.6f + rng.nextFloat() * 0.3f, priority = 2)
         if (rng.nextFloat() < 0.5f) blink.request(minGap = 0.4f)
@@ -875,6 +1028,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 onMessageSent(e)
                 continue
             }
+            if (onUiEvent(e, calm)) continue
             if (!calm || social != null || eventCooldown > 0f) continue
             when (e.kind) {
                 AvatarStage.EventKind.MessageArrived -> if (rng.nextFloat() < 0.45f) {
@@ -888,7 +1042,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     eventCooldown = 12f
                 }
                 AvatarStage.EventKind.UserTyping -> onTypingStarted()
-                AvatarStage.EventKind.MessageSent -> Unit
+                else -> Unit
             }
         }
         return true
@@ -897,15 +1051,20 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun onPoke() {
         pokeCount++
         pokeWindow = 2.2f
+        mood.nudge(0f, 0.12f)
         when {
-            pokeCount >= 5 && lastSpinAgo > 20f -> {
+            pokeCount >= 6 && lastSpinAgo > 30f -> {
+                // Fine, you win: a spin, then all is forgiven.
                 if (director.gesture(MotionDirector.Gesture.Spin)) lastSpinAgo = 0f
-                setReaction("Happy", 1.4f)
                 pokeCount = 0
+                forgiveIn = 1.6f
             }
             pokeCount >= 3 -> {
                 director.gesture(MotionDirector.Gesture.TurnAway)
                 setReaction("pouty", 1.6f)
+                accent(FaceAccent.Annoyed, 1.8f, force = true)
+                mood.nudge(-0.12f, 0.05f)
+                forgiveIn = 2.6f + rng.nextFloat() * 1.5f
             }
             pokeCount == 2 -> {
                 director.gesture(MotionDirector.Gesture.Recoil)
@@ -915,7 +1074,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             else -> {
                 director.gesture(MotionDirector.Gesture.Recoil)
                 blink.request(minGap = 0.2f)
-                setReaction("Surprised", 0.45f)
+                accent(FaceAccent.Startled, 0.45f, force = true)
                 if (rng.nextFloat() < 0.4f) {
                     reactionQueue = "Happy" to 1.2f
                     reactionQueueIn = 0.5f
@@ -924,11 +1083,106 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
     }
 
+    /**
+     * App / UI happenings. Returns true when handled (some apply while busy too).
+     * Every avatar on screen hears the same event, so a surprise lands on all of
+     * them at once.
+     */
+    private fun onUiEvent(e: AvatarStage.Event, calm: Boolean): Boolean {
+        fun glance(at: Offset?, hold: Float, prio: Int = 2) {
+            val p = at ?: return
+            val (gx, gy) = lookAt(p)
+            gaze.focus(gx, gy, hold, priority = prio)
+        }
+        when (e.kind) {
+            AvatarStage.EventKind.Error -> {
+                mood.nudge(-0.4f, 0.15f)
+                accent(FaceAccent.Worried, 2.4f, force = true)
+                blink.request(minGap = 0.3f)
+            }
+            AvatarStage.EventKind.Deleted -> {
+                mood.nudge(-0.1f, 0.1f)
+                // Watch it go, then a small reaction.
+                glance(e.at, 0.9f, prio = 3)
+                if (rng.nextFloat() < 0.5f) accent(FaceAccent.Startled, 0.4f, force = true)
+                reactionQueue = (if (rng.nextFloat() < 0.6f) "Sad" else "Surprised") to 0.9f
+                reactionQueueIn = 0.45f
+            }
+            AvatarStage.EventKind.Copied -> {
+                mood.nudge(0.12f, 0.05f)
+                if (calm && rng.nextFloat() < 0.5f) {
+                    accent(FaceAccent.Glee, 1.1f)
+                    if (rng.nextFloat() < 0.4f) director.gesture(MotionDirector.Gesture.Nod)
+                }
+            }
+            AvatarStage.EventKind.Regenerated -> {
+                accent(FaceAccent.Puzzled, 0.9f, force = true)
+                blink.request(minGap = 0.3f)
+            }
+            AvatarStage.EventKind.AppResumed -> {
+                // Back from the background: a sleepy squint that opens up, blink-blink.
+                mood.nudge(0f, 0.15f)
+                if (rng.nextFloat() < 0.7f) {
+                    accent(FaceAccent.WakeSquint, 0.9f + rng.nextFloat() * 0.5f, force = true)
+                    perkIn = 0.9f
+                }
+                if (drowsy) wake()
+            }
+            AvatarStage.EventKind.KeyboardOpened -> {
+                mood.nudge(0f, 0.08f)
+                if (calm && social == null && rng.nextFloat() < 0.45f) {
+                    glance(windowBottom(), 0.8f + rng.nextFloat() * 0.6f)
+                    if (rng.nextFloat() < 0.3f) accent(FaceAccent.Curious, 1.0f)
+                }
+            }
+            AvatarStage.EventKind.KeyboardClosed -> {
+                if (followLeft > 0f) { followLeft = 0f; gaze.releaseFocus() }
+                if (rng.nextFloat() < 0.3f) blink.request()
+            }
+            AvatarStage.EventKind.Fling -> {
+                // A really fast fling, rarely: a little dizzy.
+                if (calm && flingCooldown <= 0f && e.magnitude > 18f && rng.nextFloat() < 0.3f) {
+                    flingCooldown = 90f
+                    accent(FaceAccent.Dizzy, 1.3f, force = true)
+                    director.gesture(MotionDirector.Gesture.Tilt)
+                    reactionQueue = "confused" to 0.8f
+                    reactionQueueIn = 1.1f
+                }
+            }
+            AvatarStage.EventKind.MenuOpened -> {
+                if (calm && social == null && rng.nextFloat() < 0.5f) {
+                    glance(e.at, 1.0f)
+                    if (rng.nextFloat() < 0.35f) accent(FaceAccent.Curious, 1.0f)
+                }
+            }
+            AvatarStage.EventKind.PillExpanded -> {
+                // Peek at what opened.
+                if (social == null && rng.nextFloat() < 0.7f) {
+                    glance(e.at ?: targetCenter(AvatarStage.Target.ActivityPill), 1.3f + rng.nextFloat() * 0.6f)
+                    if (calm) director.gesture(MotionDirector.Gesture.Attend, 1.4f)
+                }
+            }
+            AvatarStage.EventKind.AvatarAccent -> {
+                // Now and then mirror a neighbour's face, a beat later.
+                if (e.source != stageId && calm && social == null && mirror == null && rng.nextFloat() < 0.12f) {
+                    val a = FaceAccent.entries.getOrNull(e.extra)
+                    if (a != null && a != FaceAccent.Dizzy && a != FaceAccent.None) {
+                        glance(e.at, 0.8f)
+                        mirror = a to 1.0f
+                        mirrorIn = 0.35f + rng.nextFloat() * 0.3f
+                    }
+                }
+            }
+            else -> return false
+        }
+        return true
+    }
+
     private fun wake() {
         drowsy = false
         drowsyAfter = 100f + rng.nextFloat() * 60f
         blink.request(double = true, minGap = 0.2f)
-        setReaction("Surprised", 0.5f)
+        accent(FaceAccent.WakeSquint, 0.8f, force = true)
     }
 
     private companion object {
