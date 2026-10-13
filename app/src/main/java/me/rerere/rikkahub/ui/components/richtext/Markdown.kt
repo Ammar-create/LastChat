@@ -972,7 +972,12 @@ fun MarkdownBlock(
                 val caughtUp = streamingPresentation.displayContent == streamingPresentation.rawContent &&
                     settleRanges.isEmpty()
                 if (caughtUp) {
-                    snapshotFlow { streamingActive }.first { it }
+                    // Sleep until streaming resumes OR the content itself changes while
+                    // idle (an edit, or switching to another version of the message).
+                    // Waiting on streaming alone left edited text stale until the item
+                    // was scrolled out of view and recomposed from scratch.
+                    snapshotFlow { streamingActive || streamingContent != streamingPresentation.rawContent }
+                        .first { it }
                     previousFrameMillis = withFrameMillis { it }
                 }
                 continue
