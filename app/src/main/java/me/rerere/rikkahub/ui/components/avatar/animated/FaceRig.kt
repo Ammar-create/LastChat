@@ -206,7 +206,7 @@ class FaceRig(private val rng: Random) {
             else EyeShape(sx = 0.98f, sy = 0.9f, upper = 0.86f, rot = 4f * s)
             FaceAccent.Annoyed -> EyeShape(upper = 0.6f, slant = 0.32f, sy = 0.96f)
             FaceAccent.Shy -> EyeShape(lower = 0.68f, sy = 0.94f, dy = 0.02f)
-            FaceAccent.Startled -> EyeShape(sx = 1.12f, sy = 1.2f, dy = -0.012f)
+            FaceAccent.Startled -> EyeShape(sx = 1.18f, sy = 1.28f, dy = -0.014f)
             FaceAccent.Dizzy -> {
                 // Eyes circle in opposite phase, slowly settling.
                 val ph = time * 7f + side * PI.toFloat()
@@ -271,6 +271,14 @@ class FaceRig(private val rng: Random) {
         }
 
         /** Shape a Grok capsule: stays a capsule (scale, offset, rotation, openness). */
+        private fun isBent(pts: List<FloatArray>): Boolean {
+            if (pts.size < 3) return false
+            val a = pts.first(); val b = pts.last(); val m = pts[pts.size / 2]
+            val dx = b[0] - a[0]; val dy = b[1] - a[1]
+            val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1e-4f)
+            return kotlin.math.abs((m[0] - a[0]) * dy - (m[1] - a[1]) * dx) / len > 0.04f
+        }
+
         fun shapeCapsule(e: WhSphereEyes.EyeState, side: Int, p: EyeShape): WhSphereEyes.EyeState {
             if (p.isIdentity()) return e
             // Capsule-local x points outward for each eye (left eye mirrored), y up.
@@ -286,7 +294,10 @@ class FaceRig(private val rng: Random) {
                 tilt = e.tilt + Math.toRadians(rotDeg.toDouble()).toFloat(),
                 wid = e.wid * p.sx.coerceIn(0.8f, 1.2f),
                 lidY = e.lidY * open,
-                pts = e.pts.map { floatArrayOf(it[0] * p.sx, it[1] * p.sy) },
+                // Bent spines (^ arcs) scale uniformly so the arc stays clean and the two
+                // eyes stay mirror images; straight capsules may stretch freely.
+                pts = if (isBent(e.pts)) { val u = (p.sx + p.sy) / 2f; e.pts.map { floatArrayOf(it[0] * u, it[1] * u) } }
+                    else e.pts.map { floatArrayOf(it[0] * p.sx, it[1] * p.sy) },
             )
         }
     }

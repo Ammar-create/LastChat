@@ -155,9 +155,9 @@ internal class AlivenessEngine(private val rng: Random) {
         if (ago("startle") < 30f) return
         remember("startle")
         sequence(
-            0f to Beat.Accent(FaceAccent.Startled, 0.5f),
-            0.05f to Beat.Gesture(MotionDirector.Gesture.Recoil),
-            0.55f to Beat.DoubleBlink,
+            0f to Beat.Gesture(MotionDirector.Gesture.Recoil),
+            0.01f to Beat.Accent(FaceAccent.Startled, 0.7f),
+            0.85f to Beat.DoubleBlink,
         )
     }
 
@@ -235,7 +235,9 @@ internal class AlivenessEngine(private val rng: Random) {
             if (clock >= at) {
                 scheduled.removeAt(0)
                 // A sequence step that can't play now is dropped, not delayed into a cut.
-                if (calm || b is Beat.Blink || b is Beat.DoubleBlink) return b
+                val startleBeat = (b is Beat.Gesture && b.g == MotionDirector.Gesture.Recoil) ||
+                    (b is Beat.Accent && b.a == FaceAccent.Startled)
+                if (calm || startleBeat || b is Beat.Blink || b is Beat.DoubleBlink) return b
             }
             return null
         }

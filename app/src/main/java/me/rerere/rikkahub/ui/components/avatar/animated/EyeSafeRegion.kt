@@ -15,7 +15,11 @@ internal object EyeSafeRegion {
 
     class Body(path: Path) {
         private val region = Region()
+        val center: androidx.compose.ui.geometry.Offset
         init {
+            val bb = android.graphics.RectF()
+            path.asAndroidPath().computeBounds(bb, true)
+            center = androidx.compose.ui.geometry.Offset(bb.centerX(), bb.centerY())
             val p = android.graphics.Path(path.asAndroidPath())
             val m = android.graphics.Matrix().apply { setScale(SCALE, SCALE) }
             p.transform(m)
@@ -56,4 +60,39 @@ internal object EyeSafeRegion {
         }
         return best
     }
+
+    /**
+     * Second line of defence: when even the untilted seat touches the edge (pointy
+     * shapes, big turns), slide the eyes toward the body centre just far enough.
+     * Returns the offset to add (Zero when already inside).
+     */
+    fun nudge(body: Body, eyes: List<Path>, margin: Float): androidx.compose.ui.geometry.Offset {
+        if (inside(body, eyes, margin)) return androidx.compose.ui.geometry.Offset.Zero
+        var sx = 0f; var sy = 0f; var n = 0
+        for (e in eyes) { if (e.isEmpty) continue; val b = e.getBounds(); sx += b.center.x; sy += b.center.y; n++ }
+        if (n == 0) return androidx.compose.ui.geometry.Offset.Zero
+        val dir = body.center - androidx.compose.ui.geometry.Offset(sx / n, sy / n)
+        fun moved(t: Float) = eyes.map { Path().apply { addPath(it, dir * t) } }
+        if (!inside(body, moved(1f), margin)) return dir
+        var lo = 0f; var hi = 1f
+        repeat(7) { val mid = (lo + hi) / 2f; if (inside(body, moved(mid), margin)) hi = mid else lo = mid }
+        return dir * hi
+    }
+
+    /** Smallest clear distance from the eye outlines to the body edge (debug metric). */
+    fun inset(body: Body, eyes: List<Path>, maxM: Float): Float {
+        if (!inside(body, eyes, 0f)) return -1f
+        var lo = 0f; var hi = maxM
+        if (inside(body, eyes, hi)) return hi
+        repeat(10) { val mid = (lo + hi) / 2f; if (inside(body, eyes, mid)) lo = mid else hi = mid }
+        return lo
+    }
+}
+
+/** Debug-only per-frame metrics recorded by drawMark when enabled (render harness). */
+internal object AvatarDebugMetrics {
+    @Volatile var enabled = false
+    /** (label, grok gap / he, edge inset / he) per drawn eye pair. */
+    val rows = java.util.Collections.synchronizedList(ArrayList<Triple<String, Float, Float>>())
+    @Volatile var label = ""
 }

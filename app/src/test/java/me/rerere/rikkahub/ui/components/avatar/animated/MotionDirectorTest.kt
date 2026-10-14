@@ -107,8 +107,8 @@ class MotionDirectorTest {
             // Output turn speed is capped (700°/s ≈ 11.7°/frame at 60 fps).
             assertTrue("seed $seed out rot step ${m["outRot"]} at ${m["outAt"]}", m.getValue("outRot") < 12f)
             assertTrue("seed $seed scale step ${m["scale"]}", m.getValue("scale") < 0.004f)
-            assertTrue("seed $seed squash step ${m["squash"]}", m.getValue("squash") < 0.012f)
-            assertTrue("seed $seed pos step ${m["pos"]}", m.getValue("pos") < 0.02f)
+            assertTrue("seed $seed squash step ${m["squash"]}", m.getValue("squash") < 0.03f) // engine6: springy squash pops are intentionally quicker
+            assertTrue("seed $seed pos step ${m["pos"]}", m.getValue("pos") < 0.03f) // engine6: startle pop is intentionally snappy
         }
     }
 

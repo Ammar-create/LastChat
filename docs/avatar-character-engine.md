@@ -45,7 +45,7 @@ gestures, morphs and gaze moves, so nothing cuts.
 - `AvatarMotionState.feedTone(ToneHint(valence, arousal, emotion, intensity))` –
   per-message tone; nudges mood and sets a short-term emotion.
 
-Rules kept throughout: no up-right stare, no hard cuts, no size jumps.
+Rules kept throughout: no hard cuts, no size jumps. (Since engine6 gaze is unrestricted in every direction; see below.)
 
 ## Eye shade
 
@@ -134,3 +134,23 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
 - Visible-life guarantee: if the combined head and gaze turn changes less than 8° for 1.0–1.8 s
   with no blink, the eyes make a quick glance (sideways or down). No 2.5 s window has less than
   8° of travel. Filter ω17, ζ0.7. The up-right guard starts at a combined yaw of −1°.
+
+## engine6 update (review fixes)
+- Gaze is unrestricted: every up-right guard is gone (gaze target, body filter, clip pose
+  softening, final composed look). The avatar can look in any direction. Only two rules
+  remain: no long frozen hold, and the eyes stay on the surface.
+- No frozen holds: a slow organic drift (two incommensurate sines) runs on the head gaze, and
+  micro-saccades are larger (±0.13). A visible-life glance in any direction fires when the
+  eyes themselves (head gaze + eye lead, ignoring the body) have moved less than 6° for 0.9–1.6 s.
+- Eyes stay on the surface: `EyeSafeRegion` margins are now 0.12 (Grok) and 0.11 (Generical) ×
+  mark radius. After the turn-scaling fit, `EyeSafeRegion.nudge` slides both eyes toward the
+  silhouette centre just far enough to stay inside, on every shape (sphere included).
+- Grok `MIN_GAP` = 24 % of mark radius (was 17 %), enforced after every morph and pose.
+- Springy nods (`springNod` / `springNodPose`): a quick dip, then a damped spring through an
+  overshoot. The body compresses on the way down and stretches on the rebound.
+- Real startle (`startlePose`): a ~70 ms pop up and back with stretch, a squashy landing and a
+  spring settle. Startle beats are never dropped while the lifecycle changes, and the Startled
+  eyes are wider. Bob and squash filter ω 24.
+- Bent (^) arc eyes scale uniformly under face accents, so the two Happy arcs stay clean
+  mirror images.
+- `AvatarMotionVideoTest` writes `metrics.csv`: the Grok gap and the edge inset per drawn frame.

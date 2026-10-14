@@ -181,6 +181,10 @@ internal val CALM_FRAME = MotionFrame()
 /** Thinnest a Grok eye gets when the lids are shut (fraction of the open height). */
 internal const val GROK_SLIT = 0.12f
 
+/** Clear margin kept between the eyes and the silhouette edge (fraction of mark radius). */
+internal const val GROK_EDGE_MARGIN = 0.12f
+internal const val GEN_EDGE_MARGIN = 0.11f
+
 /** Harness: a raw clip pose as a frame (expression from the clip, eyes open). */
 private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
     body = BodyPose(
@@ -287,7 +291,7 @@ internal fun DrawScope.drawMark(
             leadY = f.leadY * k,
         )
         var (left, right) = if (bodyKind == "sphere") seatGrok(1f)
-            else EyeSafeRegion.fit(safeBody, he * 0.07f, ::seatGrok) { listOf(it.first, it.second) }
+            else EyeSafeRegion.fit(safeBody, he * GROK_EDGE_MARGIN, ::seatGrok) { listOf(it.first, it.second) }
         // Reject only empty / degenerate seating, never valid capsules.
         fun ok(p: Path): Boolean {
             if (p.isEmpty) return false
@@ -305,6 +309,18 @@ internal fun DrawScope.drawMark(
                 left = Path().apply { addPath(left, dl) }
                 right = Path().apply { addPath(right, dr) }
             }
+        }
+        if (ok(left) && ok(right)) {
+            val n = EyeSafeRegion.nudge(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
+            if (n != androidx.compose.ui.geometry.Offset.Zero) {
+                left = Path().apply { addPath(left, n) }
+                right = Path().apply { addPath(right, n) }
+            }
+        }
+        if (AvatarDebugMetrics.enabled && ok(left) && ok(right)) {
+            val a = GrokEyeGap.outline(left); val b = GrokEyeGap.outline(right)
+            AvatarDebugMetrics.rows += Triple("${AvatarDebugMetrics.label}|grok|${shape.id}",
+                GrokEyeGap.clearance(a, b) / he, EyeSafeRegion.inset(safeBody, listOf(left, right), he * 0.5f) / he)
         }
         Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
             if (ok(left)) drawPath(left, eye)
@@ -335,8 +351,21 @@ internal fun DrawScope.drawMark(
         yawDeg = yaw * k,
         rollDeg = roll,
     )
-    val (le, re) = if (bodyKind == "sphere" || calm) seatGen(1f)
-        else EyeSafeRegion.fit(EyeSafeRegion.Body(projected), he * 0.06f, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
+    val genBody = EyeSafeRegion.Body(projected)
+    var (le, re) = if (bodyKind == "sphere" || calm) seatGen(1f)
+        else EyeSafeRegion.fit(genBody, he * GEN_EDGE_MARGIN, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
+    if (!calm) {
+        val n = EyeSafeRegion.nudge(genBody, listOfNotNull(le?.path, re?.path), he * GEN_EDGE_MARGIN)
+        if (n != androidx.compose.ui.geometry.Offset.Zero) {
+            fun mv(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(Path().apply { addPath(it.path, n) }, it.gradStart + n, it.gradEnd + n) }
+            le = mv(le); re = mv(re)
+        }
+    }
+    if (AvatarDebugMetrics.enabled) {
+        val ps = listOfNotNull(le?.path, re?.path)
+        AvatarDebugMetrics.rows += Triple("${AvatarDebugMetrics.label}|generical|${shape.id}", Float.NaN,
+            EyeSafeRegion.inset(genBody, ps, he * 0.5f) / he)
+    }
     val drawEyes: DrawScope.() -> Unit = {
         le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }
         re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }

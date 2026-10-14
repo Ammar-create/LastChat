@@ -128,7 +128,10 @@ class AvatarMotionVideoTest {
         val out = outDir
         assumeTrue(out != null)
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        AvatarDebugMetrics.enabled = true
+        AvatarDebugMetrics.rows.clear()
         for (sc in scripts) {
+            AvatarDebugMetrics.label = sc.name
             if (only != null && sc.name !in only) continue
             val frames = simulate(sc, 7)
             File(out, "${sc.name}.csv").writeText("t,pitch,yaw,roll,posY,sqX,sqY,lookX,lookY,lid,exprFrom,exprTo,exprT\n" +
@@ -144,5 +147,8 @@ class AvatarMotionVideoTest {
                 }
             }
         }
+        AvatarDebugMetrics.enabled = false
+        File(out, "metrics.csv").writeText("label,gap_over_he,inset_over_he\n" +
+            AvatarDebugMetrics.rows.joinToString("\n") { (l, g, i) -> "$l,$g,$i" })
     }
 }

@@ -113,8 +113,7 @@ internal class GazeDirector(private val rng: Random) {
     private fun setTarget(x: Float, y: Float) {
         val gx = x.coerceIn(-1f, 1f)
         var gy = y.coerceIn(-1f, 1f)
-        // No up-right parking (brand). A real target up-right still gets a softer look.
-        if (gx > 0.25f && gy < -0.1f) gy *= 0.4f
+        // Gaze is unrestricted: any direction is allowed (holds are kept short elsewhere).
         val jump = hypot(gx - tx, gy - ty)
         if (jump > 0.55f) bigShift = true
         tx = gx; ty = gy
@@ -665,15 +664,19 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             // ≥ ~4° of eye travel), mostly sideways or down, never up-right.
             val side = if (rng.nextBoolean()) 1f else -1f
             microTx = side * (0.32f + rng.nextFloat() * 0.16f)
-            microTy = -0.02f + rng.nextFloat() * 0.2f
+            microTy = (rng.nextFloat() * 2f - 1f) * 0.22f
             microIn = 0.4f + rng.nextFloat() * 0.6f
             quietSecLook = 0f
-            quietLimit = 1.0f + rng.nextFloat() * 0.8f
+            quietLimit = 0.9f + rng.nextFloat() * 0.7f
         } else if (microIn <= 0f) {
             microIn = 0.45f + rng.nextFloat() * 1.0f
-            microTx = (rng.nextFloat() * 2f - 1f) * 0.09f
-            microTy = (rng.nextFloat() * 2f - 1f) * 0.05f
+            microTx = (rng.nextFloat() * 2f - 1f) * 0.13f
+            microTy = (rng.nextFloat() * 2f - 1f) * 0.06f
         }
+        // Slow organic drift (two incommensurate sines) so a hold never reads as a stare.
+        driftPh += dt
+        val driftX = 0.07f * sin(driftPh * 0.83f) + 0.035f * sin(driftPh * 2.1f + 1.3f)
+        val driftY = 0.03f * sin(driftPh * 0.61f + 0.7f) + 0.02f * sin(driftPh * 1.7f)
         val mk = 1f - exp(-dt / 0.03f)
         microX += (microTx - microX) * mk
         microY += (microTy - microY) * mk
@@ -683,24 +686,23 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             squashX = bodyBase.squashX * (1f - 0.006f * br),
             squashY = bodyBase.squashY * (1f + 0.009f * br),
         )
-        var hx = gaze.headX * keep + microX * keep * awakeLife
-        var hy = gaze.headY * keep + microY * keep * awakeLife
+        var hx = gaze.headX * keep + (microX + driftX) * keep * awakeLife
+        var hy = gaze.headY * keep + (microY + driftY) * keep * awakeLife
         val lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
         val yawTot = bodyOut.yaw + 22f * hx + 60f * lx
         val pitchTot = bodyOut.pitch + 16f * hy + 60f * ly
-        // Visible-motion tracker (≥ 8° of combined turn since the last reference).
-        if (kotlin.math.abs(yawTot - lookRefYaw) + kotlin.math.abs(pitchTot - lookRefPitch) > 8f) {
-            lookRefYaw = yawTot; lookRefPitch = pitchTot; quietSecLook = 0f
+        // Visible-motion tracker on the EYES (head gaze + eye lead, not the body): ≥ 6°
+        // since the last reference resets it; otherwise a glance fires within ~1–1.6 s.
+        val eyeYaw = 22f * hx + 60f * lx
+        val eyePitch = 16f * hy + 60f * ly
+        if (kotlin.math.abs(eyeYaw - lookRefYaw) + kotlin.math.abs(eyePitch - lookRefPitch) > 6f) {
+            lookRefYaw = eyeYaw; lookRefPitch = eyePitch; quietSecLook = 0f
         }
-        val g = MotionDirector.smootherstep(((yawTot + 1f) / 6f).coerceIn(0f, 1f))
-        var pitchOut = bodyOut.pitch
-        if (g > 0f) {
-            val keepUp = 1f - g
-            if (hy < 0f) hy *= keepUp
-            if (ly < 0f) ly *= keepUp
-            if (pitchOut < 0f) pitchOut *= keepUp
-        }
+        // Gaze is unrestricted in every direction (no region is blocked or biased);
+        // only long frozen holds are prevented (visible-life glance above) and the
+        // renderer keeps the eyes on the surface (EyeSafeRegion fit + nudge).
+        val pitchOut = bodyOut.pitch
         frame = MotionFrame(
             body = if (pitchOut == bodyOut.pitch) bodyOut else bodyOut.copy(pitch = pitchOut),
             headLookX = hx,
@@ -720,6 +722,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     }
 
     private var breathPh = 0f
+    private var driftPh = 0f
+    private var upRightHeld = 0f
     private var quietSecLook = 0f
     private var quietLimit = 1.6f
     private var lookRefYaw = 0f
@@ -774,7 +778,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun playBeat(b: AlivenessEngine.Beat) {
         when (b) {
             is AlivenessEngine.Beat.Gesture -> director.gesture(b.g)
-            is AlivenessEngine.Beat.Accent -> accent(b.a, b.sec)
+            is AlivenessEngine.Beat.Accent -> accent(b.a, b.sec, force = b.a == FaceAccent.Startled)
             is AlivenessEngine.Beat.Face -> if (reaction == null) setReaction(b.expr, b.sec)
             is AlivenessEngine.Beat.Blink -> blink.request(minGap = 0.8f)
             is AlivenessEngine.Beat.DoubleBlink -> blink.request(double = true, minGap = 0.8f)

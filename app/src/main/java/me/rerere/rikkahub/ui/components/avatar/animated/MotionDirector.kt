@@ -100,7 +100,7 @@ class ClipSource(
         if (mirror) {
             y = -y; r = -r
         }
-        if (!spin[0]) p = MotionDirector.softenUp(p, y) * amp
+        if (!spin[0]) p *= amp
         return BodyPose(
             pitch = p,
             yaw = y,
@@ -245,7 +245,8 @@ class MotionDirector(
     fun gesture(g: Gesture, holdSec: Float = 0f): Boolean {
         val calm = lifecycle == MarkLifecycle.Idle || lifecycle == MarkLifecycle.Listening ||
             lifecycle == MarkLifecycle.Sleeping
-        if (!calm || desired != lifecycle) return false
+        // A startle (recoil) lands even while the lifecycle is changing (typing → listening).
+        if (!calm || (desired != lifecycle && g != Gesture.Recoil)) return false
         if (g == Gesture.Nod && exprMorphing) return false
         val top = layers.lastOrNull()
         // Recoil may interrupt anything; a tilt may ride on top of an attentive hold (🤨).
@@ -275,21 +276,14 @@ class MotionDirector(
                 val d = range(0.62f, 0.8f)
                 val deep = range(6f, 9f)
                 gazeCue = GazeCue(0f, 0.28f, d * 0.55f, "nod")
-                Layer(ProceduralSource("nod", d) { u -> BodyPose(pitch = deep * nodCurve(u), posY = 0.006f * nodCurve(u)) },
+                Layer(ProceduralSource("nod", d) { u -> springNodPose(u, deep) },
                     0f, d, 1f, 0.15f, "nod", gesture = true)
             }
             Gesture.Recoil -> {
-                // Jolt back fast, wobble once, settle (no anticipation: it's a surprise).
-                val d = range(0.55f, 0.7f)
-                Layer(ProceduralSource("recoil", d) { u ->
-                    val k = snapCurve(u, 0f, 0.3f)
-                    BodyPose(
-                        pitch = -9f * k,
-                        posY = -0.025f * k.coerceAtLeast(0f),
-                        squashX = 1f + 0.07f * k,
-                        squashY = 1f - 0.07f * k,
-                    )
-                }, 0f, d, 1f, 0.08f, "recoil", gesture = true)
+                // Startle: a snappy pop up and back (stretch), a squashy landing, then a
+                // springy settle with overshoot (no anticipation: it's a surprise).
+                val d = range(0.8f, 0.95f)
+                Layer(ProceduralSource("recoil", d) { u -> startlePose(u) }, 0f, d, 1f, 0.05f, "recoil", gesture = true)
             }
             Gesture.TurnAway -> {
                 val side = if (rng.nextBoolean()) 1f else -1f
@@ -630,9 +624,9 @@ class MotionDirector(
                 val total = d * if (twice) 1.85f else 1f
                 gazeCue = GazeCue(0f, 0.25f, total * 0.5f, "nod")
                 Layer(ProceduralSource("nodB", total) { u ->
-                    val k = if (!twice) nodCurve(u)
-                    else if (u < 0.5f) nodCurve(u * 2f, 0.04f) else 0.6f * nodCurve(u * 2f - 1f)
-                    BodyPose(pitch = deep * k, yaw = side * 1.5f * kotlin.math.abs(k))
+                    val p = if (!twice) springNodPose(u, deep)
+                    else if (u < 0.5f) springNodPose(u * 2f, deep) else springNodPose(u * 2f - 1f, deep * 0.6f)
+                    p.copy(yaw = side * 1.5f * kotlin.math.abs(p.pitch / deep))
                 }, 0f, total, 1f, 0.15f, "nod")
             }
             "bob" -> {
@@ -739,8 +733,8 @@ class MotionDirector(
         // No up-right look (brand): while turned right, an upward pitch fades out
         // continuously with the turn (spins pass through freely).
         val yawW = MarkClipEngine.wrap180(p.yaw)
-        val upRight = if (p.pitch < 0f && yawW > 0f && yawW < 120f) smootherstep((yawW / 12f).coerceIn(0f, 1f)) else 0f
-        val raw = floatArrayOf(p.pitch * (1f - upRight), p.yaw, p.roll)
+        // Any direction is allowed (no up-right suppression).
+        val raw = floatArrayOf(p.pitch, p.yaw, p.roll)
         if (!filterReady) {
             for (a in 0..2) {
                 rawUnwrapped[a] = raw[a]; lastRaw[a] = raw[a]
@@ -768,7 +762,7 @@ class MotionDirector(
                     val w = when {
                         i == 7 -> 30f
                         drowsy -> OMEGA_DROWSY
-                        i >= 3 -> 16f // bob and squash: as before (never step)
+                        i >= 3 -> 24f // bob and squash: quick enough for springy pops
                         else -> OMEGA
                     }
                     // Angles a little underdamped (snappy, small overshoot); the bob is
@@ -864,6 +858,43 @@ class MotionDirector(
                 x < 0.75f -> 1f - (1f + settle) * ease((x - 0.4f) / 0.35f)
                 else -> -settle * (1f - ease((x - 0.75f) / 0.25f))
             }
+        }
+
+        /**
+         * Springy nod on u ∈ 0…1 (starts and ends at exactly 0): a quick dip to 1, then a
+         * damped spring through an overshoot back to rest. Squash rides along: the body
+         * compresses on the way down and stretches on the rebound.
+         */
+        fun springNod(u: Float): Float {
+            val x = u.coerceIn(0f, 1f)
+            val a = 0.26f
+            if (x < a) return sin(PI.toFloat() * 0.5f * x / a).let { it * it }
+            val v = (x - a) / (1f - a)
+            return kotlin.math.exp(-3.2f * v) * kotlin.math.cos(2.6f * PI.toFloat() * v) * (1f - v * v)
+        }
+
+        fun springNodPose(u: Float, deep: Float): BodyPose {
+            val k = springNod(u)
+            return BodyPose(
+                pitch = deep * k,
+                posY = 0.014f * k,
+                squashX = 1f + 0.05f * k,
+                squashY = 1f - 0.065f * k,
+            )
+        }
+
+        /** Startle pop: stretch up and back fast, squash on landing, springy settle. */
+        fun startlePose(u: Float): BodyPose {
+            val x = u.coerceIn(0f, 1f)
+            // Pop channel: rises in ~70 ms, then a damped spring that ends at 0.
+            val pop = if (x < 0.09f) sin(PI.toFloat() * 0.5f * x / 0.09f)
+                else { val v = (x - 0.09f) / 0.91f; kotlin.math.exp(-3.6f * v) * kotlin.math.cos(2.4f * PI.toFloat() * v) * (1f - v * v) }
+            return BodyPose(
+                pitch = -15f * pop,
+                posY = -0.06f * pop,
+                squashX = 1f - 0.1f * pop,
+                squashY = 1f + 0.15f * pop,
+            )
         }
 
         fun smootherstep(x: Float): Float {
