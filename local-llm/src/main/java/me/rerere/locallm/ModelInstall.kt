@@ -133,6 +133,14 @@ class ModelInstall(
             }
             if (!resp.isSuccessful) throw IOException("http_${resp.code}")
             val body = resp.body ?: throw IOException("empty_body")
+            // Gated/login pages and LFS pointers come back as 200 text; never save them as a model.
+            val contentType = resp.header("Content-Type").orEmpty().lowercase()
+            if (target.name.endsWith(".litertlm", ignoreCase = true) &&
+                (contentType.startsWith("text/html") || contentType.startsWith("application/json"))
+            ) {
+                part.delete()
+                throw IOException("$BAD_DOWNLOAD_PREFIX" + "html_page")
+            }
 
             val contentLength = body.contentLength()
             val total = when {
@@ -169,13 +177,73 @@ class ModelInstall(
             part.delete()
             throw IOException("size_mismatch")
         }
+        if (target.name.endsWith(".litertlm", ignoreCase = true)) {
+            val problem = litertlmHeaderProblem(readHeader(part))
+            if (problem != null) {
+                part.delete()
+                throw IOException(BAD_DOWNLOAD_PREFIX + problem)
+            }
+        }
         if (target.exists()) target.delete()
         if (!part.renameTo(target)) throw IOException("rename_failed")
     }
 
+    private fun readHeader(file: File): ByteArray =
+        file.inputStream().use { input ->
+            val buf = ByteArray(HEADER_BYTES)
+            var n = 0
+            while (n < buf.size) {
+                val r = input.read(buf, n, buf.size - n)
+                if (r < 0) break
+                n += r
+            }
+            buf.copyOf(n)
+        }
+
     companion object {
         private const val PART_SUFFIX = ".part"
         private const val PROGRESS_STEP_BYTES = 2L * 1024 * 1024
+        private const val HEADER_BYTES = 64
+        const val BAD_DOWNLOAD_PREFIX = "bad_model_file:"
+        private val LITERTLM_MAGIC = "LITERTLM".toByteArray(Charsets.US_ASCII)
+        private const val MIN_MODEL_BYTES = 1L * 1024 * 1024
+
+        /**
+         * Returns null when [header] starts with the LiteRT-LM `LITERTLM` magic, otherwise a short
+         * reason code: html_page, lfs_pointer, tflite, zip_task, too_small, or not_litertlm.
+         */
+        fun litertlmHeaderProblem(header: ByteArray): String? {
+            if (header.size >= LITERTLM_MAGIC.size &&
+                header.copyOfRange(0, LITERTLM_MAGIC.size).contentEquals(LITERTLM_MAGIC)
+            ) return null
+            val text = String(header, Charsets.ISO_8859_1).trimStart()
+            return when {
+                header.isEmpty() -> "too_small"
+                text.startsWith("version https://git-lfs", ignoreCase = true) -> "lfs_pointer"
+                text.startsWith("<") || text.startsWith("{") -> "html_page"
+                header.size >= 8 && String(header, 4, 4, Charsets.ISO_8859_1) == "TFL3" -> "tflite"
+                header.size >= 2 && header[0] == 'P'.code.toByte() && header[1] == 'K'.code.toByte() -> "zip_task"
+                else -> "not_litertlm"
+            }
+        }
+
+        /** Header check for a file already on disk (used before loading an installed model). */
+        fun installedFileProblem(file: File): String? {
+            if (!file.exists() || file.length() < MIN_MODEL_BYTES) return "too_small"
+            val header = file.inputStream().use { it.readNBytesCompat(HEADER_BYTES) }
+            return litertlmHeaderProblem(header)
+        }
+
+        private fun java.io.InputStream.readNBytesCompat(n: Int): ByteArray {
+            val buf = ByteArray(n)
+            var read = 0
+            while (read < n) {
+                val r = read(buf, read, n - read)
+                if (r < 0) break
+                read += r
+            }
+            return buf.copyOf(read)
+        }
 
         /**
          * Parses a HuggingFace `/blob/`, `/resolve/`, or `/raw/` URL (or shorthand repo/file path)

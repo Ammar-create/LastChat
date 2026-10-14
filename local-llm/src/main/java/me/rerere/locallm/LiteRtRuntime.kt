@@ -77,14 +77,21 @@ class LiteRtRuntime(
                 val cpuModel = model.copy(runtimeFlags = model.runtimeFlags.copy(gpuCrashed = true))
                 val cpuBackends = AcceleratorProbe.resolve(cpuModel)
                 _state.value = LocalRuntimeState.SwitchedToCpu(model.id, model.displayName)
-                val cpuEngine = loadEngine(cpuModel, cpuBackends, kvCacheTokens)
+                val cpuEngine = try {
+                    loadEngine(cpuModel, cpuBackends, kvCacheTokens)
+                } catch (cpuError: Throwable) {
+                    val wrapped = IncompatibleModelException.from(cpuError)
+                    _state.value = LocalRuntimeState.Error(model.id, wrapped.message ?: "load_failed")
+                    throw wrapped
+                }
                 val result = LoadedEngine(cpuEngine, cpuModel, cpuBackends, loadKey(cpuModel, cpuBackends, kvCacheTokens))
                 loaded = result
                 _state.value = LocalRuntimeState.Ready(model.id, model.displayName, cpuBackends.effective)
                 return@withLock result
             }
-            _state.value = LocalRuntimeState.Error(model.id, t.message ?: "load_failed")
-            throw t
+            val wrapped = IncompatibleModelException.from(t)
+            _state.value = LocalRuntimeState.Error(model.id, wrapped.message ?: "load_failed")
+            throw wrapped
         }
 
         val result = LoadedEngine(engine, model, backends, key)
@@ -99,6 +106,15 @@ class LiteRtRuntime(
         kvCacheTokens: Int,
     ): Engine {
         val modelPath = model.filePath
+        if (modelPath.endsWith(".litertlm", ignoreCase = true)) {
+            ModelInstall.installedFileProblem(java.io.File(modelPath))?.let { problem ->
+                throw IncompatibleModelException(
+                    IncompatibleModelException.Reason.INVALID_FILE,
+                    "file header check failed: $problem",
+                    IllegalStateException(problem),
+                )
+            }
+        }
         val cacheDir: String? = if (modelPath.startsWith("/data/local/tmp")) {
             context.getExternalFilesDir(null)?.absolutePath
         } else {
@@ -163,6 +179,39 @@ class LiteRtRuntime(
         }
     }
 
+    /**
+     * The engine refused the model file (bad header, newer/older format, or a tensor/op the
+     * backend can't run). [detail] is the native message without C++ source locations.
+     */
+    class IncompatibleModelException(
+        val reason: Reason,
+        val detail: String,
+        cause: Throwable,
+    ) : Exception(detail, cause) {
+        enum class Reason { INVALID_FILE, UNSUPPORTED }
+
+        companion object {
+            fun from(t: Throwable): IncompatibleModelException {
+                val raw = t.message.orEmpty()
+                val reason = if (raw.contains("magic number", ignoreCase = true) ||
+                    raw.contains("failed to read", ignoreCase = true)
+                ) Reason.INVALID_FILE else Reason.UNSUPPORTED
+                return IncompatibleModelException(reason, cleanNativeMessage(raw), t)
+            }
+
+            /** Drops `[third_party/...cc:123]` locations and tree glyphs from LiteRT errors. */
+            fun cleanNativeMessage(raw: String): String =
+                raw.replace(Regex("""\[[^\]]*\.(cc|h|cpp):\d+\]"""), "")
+                    .replace("└", "")
+                    .replace(Regex("""(ERROR:\s*)+"""), "")
+                    .replace(Regex("""\s+"""), " ")
+                    .trim()
+                    .trimEnd(':', ' ')
+                    .ifBlank { "load_failed" }
+                    .take(300)
+        }
+    }
+
     class InsufficientMemoryException(val info: MemoryCheck.Insufficient) : Exception("insufficient_memory")
 
     companion object {
@@ -170,7 +219,14 @@ class LiteRtRuntime(
         private const val KEY_PENDING_GPU = "pending_gpu_model"
 
         private fun loadKey(model: InstalledLocalModel, backends: ResolvedBackends, kvCacheTokens: Int): String =
-            listOf(model.filePath, backends.effective.name, kvCacheTokens.toString()).joinToString("|")
+            listOf(
+                model.filePath,
+                java.io.File(model.filePath).let { "${it.length()}:${it.lastModified()}" },
+                backends.effective.name,
+                (backends.vision != null).toString(),
+                (backends.audio != null).toString(),
+                kvCacheTokens.toString(),
+            ).joinToString("|")
     }
 
     private fun resolveKvCacheSize(model: InstalledLocalModel): Int {

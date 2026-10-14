@@ -136,10 +136,9 @@ class SettingLocalLlmViewModel(
         // Keep the user-managed local provider's model list in sync with what's installed on disk.
         // Including settings in this flow lets a re-added local provider immediately regain the
         // already installed files.
-        viewModelScope.launch {
-            combine(store.models, settingsStore.settingsFlow) { installed, _ -> installed }
-                .collectLatest { syncModelsToSettings(it) }
-        }
+        // The app-scoped collector in LastChatApp does the ongoing sync; this only covers the
+        // first frame of the screen so the list is right before that collector's next emission.
+        viewModelScope.launch { syncModelsToSettings(store.current()) }
     }
 
     fun download(meta: LocalModelMetadata) = downloadManager.download(meta)

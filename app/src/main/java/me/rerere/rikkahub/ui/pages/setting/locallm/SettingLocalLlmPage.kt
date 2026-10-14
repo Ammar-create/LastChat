@@ -747,8 +747,13 @@ private fun DownloadStatus(
 
         is LocalDownload.Failed -> {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val badFilePrefix = me.rerere.locallm.ModelInstall.BAD_DOWNLOAD_PREFIX
                 Text(
-                    stringResource(R.string.local_llm_status_error_format, download.message),
+                    if (download.message.startsWith(badFilePrefix)) {
+                        stringResource(R.string.local_llm_bad_download, download.message.removePrefix(badFilePrefix))
+                    } else {
+                        stringResource(R.string.local_llm_status_error_format, download.message)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.weight(1f),

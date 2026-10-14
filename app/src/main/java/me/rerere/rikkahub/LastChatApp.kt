@@ -27,6 +27,8 @@ import org.koin.android.ext.koin.androidLogger
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.filter
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.syncInstalledLocalModelsToSettings
 import me.rerere.rikkahub.data.datastore.withRecoveredAssistantsFromConversations
@@ -227,6 +229,29 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
             }.onFailure {
                 Log.w(TAG, "Local model metadata sync failed", it)
             }
+        }
+
+        // Installed on-device models -> chat-selectable models. Lives for the whole app (not a
+        // settings-screen ViewModel), so an install that finishes, or a rename/config/context
+        // change made just before leaving the screen, reaches the chat without reopening settings.
+        get<AppScope>().launch(Dispatchers.IO) {
+            val localStore = get<me.rerere.locallm.LocalModelStore>()
+            val settingsStore = get<SettingsStore>()
+            kotlinx.coroutines.flow.combine(
+                localStore.models,
+                settingsStore.settingsFlow.filter { !it.init },
+            ) { installed, _ -> installed }
+                .conflate()
+                .collect { installed ->
+                    runCatching {
+                        syncInstalledLocalModelsToSettings(
+                            installed = installed,
+                            totalRamGb = me.rerere.locallm.MemoryGuard.deviceTotalRamGb(this@LastChatApp),
+                            settingsStore = settingsStore,
+                            catalogSnapshot = get<ModelCatalogService>().snapshotFlow.value,
+                        )
+                    }.onFailure { Log.w(TAG, "Local model live sync failed", it) }
+                }
         }
     }
 

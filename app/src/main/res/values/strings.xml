@@ -1487,6 +1487,10 @@
   <string name="local_llm_spec_decoding_engaged_short">MTP on</string>
   <string name="local_llm_delete_confirm_title">Delete model?</string>
   <string name="local_llm_delete_confirm_message">Remove \"%1$s\" from your device? This deletes the file (you\'ll need to download it again to use it).</string>
+  <string name="local_llm_incompatible_model">This model isn\'t compatible with LastChat\'s on-device engine (format/version or backend). Try a model from the list, or a .litertlm built for LiteRT-LM 0.18 or newer.</string>
+  <string name="local_llm_invalid_model_file">This file isn\'t a valid .litertlm model (wrong format or an incomplete download). Delete it and try a model from the list, or a .litertlm built for LiteRT-LM.</string>
+  <string name="local_llm_technical_detail_format">Technical detail: %1$s</string>
+  <string name="local_llm_bad_download">The download isn\'t a .litertlm model (%1$s). It was deleted. Check that the link points to a .litertlm file you have access to.</string>
   <string name="local_llm_invalid_url">Invalid URL: must be a Hugging Face link to a .litertlm file</string>
   <string name="local_llm_download_progress">Downloading… %1$d%%</string>
   <string name="local_llm_catalog_title">Available models</string>
