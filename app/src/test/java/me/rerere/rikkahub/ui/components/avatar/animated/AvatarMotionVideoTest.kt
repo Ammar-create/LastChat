@@ -42,6 +42,7 @@ import kotlin.random.Random
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AvatarMotionVideoTest {
     private val outDir: File? = System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() }?.let { File(it).apply { mkdirs() } }
+    private val videoShapes = System.getProperty("lastchat.videoShapes")?.takeIf { it.isNotBlank() }?.split(",") ?: listOf("blob", "heart")
     private val only = System.getProperty("lastchat.videoOnly")?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
     private val fps = 30
     private val cellDp = 120
@@ -159,6 +160,18 @@ class AvatarMotionVideoTest {
         }
     }
 
+    /** Spin sweep 0…345° (15° steps) per shape, through the real soft-3D solid. */
+    @Test
+    fun renderSpinSweep() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "sweep" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val frames = (0 until 24).map { MotionFrame(spinYaw = it * 15f + 0.01f) }
+        for (mode in listOf("grok", "generical")) for (shape in listOf("heart", "blob", "star", "flower", "hex")) {
+            captureStrip(File(out, "sweep_${mode}_$shape.png"), shape, mode, frames)
+        }
+    }
+
     @Test
     fun renderMotionVideos() {
         val out = outDir
@@ -183,7 +196,7 @@ class AvatarMotionVideoTest {
                         i.toFloat() / fps, f.body.pitch, f.body.yaw, f.body.roll, f.body.posY, f.body.squashX, f.body.squashY,
                         f.headLookX, f.headLookY, f.lid, f.exprFrom, f.exprTo, f.exprT, f.spinYaw)
                 })
-            for (mode in listOf("generical", "grok")) for (shape in listOf("blob", "heart")) {
+            for (mode in listOf("generical", "grok")) for (shape in videoShapes) {
                 val dir = File(out, "${sc.name}_${mode}_$shape").apply { mkdirs() }
                 frames.chunked(perStrip).forEachIndexed { k, chunk ->
                     captureStrip(File(dir, "strip%03d.png".format(k)), shape, mode, chunk)

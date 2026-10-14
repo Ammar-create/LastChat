@@ -800,6 +800,9 @@ object WhMesh {
 
     // --- lit mesh faces (Xx/Zx-style on zb/qb rings) ---
 
+    /** Lit colour of a face that looks straight at the viewer (reference for relative shading). */
+    fun frontShade(ink: Color): Color = shadeInk(ink, V3(0f, 0f, 1f))
+
     private fun shadeInk(ink: Color, normal: V3): Color {
         val d = hypot(hypot(normal.x, normal.y), normal.z)
         if (d < 1e-8f) return ink

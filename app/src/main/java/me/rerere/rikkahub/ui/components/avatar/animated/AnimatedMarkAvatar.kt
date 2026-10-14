@@ -203,11 +203,10 @@ private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
 )
 
 /**
- * Character-moment spins (engine12) are drawn as a card turn: the silhouette narrows by
- * |cos(spin)| about the centre while the real 3D yaw only leans within the shape's normal
- * turn cap (shading and eyes slide toward the turn), and the eyes are hidden while the back
- * faces the viewer. Every shape keeps its own outline through the whole spin — a true 3D
- * yaw past ~20° lumps the heart and runs the seated eyes edge-on into slivers.
+ * Character-moment spins (engine12b) are real soft-3D rotations: the spin is added to the
+ * solid's yaw after the per-shape turn cap, the ring mesh is projected at that angle, and the
+ * eyes are seated on the rotated surface (no safe-region squeeze while spinning); they fade
+ * as their side turns edge-on and are not drawn while it faces away.
  */
 internal fun DrawScope.drawMark(
     shape: GrokShape,
@@ -224,19 +223,10 @@ internal fun DrawScope.drawMark(
         drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body, eye, eyeFade)
         return
     }
-    val sr = Math.toRadians(f.spinYaw.toDouble())
-    val c = kotlin.math.cos(sr).toFloat()
-    val sn = kotlin.math.sin(sr).toFloat()
-    val (yawCap, _) = turnCapFor(shapeId, shape.solid.kind)
-    val f2 = f.copy(spinYaw = 0f, body = f.body.copy(yaw = f.body.yaw + yawCap * 0.9f * sn))
-    val back = c < 0.04f
-    // Eyes fade out over the last sliver before edge-on, so they never pop.
-    val eyeK = ((c - 0.04f) / 0.2f).coerceIn(0f, 1f)
-    scale(scaleX = kotlin.math.max(kotlin.math.abs(c), 0.06f), scaleY = 1f, pivot = center) {
-        drawMarkInner(shape, shapeId, isGrok, f2, calm, morph, body,
-            if (back) Color.Transparent else eye.copy(alpha = eye.alpha * eyeK),
-            if (back) Color.Transparent else eyeFade.copy(alpha = eyeFade.alpha * eyeK))
-    }
+    val facing = kotlin.math.cos(Math.toRadians(f.spinYaw.toDouble())).toFloat()
+    val eyeK = ((facing - 0.12f) / 0.25f).coerceIn(0f, 1f)
+    drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body,
+        eye.copy(alpha = eye.alpha * eyeK), eyeFade.copy(alpha = eyeFade.alpha * eyeK))
 }
 
 private fun DrawScope.drawMarkInner(
@@ -264,7 +254,8 @@ private fun DrawScope.drawMarkInner(
     // eyes keep their inset. tanh keeps it springy instead of a hard stop.
     val (yawCap, pitchCap) = turnCapFor(shape.id, bodyKind)
     val pitch = softCap(f.body.pitch + look.pitchDeg, pitchCap)
-    val yaw = softCap(f.body.yaw + look.yawDeg, yawCap)
+    val spinning = kotlin.math.abs(f.spinYaw) >= 0.5f
+    val yaw = softCap(f.body.yaw + look.yawDeg, yawCap) + f.spinYaw
     val roll = f.body.roll
     val clip = ClipSample(
         clipName = "live",
@@ -332,7 +323,7 @@ private fun DrawScope.drawMarkInner(
             leadX = f.leadX * k,
             leadY = f.leadY * k,
         )
-        var (left, right) = if (bodyKind == "sphere") seatGrok(1f)
+        var (left, right) = if (bodyKind == "sphere" || spinning) seatGrok(1f)
             else EyeSafeRegion.fit(safeBody, he * GROK_EDGE_MARGIN, ::seatGrok) { listOf(it.first, it.second) }
         // Reject only empty / degenerate seating, never valid capsules.
         fun ok(p: Path): Boolean {
@@ -352,7 +343,7 @@ private fun DrawScope.drawMarkInner(
                 right = Path().apply { addPath(right, dr) }
             }
         }
-        if (ok(left) && ok(right)) {
+        if (ok(left) && ok(right) && !spinning) {
             val (k, c) = EyeSafeRegion.shrink(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
             if (k < 1f) {
                 // Shrinking about the pair centre narrows the gap a little, so the gap
@@ -367,7 +358,7 @@ private fun DrawScope.drawMarkInner(
             }
         }
         // Shrink first (keeps the pair centre, so gaze motion survives), then slide in.
-        if (ok(left) && ok(right)) {
+        if (ok(left) && ok(right) && !spinning) {
             val n = EyeSafeRegion.nudge(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
             if (n != androidx.compose.ui.geometry.Offset.Zero) {
                 left = Path().apply { addPath(left, n) }
@@ -380,7 +371,11 @@ private fun DrawScope.drawMarkInner(
             AvatarDebugMetrics.rows += "${AvatarDebugMetrics.label},grok,${shape.id},${f.exprFrom},${f.exprTo},${f.exprT}," +
                 "${GrokEyeGap.clearance(a, b) / he},${EyeSafeRegion.inset(safeBody, listOf(left, right), he * 0.5f) / he},${c.x / he},${c.y / he}"
         }
-        Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
+        // While spinning, clip to the rotated silhouette so an eye rolling over the edge wraps away.
+        if (spinning) Soft3DMark.withBodyClip(this, clip, projected, sizePx, he, morph, false) {
+            if (ok(left)) drawPath(left, eye)
+            if (ok(right)) drawPath(right, eye)
+        } else Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
             if (ok(left)) drawPath(left, eye)
             if (ok(right)) drawPath(right, eye)
         }
@@ -410,9 +405,9 @@ private fun DrawScope.drawMarkInner(
         rollDeg = roll,
     )
     val genBody = EyeSafeRegion.Body(projected)
-    var (le, re) = if (bodyKind == "sphere" || calm) seatGen(1f)
+    var (le, re) = if (bodyKind == "sphere" || calm || spinning) seatGen(1f)
         else EyeSafeRegion.fit(genBody, he * GEN_EDGE_MARGIN, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
-    if (!calm) {
+    if (!calm && !spinning) {
         val (k, c) = EyeSafeRegion.shrink(genBody, listOfNotNull(le?.path, re?.path), he * GEN_EDGE_MARGIN)
         if (k < 1f) {
             fun sc(o: Offset) = c + (o - c) * k

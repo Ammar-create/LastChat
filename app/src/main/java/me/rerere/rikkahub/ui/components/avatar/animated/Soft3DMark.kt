@@ -25,9 +25,13 @@ data class SolidSpec(
     val axis: Int = 0,
 )
 
+private fun abs(v: Float) = kotlin.math.abs(v)
+
 object Soft3DMark {
 
     const val FILL = 0.98f
+    /** How much of the Lambert contrast reaches the screen (0 flat … 1 full desktop Xx). */
+    const val SHADE_STRENGTH = 0.5f
 
     fun withBodyTransform(
         drawScope: DrawScope,
@@ -135,8 +139,42 @@ object Soft3DMark {
             morphProgress = morphProgress,
             allowXBob = allowXBob && !calmFaceOn,
         ) {
-            // Desktop av: <use href="#body" fill="${bodyFill}"/> — one flat fill, never Xx faces.
+            // Desktop av: <use href="#body" fill="${bodyFill}"/> — one flat fill at rest.
             drawPath(paintPath, fill)
+            // engine12b: once the solid turns, the lit ring-mesh faces shade it (relative to a
+            // face-on facet, so the front keeps the brand ink and only the turning sides darken
+            // or catch the light). Fades in with the rotation, so rest stays the flat mark.
+            val turn = abs(clip.rotationDeg[0]) + abs(clip.rotationDeg[1].let { ((it % 360f) + 540f) % 360f - 180f })
+            val k = if (calmFaceOn) 0f else ((turn - 4f) / 26f).coerceIn(0f, 1f)
+            if (k > 0.01f && mesh.faces.isNotEmpty()) {
+                val ref = WhMesh.frontShade(fill)
+                fun rel(c: Float, r: Float, base: Float): Float {
+                    val ratio = if (r > 1e-4f) c / r else 1f
+                    val soft = 1f + (ratio - 1f) * SHADE_STRENGTH
+                    val v = if (soft >= 1f) base + (1f - base) * (soft - 1f) * 0.6f else base * soft
+                    return (base + (v.coerceIn(0f, 1f) - base) * k)
+                }
+                clipPath(paintPath) {
+                    for (face in mesh.faces) {
+                        val poly = face.polygon
+                        if (poly.size < 3) continue
+                        val fp = Path().apply {
+                            moveTo(poly[0].x, poly[0].y)
+                            for (i in 1 until poly.size) lineTo(poly[i].x, poly[i].y)
+                            close()
+                        }
+                        val c = Color(
+                            rel(face.fill.red, ref.red, fill.red),
+                            rel(face.fill.green, ref.green, fill.green),
+                            rel(face.fill.blue, ref.blue, fill.blue),
+                            fill.alpha,
+                        )
+                        drawPath(fp, c)
+                        // Hairline stroke in the same colour hides anti-aliasing seams.
+                        drawPath(fp, c, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8f))
+                    }
+                }
+            }
         }
         @Suppress("UNUSED_EXPRESSION") gazeX
         @Suppress("UNUSED_EXPRESSION") gazeY
@@ -167,7 +205,9 @@ object Soft3DMark {
         val bb = bodyPath.getBounds()
         val hArea = (hb.width * hb.height).coerceAtLeast(1e-3f)
         val bArea = (bb.width * bb.height).coerceAtLeast(1e-3f)
-        return if (hArea < bArea * 0.35f) bodyPath else mesh.hull
+        // Edge-on (spins) a thin hull is correct, so the floor scales with how much faces us.
+        val facing = kotlin.math.max(0.08f, kotlin.math.abs(kotlin.math.cos(yaw)) * kotlin.math.abs(kotlin.math.cos(pitch)))
+        return if (hArea < bArea * 0.35f * facing) bodyPath else mesh.hull
     }
 
     fun evenOddBodyWithEyes(body: Path, leftEye: Path, rightEye: Path): Path =
