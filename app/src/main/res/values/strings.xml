@@ -1217,7 +1217,7 @@
     <string name="banner_dismiss">Dismiss</string>
     <string name="previous">Previous</string>
     <string name="next">Next</string>
-    <string name="minimal_chat_input_placeholder">Ask %1$s</string>
+    <string name="minimal_chat_input_placeholder">%1$s</string>
     <string name="character_questions_progress">%1$d of %2$d</string>
     <string name="character_questions_custom_answer_placeholder">Write your own answer...</string>
 

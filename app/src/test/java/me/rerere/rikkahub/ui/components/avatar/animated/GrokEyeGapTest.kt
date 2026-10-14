@@ -70,6 +70,10 @@ class GrokEyeGapTest {
             if (((t * 120f).toInt()) % 12 == 0) out += "sim@%.2f".format(t) to sim.frame
             t += 1f / 120f
         }
+        // Dense mid-blend sampling for the tilted faces (Λ / V tilts reach toward each other).
+        val tilted = listOf("Surprised", "Sad", "Worried", "confused", "Happy", "Angry", "angered or concentrated")
+        for (x in tilted) for (y in tilted) if (x != y) for (t in listOf(0.15f, 0.5f, 0.85f))
+            out += "$x>$y@$t yaw" to MotionFrame(exprFrom = x, exprTo = y, exprT = t, body = BodyPose(yaw = 8f, pitch = 4f, roll = 3f))
         val rig = FaceRig(Random(1))
         for (a in FaceAccent.entries) if (a != FaceAccent.None) for (e in listOf("Neutral", "Sad", "Happy"))
             out += "$e+$a" to MotionFrame(exprFrom = e, exprTo = e, exprT = 1f, face = rig.staticFace(a, 0.3f))
@@ -143,9 +147,9 @@ class GrokEyeGapTest {
                 val bmp = capture(shape, chunk.map { it.second })
                 val c = bmp.height
                 // Mark radius in px ≈ half the mark box; required clear gap ~5 % of it
-                // (MIN_GAP is 13 %; the rest is anti-aliasing slack). Required clear gap ≈ 9 %.
+                // (MIN_GAP is 17 %; the rest is anti-aliasing slack). Required clear gap ≈ 12 %.
                 val he = c * markFrac / 2f
-                val r = kotlin.math.max(1, (he * 0.045f).toInt())
+                val r = kotlin.math.max(1, (he * 0.06f).toInt())
                 for ((i, pair) in chunk.withIndex()) {
                     val mask = Array(c) { y -> BooleanArray(c) { x ->
                         val px = bmp.getPixel(i * c + x, y)

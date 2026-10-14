@@ -165,10 +165,10 @@ object WhSphereEyes {
                 listOf(e, e)
             }
             // Confused: same eyes as every other face, one lid tilted, both on one level.
+            // Same-size pills (like Sad, mirrored on one side only): one tilts, neither shrinks.
             "confused" -> listOf(
                 en(UR, 0.6f, 0f, 0f),
-                // Shorter eye dropped so both bottoms sit on one line.
-                en(UR, 0.44f, -16f, 0f).copy(offY = -0.08f),
+                en(UR, 0.58f, -18f, 0f),
             )
             // >< squeeze (dizzy).
             "dizzy" -> {

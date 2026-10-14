@@ -186,6 +186,12 @@ class MotionDirector(
         private set
     private var desired: MarkLifecycle = MarkLifecycle.Idle
     private val layers = ArrayList<Layer>()
+
+    /** Set by the owner each tick: a face morph is in progress (no nods start then). */
+    var exprMorphing = false
+
+    /** A nod (gesture or busy beat) is playing; expression changes wait for it. */
+    val nodding: Boolean get() = layers.any { it.kind == "nod" }
     private var lifeSec = 0f
     private var pendingSince = -1f
     private val recentKinds = ArrayDeque<String>()
@@ -240,6 +246,7 @@ class MotionDirector(
         val calm = lifecycle == MarkLifecycle.Idle || lifecycle == MarkLifecycle.Listening ||
             lifecycle == MarkLifecycle.Sleeping
         if (!calm || desired != lifecycle) return false
+        if (g == Gesture.Nod && exprMorphing) return false
         val top = layers.lastOrNull()
         // Recoil may interrupt anything; a tilt may ride on top of an attentive hold (🤨).
         val overAttend = top?.kind == "attend" && g == Gesture.Tilt
@@ -564,7 +571,7 @@ class MotionDirector(
             val extra = if (k == "pause" && recentKinds.takeLast(2).all { it == "pause" }) 0f else 1f
             (k to w * f * f * extra).takeIf { it.second > 0f }
         }.ifEmpty { listOf("pause" to 1f) }
-        val kind = weighted(opts)
+        val kind = weighted(opts).let { if (it == "nod" && exprMorphing) "pause" else it }
         lastUsed[kind] = clock
         val side = pickSide()
         val layer = when (kind) {

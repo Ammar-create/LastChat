@@ -112,3 +112,13 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
   rendered pixels and fails when an eye vanishes. It covers blink and lid states, squash, and frames
   taken from a live simulation.
 - `AvatarMotionVideoTest` renders at 30 fps (120 Hz simulation) with 120 dp cells.
+
+## engine4 update
+- Grok "confused" uses two pills of the same size; only one is tilted (−18°). No pill shrinks.
+- `GrokEyeGap.MIN_GAP` = 17 %. The gap test requires a ~12 % clear gap, samples tilted faces
+  mid-blend on every shape, heart included, and runs 767 frames per shape.
+- No nod starts while a face is morphing, and the face does not change while a nod plays. The
+  asymmetric "hurt or cute" face is no longer in the busy rotation.
+- Continuous micro life: breathing (squash plus bob, 3.4 s period) and micro-saccades every 0.5–1.6 s.
+  No idle hold is fully still for more than ~1.4 s.
+- The up-right guard runs on the final composed look, so it also covers reaction and startle gaze.

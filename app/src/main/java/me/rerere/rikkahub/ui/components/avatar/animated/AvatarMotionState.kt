@@ -17,6 +17,8 @@ import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.geometry.Offset
 import kotlin.math.exp
+import kotlin.math.PI
+import kotlin.math.sin
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -607,8 +609,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (gaze.bigShift && rng.nextFloat() < 0.4f) blink.request(minGap = 0.9f)
 
         // ---- expression ----
-        expr.want(currentExpressionTarget())
+        // Never swap faces mid-nod (a morph under a nod reads as a size pop).
+        if (!director.nodding) expr.want(currentExpressionTarget())
         if (expr.update(dt)) blink.request(minGap = 0.2f)
+        director.exprMorphing = expr.morphing
 
         // ---- blink + lids ----
         blink.update(dt, director.lifecycle, drowsy)
@@ -648,9 +652,28 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val keep = 1f - w
         // Final up-right guard on the composed look (body + head gaze + eye lead): the
         // "up-right stare" must never appear, whichever layer asked for it.
-        val bodyOut = body.lerpTo(BodyPose.REST, w)
-        var hx = gaze.headX * keep
-        var hy = gaze.headY * keep
+        // Micro life that never stops while awake: breathing (squash + bob) and
+        // micro-saccades (tiny quick eye hops every ~0.5–1.6 s), so no hold ever reads frozen.
+        val awakeLife = if (drowsy || director.lifecycle == MarkLifecycle.Sleeping) 0.35f else 1f
+        breathPh += dt * 2f * PI.toFloat() / 3.4f
+        val br = sin(breathPh) * keep * awakeLife
+        microIn -= dt
+        if (microIn <= 0f) {
+            microIn = 0.5f + rng.nextFloat() * 1.1f
+            microTx = (rng.nextFloat() * 2f - 1f) * 0.07f
+            microTy = (rng.nextFloat() * 2f - 1f) * 0.04f
+        }
+        val mk = 1f - exp(-dt / 0.035f)
+        microX += (microTx - microX) * mk
+        microY += (microTy - microY) * mk
+        val bodyBase = body.lerpTo(BodyPose.REST, w)
+        val bodyOut = bodyBase.copy(
+            posY = bodyBase.posY - 0.006f * br,
+            squashX = bodyBase.squashX * (1f - 0.006f * br),
+            squashY = bodyBase.squashY * (1f + 0.009f * br),
+        )
+        var hx = gaze.headX * keep + microX * keep * awakeLife
+        var hy = gaze.headY * keep + microY * keep * awakeLife
         val lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
         val yawTot = bodyOut.yaw + 22f * hx + 60f * lx
@@ -679,6 +702,13 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             face = lerpFace(faceLive, w),
         )
     }
+
+    private var breathPh = 0f
+    private var microIn = 0.8f
+    private var microTx = 0f
+    private var microTy = 0f
+    private var microX = 0f
+    private var microY = 0f
 
     private fun lerpFace(f: FaceParams, w: Float): FaceParams {
         if (w <= 0f) return f

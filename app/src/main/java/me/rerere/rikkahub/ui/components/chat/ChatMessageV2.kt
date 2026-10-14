@@ -2035,7 +2035,9 @@ internal fun AssistantTurnHeader(
     /** Harness only: freeze the avatar slot at this progress. */
     avatarProgressOverride: Float? = null,
 ) {
-    if (!showIcon && !showModelName && pill == null) return
+    // No name label above assistant replies: just [avatar] [pill]. ([showModelName] /
+    // [nameAlpha] are kept for callers but no longer draw a label.)
+    if (!showIcon && pill == null) return
     // The name always starts at the message's left edge (same as turns without an
     // avatar), so nothing above the text shifts sideways between turns. The avatar
     // sits directly left of the pill, centred on it; without a pill, centred on the
@@ -2052,17 +2054,8 @@ internal fun AssistantTurnHeader(
             }
         }
     }
-    val name: @Composable () -> Unit = {
-        Text(
-            text = avatarName,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.graphicsLayer { alpha = nameAlpha }
-        )
-    }
     if (pill != null) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (showModelName) name()
+        Column {
             // Top-anchored: the collapsed pill is as tall as the avatar (36dp), so they
             // line up, and when the pill expands into its panel the avatar stays put
             // on that first row instead of re-centring on the tall panel.
@@ -2074,7 +2067,6 @@ internal fun AssistantTurnHeader(
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
             avatar()
-            if (showModelName) name()
         }
     }
 }

@@ -263,7 +263,6 @@ internal class AlivenessEngine(private val rng: Random) {
                 (if (emo == Emotion.Joy || emo == Emotion.Amusement) 1f + 2f * el else 1f),
             "confused" to (if (thinking) 0.05f else 0.015f) * show * (if (emo == Emotion.Confusion) 1f + 3f * el else 1f),
             "Surprised" to 0.025f * (0.5f + arousal) * show * (if (emo == Emotion.Surprise) 1f + 3f * el else 1f),
-            "hurt or cute" to 0.012f * (0.4f + p.playfulness) * show,
             "Worried" to (if (emo == Emotion.Concern) 0.08f * el else 0f),
         )
         val opts = base.mapNotNull { (k, w) ->
