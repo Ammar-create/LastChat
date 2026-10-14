@@ -205,7 +205,7 @@ object WhSphereEyes {
         "happy" -> floatArrayOf(0.022f, 0.022f)
         "sleepy", "sleeping" -> floatArrayOf(0.028f, 0.028f)
         "squinted", "bored", "calm" -> floatArrayOf(0.024f, 0.024f)
-        "confused" -> floatArrayOf(0.05f, 0.05f)
+        "confused" -> floatArrayOf(0.085f, 0.085f)
         else -> NO_SPREAD
     }
 

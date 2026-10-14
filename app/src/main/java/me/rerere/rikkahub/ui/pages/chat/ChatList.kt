@@ -1250,76 +1250,25 @@ private fun PhantomLoadingTurn(
     val showAssistantBubbles = effectiveDisplay.showAssistantBubbles
     val avatarName = assistant?.name?.ifEmpty { null } ?: "Assistant"
     val avatarValue = assistant?.avatar ?: me.rerere.rikkahub.data.model.Avatar.Dummy
-    val elementSpacing = if (showAssistantBubbles) 4.dp else 3.dp
-    
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(elementSpacing)
-    ) {
-        if (showAssistantBubbles) {
-            // Name above pills (only if enabled)
-            if (showModelName) {
-                Text(
-                    text = avatarName,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.alpha(0f)
-                )
-            }
-
-            // Avatar + Waiting pill row
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(elementSpacing)
-            ) {
-                if (showIcon) {
-                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                        name = avatarName,
-                        modifier = Modifier.size(36.dp),
-                        value = avatarValue,
-                        loading = true,
-                    )
-                }
-
+    // Same header as a real turn ([avatar] [name / pill]) in every layout mode,
+    // so the hand-over to the first tokens doesn't move anything.
+    Column(modifier = modifier.fillMaxWidth()) {
+        me.rerere.rikkahub.ui.components.chat.AssistantTurnHeader(
+            showIcon = showIcon,
+            avatarVisible = true,
+            avatarName = avatarName,
+            avatarValue = avatarValue,
+            loading = true,
+            showModelName = showModelName,
+            nameAlpha = if (showAssistantBubbles) 0f else 1f,
+            pill = {
                 me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
                     state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
                     onClick = { _ -> },
                     connectsToBubbleBelow = false,
                     modifier = Modifier.height(36.dp)
                 )
-            }
-        } else {
-            // No assistant bubbles layout
-            if (showIcon || showModelName) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (showIcon) {
-                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(36.dp),
-                            value = avatarValue,
-                            loading = true,
-                        )
-                    }
-                    if (showModelName) {
-                        Text(
-                            text = avatarName,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(0f)
-                        )
-                    }
-                }
-            }
-
-            me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
-                state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
-                onClick = { _ -> },
-                connectsToBubbleBelow = false,
-                modifier = Modifier.height(36.dp)
-            )
-        }
+            },
+        )
     }
 }

@@ -120,6 +120,29 @@ object MarkColors {
      * eye (the live body fill, so it follows colour changes). The eye colour fills
      * the main area above it.
      */
+    /**
+     * Eye outline colour: the eye colour, nudged just enough toward white/black to
+     * keep a minimum contrast against the body (e.g. near-black eyes on a black body).
+     */
+    fun outlineOn(eye: Color, body: Color): Color {
+        fun lum(c: Color) = 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue
+        val d = lum(eye) - lum(body)
+        val need = 0.16f
+        if (kotlin.math.abs(d) >= need) return eye
+        val toLight = lum(body) < 0.5f
+        val target = if (toLight) Color.White else Color.Black
+        // Mix toward the target until the luminance gap reaches `need`.
+        val lb = lum(body); val le = lum(eye); val lt = lum(target)
+        val goal = if (toLight) lb + need else lb - need
+        val t = ((goal - le) / (lt - le)).coerceIn(0f, 1f)
+        return Color(
+            red = eye.red + (target.red - eye.red) * t,
+            green = eye.green + (target.green - eye.green) * t,
+            blue = eye.blue + (target.blue - eye.blue) * t,
+            alpha = eye.alpha,
+        )
+    }
+
     @Suppress("UNUSED_PARAMETER")
     fun genericalEyeFade(body: Color, eye: Color): Color = body.copy(alpha = 1f)
 

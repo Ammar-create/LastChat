@@ -169,6 +169,18 @@ class AvatarRenderHarnessTest {
     private fun stripCapture(name: String, shape: String, mode: String, frames: List<MotionFrame>, cellDp: Int = 110) =
         capture(name, cellDp * frames.size, cellDp) { Strip(shape, mode, frames, cellDp) }
 
+    /** Every expression, face-on, for every shape (spacing review vs baseline). */
+    @Test
+    fun renderExpressionSheets() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val names = listOf("Neutral", "Happy", "Surprised", "Sad", "Sleeping", "Bored", "confused", "skeptical", "hurt or cute")
+        for (mode in listOf("grok", "generical")) for (shape in MarkShapes.SHAPES) {
+            stripCapture("exprsheet_${mode}_$shape", shape, mode,
+                names.map { MotionFrame(exprFrom = it, exprTo = it, exprT = 1f) }, cellDp = 90)
+        }
+    }
+
     /** Expression morphs: 7 frames across each transition, face-on and turned. */
     @Test
     fun renderExpressionMorphStrips() {

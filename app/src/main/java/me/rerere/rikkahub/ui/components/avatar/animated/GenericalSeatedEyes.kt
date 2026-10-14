@@ -350,7 +350,7 @@ object GenericalSeat {
         // Reference stroke 5 on the 500 viewBox, nudged to ~5.9 (still under 7).
         scope.drawPath(
             eye.path,
-            color = eyeColor,
+            color = MarkColors.outlineOn(eyeColor, fade),
             style = Stroke(width = 5.9f * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
     }
