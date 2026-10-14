@@ -356,3 +356,82 @@ internal class IdlePlanner(private val rng: Random) {
         return Fixation(x, y, if (upRight) hold.coerceAtMost(0.9f) else hold, withHead = head || hypot(x, y) > 0.45f, kind = kind, thenCenter = upRight)
     }
 }
+
+// ---------------------------------------------------------------- character moments (engine12)
+
+/**
+ * Rare, motivated "character moments" — what makes it feel like someone lives in there.
+ * Each has a reason in the mood/attention state, its own cooldown, and a global spacing so
+ * they never pile up (≈ one every 15–40 s depending on activity). Recently used moments
+ * lose weight; each execution randomises its variant (side, count, size, face).
+ */
+internal enum class Moment {
+    /** Playful or happy: a full spin that overshoots and settles. Bored: a lazy one. */
+    Spin,
+    /** Curious / bored: turns to look "behind", holds, turns back. */
+    PartialSpin,
+    /** Curious: deliberate scan of 2–4 points with purposeful holds (checking out the room). */
+    Scan,
+    /** Curious: leans and tilts to peek at something to one side. */
+    Peek,
+    /** Long quiet + bored or tired: a big stretch, eyes shut, then settle. */
+    Stretch,
+    /** Tired / very bored: head sinks slowly, lids heavy … then perks up with a double blink. */
+    SleepyDrift,
+    /** Curious about the UI: looks at the activity pill / its own reflection, tilts, maybe smiles. */
+    NoticePill,
+    /** Event-driven: a happy wiggle after a nice message. */
+    Wiggle,
+    /** Event-driven: a small self-satisfied nod after finishing a reply. */
+    SmugNod,
+}
+
+internal class MomentPlanner(private val rng: Random) {
+    private var clock = 0f
+    private var lastAny = -20f
+    private var checkIn = 6f
+    private val lastAt = HashMap<Moment, Float>()
+    private val recent = ArrayDeque<Moment>()
+
+    private fun cool(m: Moment, sec: Float): Float {
+        val f = ((clock - (lastAt[m] ?: -1e4f)) / sec).coerceIn(0f, 1f)
+        return f * f
+    }
+
+    fun note(m: Moment) {
+        lastAt[m] = clock; lastAny = clock
+        recent.addLast(m); while (recent.size > 4) recent.removeFirst()
+    }
+
+    /** Event-driven moments ask here (respects cooldowns and global spacing loosely). */
+    fun allow(m: Moment, cooldown: Float): Boolean =
+        clock - lastAny > 6f && cool(m, cooldown) > 0.95f
+
+    /** Spontaneous moment, or null. [calm] = idle, nothing else driving the face. */
+    fun update(dt: Float, t: Temperament, p: Personality, calm: Boolean, quietSec: Float, hasPill: Boolean): Moment? {
+        clock += dt
+        checkIn -= dt
+        if (checkIn > 0f || !calm) return null
+        checkIn = 4f + rng.nextFloat() * 6f
+        val spacing = 26f - 16f * ((t.activity - 0.1f) / 0.7f).coerceIn(0f, 1f) // 26 s calm … 10 s lively
+        if (clock - lastAny < spacing) return null
+        val playful = t.playful(p) || (t.valence > 0.25f && p.playfulness > 0.55f)
+        val opts = listOf(
+            Moment.Spin to (if (playful) 0.45f else 0.03f + 0.25f * (t.boredom - 0.45f).coerceAtLeast(0f)) * (0.4f + p.playfulness) * cool(Moment.Spin, 100f),
+            Moment.PartialSpin to (0.12f * t.curiosity + 0.18f * t.boredom) * cool(Moment.PartialSpin, 60f),
+            Moment.Scan to (0.4f * t.curiosity + 0.25f * t.boredom) * cool(Moment.Scan, 25f),
+            Moment.Peek to 0.3f * t.curiosity * (0.5f + p.playfulness) * cool(Moment.Peek, 30f),
+            Moment.Stretch to (if (quietSec > 40f && (t.boredom > 0.3f || t.energy < 0.35f)) 0.6f else 0f) * cool(Moment.Stretch, 180f),
+            Moment.SleepyDrift to (if (t.energy < 0.32f || t.boredom > 0.55f) 0.45f else 0f) * cool(Moment.SleepyDrift, 90f),
+            Moment.NoticePill to (if (hasPill) 0.3f * t.curiosity else 0f) * cool(Moment.NoticePill, 120f),
+            // Doing nothing is a real option.
+            null to 0.2f + 0.2f * (1f - t.activity),
+        ).map { (m, w) -> m to w * (if (m != null && recent.lastOrNull() == m) 0.2f else if (m != null && m in recent) 0.6f else 1f) }
+        val total = opts.sumOf { it.second.toDouble() }.toFloat()
+        var x = rng.nextFloat() * total
+        for ((m, w) in opts) { x -= w; if (x <= 0f) { m?.let { note(it) }; return m } }
+        return null
+    }
+
+    internal fun debugReady() { lastAny = -1e4f; checkIn = 0f; lastAt.clear() }
+}

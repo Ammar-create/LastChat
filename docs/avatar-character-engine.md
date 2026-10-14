@@ -294,3 +294,41 @@ busy 9.9 vs 64.6 deg/s (≈1/6.5); eye travel 15.8–21 vs 59–69 px/s (≈1/3�
 idle 40 s, busy 30 s, reactions 38 s (same ping 6×: EyesOnly, GlanceBlink, Smile,
 Acknowledge, EyesOnly, None — 310–360 ms latency; an out-of-view event noticed 1.0 s late →
 double-take), startle, expr. Behaviour logs: `<clip>_behavior.csv`.
+
+## Engine12 additions
+
+### Expression transitions without stutter
+engine11's `Hesitate` style (partial move → plateau → settle) read as a hitch, and a blink-masked
+change could start its morph before the lids actually closed, so two systems fought mid-transition.
+Now one system (`ExpressionDirector`) owns the morph, progress is strictly monotonic, a new target
+queues behind a running morph (never retargets it), and the styles are:
+Blink (waits for lids ≥ 85 % closed, swaps in ~50 ms; falls back to Snap after 180 ms),
+Snap 120–220 ms ease-out (reactions), Soft 280–380 ms ease-in-out (self-initiated),
+Gradual 0.9–1.4 s (mood drift, drowsiness).
+
+### Character moments (`MomentPlanner`)
+Rare, motivated beats between the calm stretches. Global spacing 26 s (calm) … 10 s (lively),
+per-moment cooldowns, recency penalty, a weighted "nothing" option, and randomised variants.
+
+| Moment | Motive | Motion |
+|---|---|---|
+| Spin | playful/happy (or very bored, lazier) | 360° yaw, underdamped spring ζ≈0.5–0.7: slight overshoot, settle |
+| PartialSpin | curious / bored | turn 95–150° "to look behind", hold 0.7–1.4 s, spring back |
+| Scan | curious / bored | 2–4 fixations with 0.7–1.5 s purposeful holds, then back |
+| Peek | curious | critically damped lean + tilt 7–11° to one side, eyes follow |
+| Stretch | quiet > 40 s and bored/tired | rise + elongate, eyes shut, hold, settle, blink |
+| SleepyDrift | low energy / very bored | head sinks over 3.5–5 s, lids heavy, perks up (double blink) |
+| NoticePill | curious, pill on screen | looks at the pill, maybe tilts / small smile |
+| Wiggle | nice message (tone valence > 0.4), ~35–65 % | damped roll wiggle + Happy |
+| SmugNod | reply finished, ~25 % | Smug accent + nod |
+
+Spins are drawn as a card turn (silhouette narrows by |cos|, real 3D yaw only leans within the shape cap, eyes hidden on the back) so every shape, including the heart, keeps its outline through the spin.
+
+### Up-right never rests
+If the combined pose stays up-right for > 0.75 s the up component eases out (150 ms) and gaze
+is pulled back near centre.
+
+### Grok eye spacing per shape
+Circle/blob is the reference and unchanged (min gap 0.40 × mark radius). Shapes with a smaller
+or narrower face scale the minimum gap (`WhEyeSeat.grokGapFix`: heart 0.72, star 0.62, wedge 0.74,
+flower 0.87, hex 0.88, sparkle 0.90) so separation relative to the face matches the circle.

@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -201,7 +202,44 @@ private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
     exprTo = ExpressionDirector.normalize(c.expression),
 )
 
+/**
+ * Character-moment spins (engine12) are drawn as a card turn: the silhouette narrows by
+ * |cos(spin)| about the centre while the real 3D yaw only leans within the shape's normal
+ * turn cap (shading and eyes slide toward the turn), and the eyes are hidden while the back
+ * faces the viewer. Every shape keeps its own outline through the whole spin — a true 3D
+ * yaw past ~20° lumps the heart and runs the seated eyes edge-on into slivers.
+ */
 internal fun DrawScope.drawMark(
+    shape: GrokShape,
+    shapeId: String,
+    isGrok: Boolean,
+    f: MotionFrame,
+    calm: Boolean,
+    morph: Float,
+    body: Color,
+    eye: Color,
+    eyeFade: Color,
+) {
+    if (kotlin.math.abs(f.spinYaw) < 0.5f) {
+        drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body, eye, eyeFade)
+        return
+    }
+    val sr = Math.toRadians(f.spinYaw.toDouble())
+    val c = kotlin.math.cos(sr).toFloat()
+    val sn = kotlin.math.sin(sr).toFloat()
+    val (yawCap, _) = turnCapFor(shapeId, shape.solid.kind)
+    val f2 = f.copy(spinYaw = 0f, body = f.body.copy(yaw = f.body.yaw + yawCap * 0.9f * sn))
+    val back = c < 0.04f
+    // Eyes fade out over the last sliver before edge-on, so they never pop.
+    val eyeK = ((c - 0.04f) / 0.2f).coerceIn(0f, 1f)
+    scale(scaleX = kotlin.math.max(kotlin.math.abs(c), 0.06f), scaleY = 1f, pivot = center) {
+        drawMarkInner(shape, shapeId, isGrok, f2, calm, morph, body,
+            if (back) Color.Transparent else eye.copy(alpha = eye.alpha * eyeK),
+            if (back) Color.Transparent else eyeFade.copy(alpha = eyeFade.alpha * eyeK))
+    }
+}
+
+private fun DrawScope.drawMarkInner(
     shape: GrokShape,
     shapeId: String,
     isGrok: Boolean,
@@ -280,7 +318,7 @@ internal fun DrawScope.drawMark(
             gazeX = 0f,
             gazeY = 0f,
             lid = lidG,
-            eyeGap = f.eyeGap * 0.92f,
+            eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
             awake = if (calm) 0f else 1f,
@@ -308,7 +346,7 @@ internal fun DrawScope.drawMark(
         }
         // Never let the eyes touch or overlap (Sad ^ ^, closed arcs, mid-morph, turned).
         if (ok(left) && ok(right)) {
-            val (dl, dr) = GrokEyeGap.separation(left, right, he)
+            val (dl, dr) = GrokEyeGap.separation(left, right, he, WhEyeSeat.grokGapFix(shapeId))
             if (dl != androidx.compose.ui.geometry.Offset.Zero) {
                 left = Path().apply { addPath(left, dl) }
                 right = Path().apply { addPath(right, dr) }
@@ -321,7 +359,7 @@ internal fun DrawScope.drawMark(
                 // constraint runs again afterwards.
                 left = EyeSafeRegion.scalePath(left, k, c)
                 right = EyeSafeRegion.scalePath(right, k, c)
-                val (dl, dr) = GrokEyeGap.separation(left, right, he)
+                val (dl, dr) = GrokEyeGap.separation(left, right, he, WhEyeSeat.grokGapFix(shapeId))
                 if (dl != androidx.compose.ui.geometry.Offset.Zero) {
                     left = Path().apply { addPath(left, dl) }
                     right = Path().apply { addPath(right, dr) }

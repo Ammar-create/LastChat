@@ -63,11 +63,15 @@ object GrokEyeGap {
      * Returns the offsets to apply to (left, right) so the eyes keep the minimum gap.
      * [he] = mark radius in the same units as the paths.
      */
-    fun separation(left: Path, right: Path, he: Float): Pair<Offset, Offset> {
+    /**
+     * [faceScale] < 1 for shapes whose face is smaller than the circle's (heart, star, …):
+     * the gap is the circle's 0.40 relative to *that face*, so the spacing reads the same.
+     */
+    fun separation(left: Path, right: Path, he: Float, faceScale: Float = 1f): Pair<Offset, Offset> {
         if (left.isEmpty || right.isEmpty) return Offset.Zero to Offset.Zero
         val a = outline(left); val b = outline(right)
         if (a[0].isEmpty() || b[0].isEmpty()) return Offset.Zero to Offset.Zero
-        val need = MIN_GAP * he
+        val need = MIN_GAP * faceScale * he
         if (clearance(a, b) >= need) return Offset.Zero to Offset.Zero
         // Direction: from the left eye's centre to the right eye's.
         var ux = b[0].average().toFloat() - a[0].average().toFloat()

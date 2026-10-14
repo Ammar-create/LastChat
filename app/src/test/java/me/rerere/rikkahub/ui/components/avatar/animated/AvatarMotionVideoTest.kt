@@ -58,7 +58,7 @@ class AvatarMotionVideoTest {
                 else -> AvatarMotionHints()
             }
         },
-        Script("idle", 40f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() },
+        Script("idle", 60f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() },
         // Same stimulus six times (variation, latency, sometimes nothing), then one
         // off-gaze / out-of-view event that has to be noticed late.
         Script("reactions", 38f, preRoll = 10f) { s, _, t, _ ->
@@ -69,6 +69,21 @@ class AvatarMotionVideoTest {
         },
         Script("startle", 7f, preRoll = 30f) { s, _, t, _ ->
             if (t >= 1.5f && fired.add(1.5f)) s.debugPerform(Response.Startle)
+            AvatarMotionHints()
+        },
+        Script("spin", 16f, preRoll = 10f) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugMoment(Moment.Spin)
+            if (t >= 6f && fired.add(6f)) s.debugMoment(Moment.PartialSpin)
+            if (t >= 11f && fired.add(11f)) s.debugMoment(Moment.Spin)
+            AvatarMotionHints()
+        },
+        Script("moments", 30f, preRoll = 10f) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugMoment(Moment.Scan)
+            if (t >= 7.5f && fired.add(7.5f)) s.debugMoment(Moment.Peek)
+            if (t >= 11.5f && fired.add(11.5f)) s.debugMoment(Moment.Stretch)
+            if (t >= 16.5f && fired.add(16.5f)) s.debugMoment(Moment.SleepyDrift)
+            if (t >= 23f && fired.add(23f)) s.debugMoment(Moment.Wiggle)
+            if (t >= 26.5f && fired.add(26.5f)) s.debugMoment(Moment.SmugNod)
             AvatarMotionHints()
         },
         Script("expr", 14f) { s, _, t, _ ->
@@ -132,6 +147,18 @@ class AvatarMotionVideoTest {
         controller.pause().stop().destroy()
     }
 
+    /** Neutral Grok + Generical sheet of every picker shape (eye spacing vs face width). */
+    @Test
+    fun renderShapeSheet() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "shapes" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val f = MotionFrame()
+        for (mode in listOf("grok", "generical")) for (shape in MarkShapes.PICKER_IDS) {
+            captureStrip(File(out, "shape_${mode}_$shape.png"), shape, mode, listOf(f))
+        }
+    }
+
     @Test
     fun renderMotionVideos() {
         val out = outDir
@@ -150,11 +177,11 @@ class AvatarMotionVideoTest {
                 val pop = win.maxOf { it.body.squashY }
                 org.junit.Assert.assertTrue("startle pop missing (max squashY $pop)", pop > 1.09f)
             }
-            File(out, "${sc.name}.csv").writeText("t,pitch,yaw,roll,posY,sqX,sqY,lookX,lookY,lid,exprFrom,exprTo,exprT\n" +
+            File(out, "${sc.name}.csv").writeText("t,pitch,yaw,roll,posY,sqX,sqY,lookX,lookY,lid,exprFrom,exprTo,exprT,spin\n" +
                 frames.withIndex().joinToString("\n") { (i, f) ->
-                    "%.3f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%s,%s,%.3f".format(
+                    "%.3f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%s,%s,%.3f,%.2f".format(
                         i.toFloat() / fps, f.body.pitch, f.body.yaw, f.body.roll, f.body.posY, f.body.squashX, f.body.squashY,
-                        f.headLookX, f.headLookY, f.lid, f.exprFrom, f.exprTo, f.exprT)
+                        f.headLookX, f.headLookY, f.lid, f.exprFrom, f.exprTo, f.exprT, f.spinYaw)
                 })
             for (mode in listOf("generical", "grok")) for (shape in listOf("blob", "heart")) {
                 val dir = File(out, "${sc.name}_${mode}_$shape").apply { mkdirs() }

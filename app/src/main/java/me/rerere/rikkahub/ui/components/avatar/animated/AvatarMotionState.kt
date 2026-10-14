@@ -16,6 +16,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.geometry.Offset
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.PI
 import kotlin.math.sin
@@ -55,6 +56,8 @@ data class MotionFrame(
     val timeSec: Float = 0f,
     /** Parametric per-eye shaping on top of the expression (see [FaceRig]). */
     val face: FaceParams = FaceParams.ID,
+    /** Character-moment spin (deg), added after the per-shape turn cap (see drawMark). */
+    val spinYaw: Float = 0f,
 )
 
 /**
@@ -217,20 +220,24 @@ internal class GazeDirector(
 }
 
 /**
- * Expression transitions (engine11): quick and human, with a style chosen per change.
- *  - [Style.Blink]: the face swaps behind a blink (the blink IS the transition).
- *  - [Style.Snap]: fast ease-out, 120–220 ms — reactions.
- *  - [Style.Hesitate]: a brief partial move (micro-expression), a beat, then settle.
- *  - [Style.Gradual]: slow ease-in-out (0.9–1.4 s) — mood drift, drowsiness.
+ * Expression transitions (engine12): quick, smooth and strictly monotonic, style per change.
+ *  - [Style.Blink]: the face swaps while the lids are actually shut (waits for the blink to
+ *    close, swaps in ~50 ms, the blink reopens on the new face). Falls back to a snap if the
+ *    lids don't close within 180 ms.
+ *  - [Style.Snap]: 120–220 ms ease-out — reactions.
+ *  - [Style.Soft]: 280–380 ms ease-in-out — unhurried, self-initiated changes.
+ *  - [Style.Gradual]: 0.9–1.4 s ease-in-out — mood drift, drowsiness.
+ * engine11's "hesitate" (partial move + plateau) read as a stutter and is gone. One system
+ * owns the morph; a new target never interrupts a running morph (it queues).
  */
 internal class ExpressionDirector(private val rng: Random) {
-    enum class Style { Blink, Snap, Hesitate, Gradual }
+    enum class Style { Blink, Snap, Soft, Gradual }
 
     var from = "Neutral"; private set
     var to = "Neutral"; private set
     private var t = 1f
     private var dur = 0.18f
-    private var delay = 0f
+    private var waitLids = -1f
     private var dwell = 10f
     private var pending: String? = null
     private var pendingStyle: Style? = null
@@ -242,13 +249,7 @@ internal class ExpressionDirector(private val rng: Random) {
 
     val eased: Float get() = when (style) {
         Style.Snap, Style.Blink -> MotionVocab.easeOutCubic(t)
-        Style.Gradual -> MotionVocab.easeInOutSine(t)
-        Style.Hesitate -> when {
-            // 0–40 %: a partial move (to 45 %), 40–60 %: hold (the hesitation), then settle.
-            t < 0.4f -> 0.45f * MotionVocab.easeOutCubic(t / 0.4f)
-            t < 0.6f -> 0.45f
-            else -> 0.45f + 0.55f * MotionVocab.easeOutCubic((t - 0.6f) / 0.4f)
-        }
+        Style.Soft, Style.Gradual -> MotionVocab.easeInOutSine(t)
     }
     val morphing: Boolean get() = t < 1f
 
@@ -261,7 +262,7 @@ internal class ExpressionDirector(private val rng: Random) {
             return
         }
         if (t < 1f || dwell < MIN_DWELL) {
-            pending = target; pendingStyle = h
+            pending = target; pendingStyle = h ?: pendingStyle
             return
         }
         start(target, h)
@@ -271,30 +272,35 @@ internal class ExpressionDirector(private val rng: Random) {
         from = to
         to = target
         t = 0f
-        delay = 0f
+        waitLids = -1f
         style = h ?: run {
             val r = rng.nextFloat()
             when {
-                r < 0.38f -> Style.Blink
-                r < 0.78f -> Style.Snap
-                else -> Style.Hesitate
+                r < 0.4f -> Style.Blink
+                r < 0.8f -> Style.Snap
+                else -> Style.Soft
             }
         }
         when (style) {
-            Style.Blink -> { blinkNow = true; delay = 0.045f; dur = 0.09f } // lids close ~50 ms, swap while shut
+            Style.Blink -> { blinkNow = true; waitLids = 0f; dur = 0.05f }
             Style.Snap -> dur = 0.12f + rng.nextFloat() * 0.1f
-            Style.Hesitate -> dur = 0.42f + rng.nextFloat() * 0.18f
+            Style.Soft -> dur = 0.28f + rng.nextFloat() * 0.1f
             Style.Gradual -> dur = 0.9f + rng.nextFloat() * 0.5f
         }
         pending = null; pendingStyle = null
     }
 
-    /** Returns true when a (masking) blink should start now. */
-    fun update(dt: Float): Boolean {
+    /** [lidsClosed] 0…1 from the blinker. Returns true when a masking blink should start now. */
+    fun update(dt: Float, lidsClosed: Float): Boolean {
         val blink = blinkNow
         blinkNow = false
         if (t < 1f) {
-            if (delay > 0f) { delay -= dt; return blink }
+            if (waitLids >= 0f) {
+                waitLids += dt
+                if (lidsClosed >= 0.85f) waitLids = -1f
+                else if (waitLids > 0.18f) { waitLids = -1f; style = Style.Snap; dur = 0.16f }
+                else return blink
+            }
             t = min(1f, t + dt / dur)
             if (t >= 1f) dwell = 0f
         } else {
@@ -463,7 +469,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     internal fun debugBoredom(v: Float) = aliveness.debugBoredom(v)
 
     /** Per-message tone from outside (e.g. a classifier); colours mood and face. */
-    fun feedTone(t: ToneHint) = aliveness.feedTone(t)
+    fun feedTone(t: ToneHint) {
+        aliveness.feedTone(t)
+        // A nice message sometimes earns a happy wiggle (never every time, never twice in a row).
+        if (t.valence > 0.4f && t.intensity > 0.45f && rng.nextFloat() < 0.35f + 0.3f * personality.playfulness &&
+            moments.allow(Moment.Wiggle, 40f)
+        ) { moments.note(Moment.Wiggle); pendingWiggleIn = 0.25f + rng.nextFloat() * 0.5f }
+    }
+    private var pendingWiggleIn = -1f
     // ---- human behaviour model (engine11) ----
     internal val temper = Temperament(rng)
     private val attention = Attention(rng)
@@ -637,7 +650,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
             expr.want(target)
         }
-        if (expr.update(dt)) blink.request(minGap = 0f)
+        if (expr.update(dt, blink.closed)) blink.request(minGap = 0f)
         director.exprMorphing = expr.morphing
 
         // ---- blink + lids ----
@@ -655,7 +668,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         startleHoldT -= dt
         val inStartle = startleHoldT > 0f
         val lid = if (inStartle) 1f
-            else (lidKnob.coerceAtMost(1f) * body.lidOpen * drowsyLid * (1f - blink.closed)).coerceIn(0f, 1f)
+            else (lidKnob.coerceAtMost(1f) * body.lidOpen * drowsyLid * momentLid * (1f - blink.closed)).coerceIn(0f, 1f)
 
         // ---- mood + parametric face ----
         hourCheckIn -= dt
@@ -698,16 +711,29 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             fidgetRollV += (om * om * (fidgetRollT - fidgetRoll) - 2f * om * fidgetRollV) * h; fidgetRoll += fidgetRollV * h
         }
         val bodyBase0 = body.lerpTo(BodyPose.REST, w)
+        // Moment channels: wiggle (damped roll oscillation), stretch (rise + hold + settle),
+        // sleepy drift (head sinks, then perks up), peek lean.
+        val wig = if (wiggleU < 1f) wiggleA * sin(2f * PI.toFloat() * 2.5f * wiggleU) * (1f - wiggleU) * (1f - wiggleU) else 0f
+        val stK = if (stretchU < 1f) when {
+            stretchU < 0.35f -> MotionVocab.easeInOutSine(stretchU / 0.35f)
+            stretchU < 0.6f -> 1f
+            else -> 1f - MotionVocab.easeInOutSine((stretchU - 0.6f) / 0.4f)
+        } else 0f
+        val drK = if (driftU < 1f) when {
+            driftU < 0.8f -> MotionVocab.easeInOutSine(driftU / 0.8f)
+            else -> 1f - MotionVocab.easeOutCubic((driftU - 0.8f) / 0.2f) // perk: quick lift
+        } else 0f
         val bodyBase = bodyBase0.copy(
-            yaw = bodyBase0.yaw + fidgetYaw * keep,
-            roll = bodyBase0.roll + fidgetRoll * keep,
-            pitch = bodyBase0.pitch + 4f * sighK,
+            yaw = bodyBase0.yaw + (fidgetYaw + peekYaw) * keep,
+            roll = bodyBase0.roll + (fidgetRoll + peekRoll + wig) * keep,
+            pitch = bodyBase0.pitch + (4f * sighK + driftDepth * drK - 3f * stK) * keep,
         )
         var bodyOut = bodyBase.copy(
-            posY = bodyBase.posY - 0.008f * br + 0.012f * sighK,
-            squashX = bodyBase.squashX * (1f - 0.008f * br + 0.018f * sighK),
-            squashY = bodyBase.squashY * (1f + 0.012f * br - 0.03f * sighK),
+            posY = bodyBase.posY - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep,
+            squashX = bodyBase.squashX * (1f - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep),
+            squashY = bodyBase.squashY * (1f + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep),
         )
+        momentLid = 1f - 0.75f * stK - 0.45f * drK
         var hx = (gaze.headX * keep).coerceIn(-1f, 1f)
         var hy = (gaze.headY * keep).coerceIn(-1f, 1f)
         var lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
@@ -718,6 +744,18 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             if (fz == null) frozen = FrozenLook(bodyOut, hx, hy, lx, ly)
             else { bodyOut = fz.body.copy(squashX = fz.body.squashX, squashY = fz.body.squashY); hx = fz.hx; hy = fz.hy; lx = fz.lx; ly = fz.ly }
         } else frozen = null
+        // Up-right is a glance, never a rest: after ~0.75 s the up component eases out.
+        val upNow = bodyOut.yaw + 18f * hx > 3f && bodyOut.pitch + 14f * hy < -2f
+        upRightT = if (upNow) upRightT + dt else (upRightT - 2f * dt).coerceAtLeast(0f)
+        if (upRightT > 0.75f && upK < 0.05f) gaze.focus(0.05f * (rng.nextFloat() - 0.5f), 0.04f, 0.8f, priority = 5)
+        upK += ((if (upRightT > 0.75f) 1f else 0f) - upK) * (1f - exp(-dt / 0.15f))
+        if (upK > 1e-3f) {
+            val f = 1f - upK
+            if (hy < 0f) hy *= f
+            if (ly < 0f) ly *= f
+            if (bodyOut.pitch < 0f) bodyOut = bodyOut.copy(pitch = bodyOut.pitch * f)
+            if (bodyOut.yaw > 0f) bodyOut = bodyOut.copy(yaw = bodyOut.yaw * (1f - 0.5f * upK))
+        }
         val bodyRc = bodyOut
         val pitchOut = bodyRc.pitch
         frame = MotionFrame(
@@ -735,14 +773,154 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
             timeSec = time,
             face = lerpFace(faceLive, w),
+            spinYaw = spinYaw * keep,
         )
     }
 
     private var breathPh = 0f
     private var startleHoldT = 0f
+    private var momentLid = 1f
     private var wasStartling = false
 
     // ------------------------------------------------------- human behaviour (engine11)
+
+    // ---- character moments (engine12) ----
+    private val moments = MomentPlanner(rng)
+    private var spinYaw = 0f; private var spinV = 0f; private var spinTarget = 0f
+    private var spinHold = -1f
+    private var spinBack = false
+    private var spinOmega = 6.5f; private var spinZeta = 0.6f
+    private var wiggleU = 1f; private var wiggleA = 0f; private var wiggleDur = 0.9f
+    private var stretchU = 1f; private var stretchDur = 2.6f
+    private var driftU = 1f; private var driftDur = 4f; private var driftDepth = 9f
+    private var peekRoll = 0f; private var peekRollV = 0f; private var peekRollT = 0f
+    private var peekYaw = 0f; private var peekYawV = 0f; private var peekYawT = 0f
+    private var peekLeft = 0f
+    private val scan = ArrayList<FloatArray>() // [startAt, x, y, hold]
+    private var scanT = 0f
+    private var upRightT = 0f
+    private var upK = 0f
+
+    /** Harness: let a moment fire on the next check / play one now. */
+    internal fun debugMomentsReady() = moments.debugReady()
+    internal fun debugMoment(m: Moment) { moments.note(m); playMoment(m) }
+
+    private fun playMoment(m: Moment) {
+        fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+        val side = if (rng.nextBoolean()) 1f else -1f
+        log("moment $m")
+        when (m) {
+            Moment.Spin -> {
+                val playful = temper.playful(personality) || temper.valence > 0.2f
+                // Playful: brisk spin with a clear overshoot; bored: lazier, less overshoot.
+                spinOmega = if (playful) rr(6.5f, 8f) else rr(4.5f, 5.5f)
+                spinZeta = if (playful) rr(0.5f, 0.58f) else rr(0.62f, 0.7f)
+                spinTarget += side * 360f; spinHold = -1f; spinBack = false
+                if (rng.nextFloat() < 0.5f) blink.request(minGap = 0f)
+                if (playful && rng.nextFloat() < 0.6f) setReaction("Happy", rr(1.2f, 2f), ExpressionDirector.Style.Snap)
+            }
+            Moment.PartialSpin -> {
+                spinOmega = rr(5f, 6.5f); spinZeta = rr(0.55f, 0.65f)
+                spinTarget = side * rr(95f, 150f); spinHold = rr(0.7f, 1.4f); spinBack = true
+                if (rng.nextFloat() < 0.4f) accent(FaceAccent.Curious, rr(1.4f, 2.2f))
+            }
+            Moment.Scan -> {
+                val n = 2 + rng.nextInt(3)
+                var at = 0f
+                var x = side * rr(0.35f, 0.6f)
+                scan.clear(); scanT = 0f
+                repeat(n) { k ->
+                    val y = rr(-0.25f, 0.35f)
+                    val hold = rr(0.7f, 1.5f)
+                    scan += floatArrayOf(at, x, y, hold)
+                    at += hold + rr(0.1f, 0.25f)
+                    // Sweep across, sometimes doubling back.
+                    x = if (rng.nextFloat() < 0.7f) -x * rr(0.6f, 1.1f) else x * rr(0.3f, 0.7f)
+                    if (k == n - 1) scan += floatArrayOf(at, rr(-0.06f, 0.06f), rr(-0.02f, 0.05f), rr(1.5f, 3f))
+                }
+            }
+            Moment.Peek -> {
+                peekRollT = -side * rr(7f, 11f); peekYawT = side * rr(6f, 10f); peekLeft = rr(1.2f, 2f)
+                gaze.focus(side * rr(0.55f, 0.75f), rr(0f, 0.25f), peekLeft, priority = 2)
+                if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, peekLeft)
+            }
+            Moment.Stretch -> {
+                stretchU = 0f; stretchDur = rr(2.3f, 3f)
+            }
+            Moment.SleepyDrift -> {
+                driftU = 0f; driftDur = rr(3.5f, 5f); driftDepth = rr(7f, 11f)
+            }
+            Moment.NoticePill -> {
+                val pill = targetCenter(AvatarStage.Target.ActivityPill)
+                val (gx, gy) = pill?.let { lookAt(it) } ?: (0.3f to 0.5f)
+                gaze.focus(gx, gy, rr(1.3f, 2.2f), priority = 2)
+                if (rng.nextFloat() < 0.5f) director.gesture(MotionDirector.Gesture.Tilt)
+                if (rng.nextFloat() < 0.35f) accent(FaceAccent.Glee, rr(0.9f, 1.4f))
+            }
+            Moment.Wiggle -> {
+                wiggleU = 0f; wiggleA = rr(5f, 8f) * side; wiggleDur = rr(0.8f, 1.1f)
+                setReaction("Happy", rr(1.3f, 2f), ExpressionDirector.Style.Snap)
+            }
+            Moment.SmugNod -> {
+                accent(FaceAccent.Smug, rr(1.2f, 1.8f))
+                director.gesture(MotionDirector.Gesture.Nod)
+            }
+        }
+    }
+
+    private fun momentsUpdate(dt: Float) {
+        val calm = director.lifecycle == MarkLifecycle.Idle && reaction == null && social == null &&
+            freezeLeft <= 0f && takeT < 0f && scan.isEmpty() && driftU >= 1f && stretchU >= 1f &&
+            abs(spinYaw - spinTarget) < 2f && spinHold < 0f
+        moments.update(dt, temper, personality, calm, quietSec, targetCenter(AvatarStage.Target.ActivityPill) != null)?.let { playMoment(it) }
+        val h = dt.coerceAtMost(1f / 30f)
+        // Spin: underdamped spring → a little past the stop, then settle.
+        var rem = dt
+        while (rem > 1e-6f) {
+            val k = min(rem, 1f / 120f)
+            spinV += (spinOmega * spinOmega * (spinTarget - spinYaw) - 2f * spinZeta * spinOmega * spinV) * k
+            spinYaw += spinV * k
+            rem -= k
+        }
+        if (abs(spinYaw - spinTarget) < 0.5f && abs(spinV) < 2f) {
+            if (spinHold >= 0f) {
+                spinHold -= dt
+                if (spinHold < 0f && spinBack) { spinTarget = 0f; spinBack = false; spinHold = -1f }
+            } else if (abs(spinTarget) >= 359f) {
+                val wrap = 360f * kotlin.math.round(spinTarget / 360f)
+                spinTarget -= wrap; spinYaw -= wrap
+            }
+        }
+        // Peek channel (critically damped lean).
+        if (peekLeft > 0f) { peekLeft -= dt; if (peekLeft <= 0f) { peekRollT = 0f; peekYawT = 0f } }
+        val om = 7f
+        peekRollV += (om * om * (peekRollT - peekRoll) - 2f * om * peekRollV) * h; peekRoll += peekRollV * h
+        peekYawV += (om * om * (peekYawT - peekYaw) - 2f * om * peekYawV) * h; peekYaw += peekYawV * h
+        // Scan timeline.
+        if (scan.isNotEmpty()) {
+            val t0 = scanT; scanT += dt
+            val it = scan.iterator()
+            while (it.hasNext()) {
+                val p = it.next()
+                if (t0 <= p[0] && scanT > p[0]) { gaze.focus(p[1], p[2], p[3], priority = 2); it.remove() }
+            }
+        }
+        if (wiggleU < 1f) wiggleU = (wiggleU + dt / wiggleDur).coerceAtMost(1f)
+        if (stretchU < 1f) {
+            val before = stretchU
+            stretchU = (stretchU + dt / stretchDur).coerceAtMost(1f)
+            if (before < 0.85f && stretchU >= 0.85f) blink.request(minGap = 0f)
+        }
+        if (driftU < 1f) {
+            val before = driftU
+            driftU = (driftU + dt / driftDur).coerceAtMost(1f)
+            if (before < 0.82f && driftU >= 0.82f) {
+                // Caught itself: perk up.
+                blink.request(double = true, minGap = 0f)
+                accent(FaceAccent.WakeSquint, 0.7f, force = true)
+            }
+        }
+    }
 
     private class FrozenLook(val body: BodyPose, val hx: Float, val hy: Float, val lx: Float, val ly: Float)
     private var frozen: FrozenLook? = null
@@ -845,6 +1023,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             fidgetRollT = (rng.nextFloat() * 2f - 1f) * 2.5f * a
             log("fidget")
         }
+        if (pendingWiggleIn >= 0f) { pendingWiggleIn -= dt; if (pendingWiggleIn < 0f) playMoment(Moment.Wiggle) }
+        momentsUpdate(dt)
     }
 
     /** Execute a picked response to [st]. */
@@ -1010,7 +1190,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     g < 0.6f -> director.gesture(MotionDirector.Gesture.Nod)
                 }
             } else {
-                aliveness.onReplyFinished()?.let { playBeat(it) } ?: blink.request()
+                if (rng.nextFloat() < 0.25f && moments.allow(Moment.SmugNod, 50f)) {
+                    moments.note(Moment.SmugNod); playMoment(Moment.SmugNod)
+                } else aliveness.onReplyFinished()?.let { playBeat(it) } ?: blink.request()
             }
         }
 

@@ -50,6 +50,20 @@ object WhEyeSeat {
         "leaf" to FaceTune(0.1872f, 0.4104f, 0.448f, 0.04f),
     )
 
+    /**
+     * Grok eye spacing per shape relative to the circle (engine12). The circle/blob spacing is
+     * the reference ("cute") and stays 1.0; shapes whose face is narrower at eye height or
+     * smaller in area (heart, star, wedge, …) bring the eyes in so the spacing reads the same
+     * relative to that face. Measured from neutral renders: factor ≈ mean of
+     * (blob sep/width-at-eyes ÷ shape's) and (blob sep/√area ÷ shape's), shrink only.
+     */
+    private val GROK_GAP_FIX: Map<String, Float> = mapOf(
+        "heart" to 0.72f, "star" to 0.62f, "wedge" to 0.74f, "flower" to 0.87f,
+        "hex" to 0.88f, "sparkle" to 0.90f,
+    )
+
+    fun grokGapFix(pickerId: String): Float = GROK_GAP_FIX[pickerId] ?: 1f
+
     fun engineKey(pickerId: String): String = when (pickerId) {
         "blob" -> "pebble"
         "heart" -> "heartChubby"

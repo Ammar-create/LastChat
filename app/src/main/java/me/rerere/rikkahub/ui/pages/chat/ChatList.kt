@@ -754,7 +754,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 state = state,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
                     modifier = Modifier
                     .lastChatBlurSource()
                     .sharedBounds(
