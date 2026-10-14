@@ -44,6 +44,9 @@ val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
 data class Settings(
     @Transient
     val init: Boolean = false,
+    /** Write counter persisted next to the settings; lets the store tell stale re-reads from new ones. */
+    @Transient
+    val storeRevision: Long = 0L,
     val setupCompleted: Boolean = false,
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,

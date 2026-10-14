@@ -203,7 +203,7 @@ class SettingLocalLlmViewModel(
                 }
             }
             if (updatedProviders != settings.providers) {
-                settingsStore.update(settings.copy(providers = updatedProviders))
+                settingsStore.update { settings -> settings.copy(providers = updatedProviders) }
             }
         }
     }

@@ -426,8 +426,16 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val storedProvider = settings.providers.find { it.id == id } ?: return
     // Show the unsaved edit while its debounced save is pending, so both tabs build on it.
     val provider = pendingEdit?.takeIf { it.id == id } ?: storedProvider
-    androidx.compose.runtime.DisposableEffect(id) {
-        onDispose { vm.flushProviderEditNow() }
+    val providerLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(id, providerLifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) vm.flushProviderEditNow()
+        }
+        providerLifecycle.lifecycle.addObserver(observer)
+        onDispose {
+            providerLifecycle.lifecycle.removeObserver(observer)
+            vm.flushProviderEditNow()
+        }
     }
     val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
@@ -447,10 +455,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     }
     val onDelete = {
         vm.flushProviderEditNow()
-        val newSettings = settings.copy(
-            providers = settings.providers - provider
-        )
-        vm.updateSettings(newSettings)
+        val deletedId = provider.id
+        vm.updateSettings { latest -> latest.copy(providers = latest.providers.filterNot { it.id == deletedId }) }
         navController.popBackStack()
     }
 
@@ -621,7 +627,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                                     providerTags = cleanedTags
                                 )
                                 vm.supersedeProviderEdit()
-                                vm.updateSettings(newSettings)
+                                vm.updateSettings(newSettings, base = settings)
                             },
                             contentPadding = contentPadding,
                             isSaving = isSaving

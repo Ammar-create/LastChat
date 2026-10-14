@@ -158,12 +158,10 @@ private fun DefaultTtsVoiceSetting(
                         val provider = settings.ttsProviders.firstOrNull { provider ->
                             provider.voices.any { it.id == voice.id }
                         }
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 selectedTTSVoiceId = voice.id,
                                 selectedTTSProviderId = provider?.id ?: settings.selectedTTSProviderId,
-                            )
-                        )
+                            ) }
                     }
                 )
             }
@@ -195,11 +193,9 @@ private fun DefaultSTTModelSetting(
                     modelId = settings.sttModelId,
                     type = ModelType.STT,
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 sttModelId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
@@ -237,11 +233,9 @@ private fun DefaultSTTModelSetting(
                 HelperReasoningSettings(
                     reasoningTokens = settings.sttThinkingBudget,
                     onUpdateReasoningTokens = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 sttThinkingBudget = it
-                            )
-                        )
+                            ) }
                     }
                 )
 
@@ -254,11 +248,9 @@ private fun DefaultSTTModelSetting(
                     DebouncedTextField(
                         value = settings.sttPrompt,
                         onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     sttPrompt = it
-                                )
-                            )
+                                ) }
                         },
                         stateKey = "stt_prompt",
                         modifier = Modifier.fillMaxWidth(),
@@ -267,11 +259,9 @@ private fun DefaultSTTModelSetting(
                     )
                     TextButton(
                         onClick = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     sttPrompt = DEFAULT_STT_PROMPT
-                                )
-                            )
+                                ) }
                         }
                     ) {
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
@@ -285,13 +275,11 @@ private fun DefaultSTTModelSetting(
                         androidx.compose.material3.Switch(
                             checked = settings.displaySetting.sttReplaceModelIcon,
                             onCheckedChange = { newValue ->
-                                vm.updateSettings(
-                                    settings.copy(
+                                vm.updateSettings { settings -> settings.copy(
                                         displaySetting = settings.displaySetting.copy(
                                             sttReplaceModelIcon = newValue
                                         )
-                                    )
-                                )
+                                    ) }
                             }
                         )
                     }
@@ -328,11 +316,9 @@ private fun DefaultTranslationModelSetting(
                     type = ModelType.CHAT,
                     allowBackendModels = true,
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 translateModeId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
@@ -374,11 +360,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     DebouncedTextField(
                         value = settings.translatePrompt,
                         onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     translatePrompt = it
-                                )
-                            )
+                                ) }
                         },
                         stateKey = "translate_prompt",
                         modifier = Modifier.fillMaxWidth(),
@@ -387,11 +371,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     )
                     TextButton(
                         onClick = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     translatePrompt = DEFAULT_TRANSLATION_PROMPT
-                                )
-                            )
+                                ) }
                         }
                     ) {
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
@@ -429,20 +411,16 @@ private fun DefaultSuggestionModelSetting(
                     type = ModelType.CHAT,
                     allowBackendModels = true,
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 suggestionModelId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     allowClear = true,
                     onClear = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 suggestionModelId = DISABLED_MODEL_ID
-                            )
-                        )
+                            ) }
                     },
                     modifier = Modifier.wrapContentWidth()
                 )
@@ -483,11 +461,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     DebouncedTextField(
                         value = settings.suggestionPrompt,
                         onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     suggestionPrompt = it
-                                )
-                            )
+                                ) }
                         },
                         stateKey = "suggestion_prompt",
                         modifier = Modifier.fillMaxWidth(),
@@ -496,11 +472,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     )
                     TextButton(
                         onClick = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     suggestionPrompt = DEFAULT_SUGGESTION_PROMPT
-                                )
-                            )
+                                ) }
                         }
                     ) {
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
@@ -509,11 +483,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 HelperReasoningSettings(
                     reasoningTokens = settings.suggestionThinkingBudget,
                     onUpdateReasoningTokens = { tokens ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 suggestionThinkingBudget = tokens
-                            )
-                        )
+                            ) }
                     }
                 )
             }
@@ -545,11 +517,9 @@ private fun DefaultTitleModelSetting(
                     type = ModelType.CHAT,
                     allowBackendModels = true,
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 titleModelId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
@@ -591,11 +561,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     DebouncedTextField(
                         value = settings.titlePrompt,
                         onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     titlePrompt = it
-                                )
-                            )
+                                ) }
                         },
                         stateKey = "title_prompt",
                         modifier = Modifier.fillMaxWidth(),
@@ -604,11 +572,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     )
                     TextButton(
                         onClick = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     titlePrompt = DEFAULT_TITLE_PROMPT
-                                )
-                            )
+                                ) }
                         }
                     ) {
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
@@ -617,11 +583,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 HelperReasoningSettings(
                     reasoningTokens = settings.titleThinkingBudget,
                     onUpdateReasoningTokens = { tokens ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 titleThinkingBudget = tokens
-                            )
-                        )
+                            ) }
                     }
                 )
             }
@@ -652,20 +616,16 @@ private fun DefaultSummarizerModelSetting(
                     type = ModelType.CHAT,
                     allowBackendModels = true,
                     onSelect = { selectedModel ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 summarizerModelId = settings.findModelById(selectedModel.id)?.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     allowClear = true,
                     onClear = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 summarizerModelId = null
-                            )
-                        )
+                            ) }
                     },
                     modifier = Modifier.wrapContentWidth()
                 )
@@ -697,11 +657,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 HelperReasoningSettings(
                     reasoningTokens = settings.summarizerThinkingBudget,
                     onUpdateReasoningTokens = { tokens ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 summarizerThinkingBudget = tokens
-                            )
-                        )
+                            ) }
                     }
                 )
             }
@@ -732,20 +690,16 @@ private fun DefaultSubagentModelSetting(
                     type = ModelType.CHAT,
                     allowBackendModels = true,
                     onSelect = { selectedModel ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 subagentModelId = settings.findModelById(selectedModel.id)?.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     allowClear = true,
                     onClear = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 subagentModelId = null
-                            )
-                        )
+                            ) }
                     },
                     modifier = Modifier.wrapContentWidth()
                 )
@@ -777,11 +731,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 HelperReasoningSettings(
                     reasoningTokens = settings.subagentThinkingBudget,
                     onUpdateReasoningTokens = { tokens ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 subagentThinkingBudget = tokens
-                            )
-                        )
+                            ) }
                     }
                 )
             }
@@ -810,11 +762,9 @@ private fun DefaultChatModelSetting(
                     modelId = settings.chatModelId,
                     type = ModelType.CHAT,
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 chatModelId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
@@ -852,11 +802,9 @@ private fun DefaultOcrModelSetting(
                     allowBackendModels = true,
                     modelFilter = { model -> model.inputModalities.contains(Modality.IMAGE) },
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 ocrModelId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
@@ -898,11 +846,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     DebouncedTextField(
                         value = settings.ocrPrompt,
                         onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     ocrPrompt = it
-                                )
-                            )
+                                ) }
                         },
                         stateKey = "ocr_prompt",
                         modifier = Modifier.fillMaxWidth(),
@@ -911,11 +857,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     )
                     TextButton(
                         onClick = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     ocrPrompt = DEFAULT_OCR_PROMPT
-                                )
-                            )
+                                ) }
                         }
                     ) {
                         Text(stringResource(R.string.setting_model_page_reset_to_default))
@@ -924,11 +868,9 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 HelperReasoningSettings(
                     reasoningTokens = settings.ocrThinkingBudget,
                     onUpdateReasoningTokens = { tokens ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 ocrThinkingBudget = tokens
-                            )
-                        )
+                            ) }
                     }
                 )
             }
@@ -960,11 +902,9 @@ private fun DefaultImageGenerationModelSetting(
                     modelId = settings.imageGenerationModelId,
                     type = ModelType.IMAGE,
                     onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 imageGenerationModelId = it.id
-                            )
-                        )
+                            ) }
                     },
                     providers = settings.providers,
                     modifier = Modifier.wrapContentWidth()
@@ -1005,20 +945,16 @@ private fun DefaultEmbeddingModelSetting(
                         modelId = settings.embeddingModelId,
                         type = ModelType.EMBEDDING,
                         onSelect = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     embeddingModelId = it.id
-                                )
-                            )
+                                ) }
                         },
                         providers = settings.providers,
                         allowClear = true,
                         onClear = {
-                            vm.updateSettings(
-                                settings.copy(
+                            vm.updateSettings { settings -> settings.copy(
                                     embeddingModelId = DISABLED_MODEL_ID
-                                )
-                            )
+                                ) }
                         },
                         modifier = Modifier.wrapContentWidth()
                     )

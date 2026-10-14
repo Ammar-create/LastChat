@@ -129,11 +129,9 @@ fun SettingTTSProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val scope = rememberCoroutineScope()
 
     fun updateProvider(updated: TTSProviderSetting) {
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 ttsProviders = settings.ttsProviders.map { if (it.id == updated.id) updated else it }
-            )
-        )
+            ) }
     }
 
     Scaffold(

@@ -1516,7 +1516,7 @@ private fun ChatPageContent(
                                 }
                             },
                             onUpdateSettings = { newSettings ->
-                                vm.updateSettings(newSettings)
+                                vm.updateSettings(newSettings, base = setting)
                             },
                             onSwitchAssistant = { assistant ->
                                 navigateToAssistantConversation(assistant)
@@ -1917,7 +1917,7 @@ private fun ChatPageContent(
                                 }
                             },
                             onUpdateSettings = { newSettings ->
-                                vm.updateSettings(newSettings)
+                                vm.updateSettings(newSettings, base = setting)
                             },
                             onSwitchAssistant = { assistant ->
                                 navigateToAssistantConversation(assistant)

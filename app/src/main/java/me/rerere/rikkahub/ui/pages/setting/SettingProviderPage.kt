@@ -256,6 +256,7 @@ fun SettingProviderPage(
             settings.copy(
                 providers = listOf(providerToAdd) + settings.providers
             ),
+            base = settings,
             afterPersist = if (providerToAdd is ProviderSetting.LiteRtLocal) {
                 { navController.navigate(Screen.SettingLocalLlm) }
             } else {
@@ -278,7 +279,7 @@ fun SettingProviderPage(
                                 p.copyProvider(customIconUri = lobeHubIconUri(slug))
                             } else p
                         }
-                        vm.updateSettings(latestSettings.copy(providers = updatedProviders))
+                        vm.updateSettings { latestSettings -> latestSettings.copy(providers = updatedProviders) }
                     }
                 }
             }
@@ -349,11 +350,9 @@ fun SettingProviderPage(
                         catalogSnapshot = catalogSnapshot,
                         asFab = true
                     ) { newService ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 searchServices = listOf(newService) + settings.searchServices
-                            )
-                        )
+                            ) }
                     }
 
                     ProvidersTab.Tts -> AddTTSProviderButton(
@@ -362,11 +361,9 @@ fun SettingProviderPage(
                         asFab = true
                     ) { newProvider ->
                         val providerToAdd = newProvider.withDefaultVoices()
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 ttsProviders = listOf(providerToAdd) + settings.ttsProviders
-                            )
-                        )
+                            ) }
                     }
                 }
             }
@@ -449,7 +446,7 @@ fun SettingProviderPage(
                     val to = reorderedProviders.indexOfFirst { it.id == toProvider.id }
                     if (from >= 0 && to >= 0 && from != to) {
                         reorderedProviders.add(to, reorderedProviders.removeAt(from))
-                        vm.updateSettings(settings.copy(providers = reorderedProviders))
+                        vm.updateSettings { settings -> settings.copy(providers = reorderedProviders) }
                     }
                 },
                 onAddProvider = { provider ->
@@ -539,11 +536,9 @@ fun SettingProviderPage(
             settings = settings,
             onDismissRequest = { showSearchCommonOptions = false },
             onUpdate = { options ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         searchCommonOptions = options
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -553,13 +548,11 @@ fun SettingProviderPage(
             rules = settings.displaySetting.ttsTextFilterRules,
             onDismiss = { showTtsFilterSettings = false },
             onUpdateRules = { newRules ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         displaySetting = settings.displaySetting.copy(
                             ttsTextFilterRules = newRules
                         )
-                    )
-                )
+                    ) }
             }
         )
     }

@@ -334,11 +334,9 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             val newServices = settings.searchServices.toMutableList().apply {
                 add(toIndex, removeAt(fromIndex))
             }
-            vm.updateSettings(
-                settings.copy(
+            vm.updateSettings { settings -> settings.copy(
                     searchServices = newServices
-                )
-            )
+                ) }
         }
     }
 
@@ -374,11 +372,9 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                     catalogSnapshot = catalogSnapshot,
                     asFab = true
                 ) { newService ->
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             searchServices = listOf(newService) + settings.searchServices
-                        )
-                    )
+                        ) }
                 }
             }
         },
@@ -576,7 +572,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         if (idx >= 0) {
                             val newServices = settings.searchServices.toMutableList()
                             newServices.removeAt(idx)
-                            vm.updateSettings(settings.copy(searchServices = newServices))
+                            vm.updateSettings { settings -> settings.copy(searchServices = newServices) }
                         }
                     }
                     showDeleteDialog = false
@@ -591,11 +587,9 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
             settings = settings,
             onDismissRequest = { showCommonOptions = false },
             onUpdate = { options ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         searchCommonOptions = options
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -758,7 +752,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             val newServices = settings.searchServices.map {
                                 if (it.id == service.id) currentService else it
                             }
-                            vm.updateSettings(settings.copy(searchServices = newServices))
+                            vm.updateSettings { settings -> settings.copy(searchServices = newServices) }
                             editingService = null
                         },
                         modifier = Modifier.weight(1f)
@@ -786,7 +780,7 @@ internal fun SearchProvidersContent(
             val newServices = settings.searchServices.toMutableList().apply {
                 add(to.index, removeAt(from.index))
             }
-            vm.updateSettings(settings.copy(searchServices = newServices))
+            vm.updateSettings { settings -> settings.copy(searchServices = newServices) }
         }
     }
 
@@ -969,7 +963,7 @@ internal fun SearchProvidersContent(
                     if (idx >= 0) {
                         val newServices = settings.searchServices.toMutableList()
                         newServices.removeAt(idx)
-                        vm.updateSettings(settings.copy(searchServices = newServices))
+                        vm.updateSettings { settings -> settings.copy(searchServices = newServices) }
                     }
                 }
                 showDeleteDialog = false
@@ -987,7 +981,7 @@ internal fun SearchProvidersContent(
             val newServices = settings.searchServices.map {
                 if (it.id == original.id) updated else it
             }
-            vm.updateSettings(settings.copy(searchServices = newServices))
+            vm.updateSettings { settings -> settings.copy(searchServices = newServices) }
             editingService = null
         }
     )

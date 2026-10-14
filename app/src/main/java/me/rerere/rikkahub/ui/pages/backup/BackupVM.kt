@@ -46,10 +46,11 @@ class BackupVM(
         loadBackupFileItems()
     }
 
-    fun updateSettings(settings: Settings) {
-        viewModelScope.launch {
-            settingsStore.update(settings)
-        }
+    fun updateSettings(settings: Settings) = updateSettings { settings }
+
+    /** Applies [transform] to the latest settings via the store's ordered queue. */
+    fun updateSettings(transform: (Settings) -> Settings) {
+        settingsStore.enqueueUpdate(transform)
     }
 
     fun loadBackupFileItems() {

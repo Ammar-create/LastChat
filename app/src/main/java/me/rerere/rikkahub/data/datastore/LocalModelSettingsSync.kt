@@ -55,7 +55,18 @@ suspend fun syncInstalledLocalModelsToSettings(
         sttModels = sttModels,
     )
     if (updated.providers == settings.providers) return
-    settingsStore.update(updated.clearMissingModelReferences())
+    // Apply on the latest settings, recomputed under the store lock, so an edit made between the
+    // read above and this write isn't overwritten.
+    settingsStore.update { latest ->
+        val latestLocal = latest.providers.filterIsInstance<ProviderSetting.LiteRtLocal>().firstOrNull()
+        val latestById = latestLocal?.models.orEmpty().associateBy { it.modelId }
+        latest.withSyncedLocalProviderModels(
+            llmAndEmbeddingModels = installed.map { m ->
+                m.toSettingsModel(latestById[m.id], catalogSnapshot, totalRamGb)
+            },
+            sttModels = latestLocal?.models.orEmpty().filter { it.type == ModelType.STT },
+        ).clearMissingModelReferences()
+    }
 }
 
 private fun InstalledLocalModel.toSettingsModel(

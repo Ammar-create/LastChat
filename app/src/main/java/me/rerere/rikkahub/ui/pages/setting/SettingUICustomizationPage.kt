@@ -41,11 +41,9 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
 
     fun updateDisplaySetting(setting: DisplaySetting) {
         displaySetting = setting
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 displaySetting = setting
-            )
-        )
+            ) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()

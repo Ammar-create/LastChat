@@ -341,7 +341,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                             val newAssistants = settings.assistants.toMutableList().apply {
                                 add(to.index, removeAt(from.index))
                             }
-                            vm.updateSettings(settings.copy(assistants = newAssistants))
+                            vm.updateSettings { settings -> settings.copy(assistants = newAssistants) }
                         }
                     }
 

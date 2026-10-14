@@ -152,7 +152,7 @@ fun SettingSkillsPage(
             is SkillExportImport.ImportResult.Success -> {
                 runCatching { SkillExportImport.installPackage(context, result) }
                     .onSuccess { installedSkill ->
-                        vm.updateSettings(settings.copy(skills = settings.skills + installedSkill))
+                        vm.updateSettings { settings -> settings.copy(skills = settings.skills + installedSkill) }
                         haptics.perform(HapticPattern.Success)
                         toaster.show(context.getString(R.string.skill_import_success, installedSkill.name))
                     }
@@ -294,48 +294,40 @@ fun SettingSkillsPage(
             onSave = { savedSkill ->
                 val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 if (editingSkill == null) {
-                    vm.updateSettings(settings.copy(skills = settings.skills + persistedSkill))
+                    vm.updateSettings { settings -> settings.copy(skills = settings.skills + persistedSkill) }
                 } else {
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             skills = settings.skills.map {
                                 if (it.id == persistedSkill.id) persistedSkill else it
                             }
-                        )
-                    )
+                        ) }
                 }
                 showAddDialog = false
                 editingSkill = null
             },
             onSavePreservingPackage = { savedSkill ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         skills = settings.skills.map {
                             if (it.id == savedSkill.id) savedSkill else it
                         }
-                    )
-                )
+                    ) }
                 showAddDialog = false
                 editingSkill = null
             },
             onPackageMetadataChanged = { savedSkill ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         skills = settings.skills.map {
                             if (it.id == savedSkill.id) savedSkill else it
                         }
-                    )
-                )
+                    ) }
             },
             onAutoSave = { savedSkill ->
                 val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         skills = settings.skills.map {
                             if (it.id == persistedSkill.id) persistedSkill else it
                         }
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -492,9 +484,7 @@ fun SkillsPageContent(
                                 },
                                 onDelete = {
                                     val deletedSkill = skill
-                                    vm.updateSettings(
-                                        settings.copy(skills = settings.skills.filter { it.id != skill.id })
-                                    )
+                                    vm.updateSettings { settings -> settings.copy(skills = settings.skills.filter { it.id != skill.id }) }
                                     toaster.show(
                                         message = context.getString(
                                             R.string.skills_page_deleted,
@@ -503,13 +493,11 @@ fun SkillsPageContent(
                                         action = ToastAction(
                                             label = context.getString(R.string.undo),
                                             onClick = {
-                                                vm.updateSettings(
-                                                    settings.copy(
+                                                vm.updateSettings { settings -> settings.copy(
                                                         skills = settings.skills.toMutableList().apply {
                                                             add(index.coerceAtMost(size), deletedSkill)
                                                         }
-                                                    )
-                                                )
+                                                    ) }
                                             }
                                         )
                                     )
@@ -534,7 +522,7 @@ fun SkillsPageContent(
                                                     isReordering = false
                                                     if (orderedSkills.map { it.id } != settings.skills.map { it.id }) {
                                                         awaitingPersistedOrder = true
-                                                        vm.updateSettings(settings.copy(skills = orderedSkills))
+                                                        vm.updateSettings { settings -> settings.copy(skills = orderedSkills) }
                                                     }
                                                     haptics.perform(HapticPattern.Thud)
                                                 }

@@ -35,10 +35,11 @@ class AssistantVM(
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 
-    fun updateSettings(settings: Settings) {
-        viewModelScope.launch {
-            settingsStore.update(settings)
-        }
+    fun updateSettings(settings: Settings) = updateSettings { settings }
+
+    /** Applies [transform] to the latest settings via the store's ordered queue. */
+    fun updateSettings(transform: (Settings) -> Settings) {
+        settingsStore.enqueueUpdate(transform)
     }
 
     fun addAssistant(assistant: Assistant) {
@@ -69,11 +70,9 @@ class AssistantVM(
             val seededAssistant = newAssistant.copy(
                 maxSearchResultsRetained = newAssistant.maxSearchResultsRetained ?: 10
             )
-            settingsStore.update(
-                settings.copy(
+            settingsStore.update { settings -> settings.copy(
                     assistants = settings.assistants.plus(seededAssistant)
-                )
-            )
+                ) }
         }
     }
 
@@ -141,11 +140,9 @@ class AssistantVM(
                 name = "${assistant.name} (Clone)",
                 avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
             )
-            settingsStore.update(
-                settings.copy(
+            settingsStore.update { settings -> settings.copy(
                     assistants = settings.assistants.plus(copiedAssistant)
-                )
-            )
+                ) }
         }
     }
 

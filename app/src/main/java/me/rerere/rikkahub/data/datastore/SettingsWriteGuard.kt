@@ -1,19 +1,12 @@
 package me.rerere.rikkahub.data.datastore
 
-internal const val SETTLE_WINDOW_NANOS = 1_500_000_000L
-
 /**
- * Whether a value re-read from DataStore may replace the in-memory settings. While our own
- * write is in flight, or shortly after it, only a value equal to what's in memory is taken;
- * older re-emissions would otherwise roll back the change the user just made.
+ * Whether a value re-read from DataStore may replace the in-memory settings. Re-reads older than
+ * the last write this process made ([emittedRevision] < [lastWrittenRevision]) are stale echoes
+ * and must not roll back the user's edit; nothing is taken while a write is still in flight.
  */
 internal fun shouldAcceptPersisted(
     pendingWrites: Int,
-    nowNanos: Long,
-    settleUntilNanos: Long,
-    matchesInMemory: Boolean,
-): Boolean {
-    if (matchesInMemory) return true
-    if (pendingWrites > 0) return false
-    return nowNanos - settleUntilNanos >= 0
-}
+    emittedRevision: Long,
+    lastWrittenRevision: Long,
+): Boolean = pendingWrites == 0 && emittedRevision >= lastWrittenRevision

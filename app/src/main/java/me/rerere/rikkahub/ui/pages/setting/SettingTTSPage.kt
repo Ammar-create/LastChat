@@ -146,7 +146,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         val newProviders = settings.ttsProviders.toMutableList().apply {
             add(to.index, removeAt(from.index))
         }
-        vm.updateSettings(settings.copy(ttsProviders = newProviders))
+        vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
     }
 
     // State for TTS text filter settings dialog
@@ -181,11 +181,9 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     enableHaptics = settings.displaySetting.enableUIHaptics,
                     asFab = true
                 ) {
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             ttsProviders = listOf(it.withDefaultVoices()) + settings.ttsProviders
-                        )
-                    )
+                        ) }
                 }
             }
         },
@@ -418,11 +416,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         } else {
                             settings.selectedTTSVoiceId
                         }
-                        vm.updateSettings(settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                             ttsProviders = newProviders,
                             selectedTTSProviderId = newSelectedId,
                             selectedTTSVoiceId = newSelectedVoiceId
-                        ))
+                        ) }
                     }
                     showDeleteDialog = false
                     providerToDelete = null
@@ -518,7 +516,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             val newProviders = settings.ttsProviders.map {
                                 if (it.id == provider.id) currentProvider else it
                             }
-                            vm.updateSettings(settings.copy(ttsProviders = newProviders))
+                            vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
                             editingProvider = null
                         },
                         modifier = Modifier.weight(1f)
@@ -536,13 +534,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             rules = settings.displaySetting.ttsTextFilterRules,
             onDismiss = { showFilterSettingsDialog = false },
             onUpdateRules = { newRules ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         displaySetting = settings.displaySetting.copy(
                             ttsTextFilterRules = newRules
                         )
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -564,7 +560,7 @@ internal fun TtsProvidersContent(
         val newProviders = settings.ttsProviders.toMutableList().apply {
             add(to.index, removeAt(from.index))
         }
-        vm.updateSettings(settings.copy(ttsProviders = newProviders))
+        vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
     }
 
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
@@ -777,13 +773,11 @@ internal fun TtsProvidersContent(
                     } else {
                         settings.selectedTTSVoiceId
                     }
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             ttsProviders = newProviders,
                             selectedTTSProviderId = newSelectedId,
                             selectedTTSVoiceId = newSelectedVoiceId
-                        )
-                    )
+                        ) }
                 }
                 showDeleteDialog = false
                 providerToDelete = null
@@ -798,7 +792,7 @@ internal fun TtsProvidersContent(
             val newProviders = settings.ttsProviders.map {
                 if (it.id == original.id) updated else it
             }
-            vm.updateSettings(settings.copy(ttsProviders = newProviders))
+            vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
             editingProvider = null
         }
     )

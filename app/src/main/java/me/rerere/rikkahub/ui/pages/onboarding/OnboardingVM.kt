@@ -49,7 +49,7 @@ class OnboardingVM(
     fun skipSetup(onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                settingsStore.update(settings.value.copy(setupCompleted = true))
+                settingsStore.update { it.copy(setupCompleted = true) }
             }
             onDone()
         }
@@ -63,12 +63,10 @@ class OnboardingVM(
                     .filterIsInstance<ProviderSetting.LiteRtLocal>()
                     .firstOrNull()
                 val localProvider = localProviderBeforeSetup ?: provider
-                settingsStore.update(
-                    current.copy(
+                settingsStore.update { current -> current.copy(
                         providers = listOf(localProvider) +
                             current.providers.filterNot { it is ProviderSetting.LiteRtLocal },
-                    )
-                )
+                    ) }
             }
             onReady()
         }
@@ -79,12 +77,10 @@ class OnboardingVM(
             withContext(Dispatchers.IO) {
                 val current = settings.value
                 val restoredLocalProvider = localProviderBeforeSetup
-                settingsStore.update(
-                    current.copy(
+                settingsStore.update { current -> current.copy(
                         providers = listOfNotNull(restoredLocalProvider) +
                             current.providers.filterNot { it is ProviderSetting.LiteRtLocal },
-                    )
-                )
+                    ) }
                 localProviderBeforeSetup = null
             }
             onDone()
@@ -114,16 +110,14 @@ class OnboardingVM(
                     it.type == ModelType.EMBEDDING
                 }
 
-                settingsStore.update(
-                    syncedSettings.copy(
+                settingsStore.update { syncedSettings -> syncedSettings.copy(
                         setupCompleted = true,
                         chatModelId = chatModel?.id ?: syncedSettings.chatModelId,
                         titleModelId = chatModel?.id ?: syncedSettings.titleModelId,
                         summarizerModelId = chatModel?.id ?: syncedSettings.summarizerModelId,
                         ocrModelId = visionModel?.id ?: syncedSettings.ocrModelId,
                         embeddingModelId = embeddingModel?.id ?: syncedSettings.embeddingModelId,
-                    )
-                )
+                    ) }
                 localProviderBeforeSetup = null
             }
             onDone()
@@ -138,14 +132,15 @@ class OnboardingVM(
                 val setupModels = providerModels.orderedSetupModels(preset.setupModelIds)
                 val configuredProvider = keyedProvider
                     .copyProvider(models = setupModels)
-                val nextSettings = applyDefaults(
-                    settings = settings.value,
-                    provider = configuredProvider,
-                    defaults = preset.setupDefaults,
-                    setupSearchService = preset.setupSearchService,
-                    apiKey = apiKey,
-                ).copy(setupCompleted = true)
-                settingsStore.update(nextSettings)
+                settingsStore.update { latest ->
+                    applyDefaults(
+                        settings = latest,
+                        provider = configuredProvider,
+                        defaults = preset.setupDefaults,
+                        setupSearchService = preset.setupSearchService,
+                        apiKey = apiKey,
+                    ).copy(setupCompleted = true)
+                }
             }
             onDone()
         }
@@ -163,16 +158,14 @@ class OnboardingVM(
                     enabled = true,
                     models = selectedModels,
                 )
-                val current = settings.value
-                val nextSettings = current.copy(
+                settingsStore.update { current -> current.copy(
                     setupCompleted = true,
                     providers = listOf(configuredProvider),
                     chatModelId = roleModels.chat ?: current.chatModelId,
                     titleModelId = roleModels.title ?: current.titleModelId,
                     summarizerModelId = roleModels.summarizer,
                     ocrModelId = roleModels.ocr ?: current.ocrModelId,
-                )
-                settingsStore.update(nextSettings)
+                ) }
             }
             onDone()
         }

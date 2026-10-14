@@ -142,15 +142,12 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val mcpConfigs = settings.mcpServers
     val creationState = useEditState<McpServerConfig> {
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 mcpServers = mcpConfigs + it
-            )
-        )
+            ) }
     }
     val editState = useEditState<McpServerConfig> { newConfig ->
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 mcpServers = mcpConfigs.map {
                     if (it.id == newConfig.id) {
                         newConfig
@@ -158,7 +155,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         it
                     }
                 }
-            ))
+            ) }
     }
     
     // Delete confirmation state - at function level so accessible by dialog
@@ -187,6 +184,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         val config = preset.createConfig()
         vm.updateSettings(
             settings.copy(mcpServers = listOf(config) + mcpConfigs),
+            base = settings,
             afterPersist = if (preset.authMode == McpAuthMode.OAUTH) {
                 { oauthManager.startAuthorization(config) }
             } else {
@@ -427,11 +425,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             },
             onConfirm = {
                 mcpToDelete?.let { mcp ->
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             mcpServers = mcpConfigs.filter { it.id != mcp.id }
-                        )
-                    )
+                        ) }
                 }
                 showDeleteDialog = false
                 mcpToDelete = null
@@ -462,11 +458,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 val existingNames = mcpConfigs.map { it.commonOptions.name.trim().lowercase() }.toSet()
                 val newConfigs = importedConfigs.filter { it.commonOptions.name.trim().lowercase() !in existingNames }
                 if (newConfigs.isNotEmpty()) {
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             mcpServers = mcpConfigs + newConfigs
-                        )
-                    )
+                        ) }
                 }
                 showImportDialog = false
             }

@@ -176,13 +176,11 @@ fun ChatDrawerContent(
 
     // 昵称编辑状态
     val nicknameEditState = useEditState<String> { newNickname ->
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 displaySetting = settings.displaySetting.copy(
                     userNickname = newNickname
                 )
-            )
-        )
+            ) }
     }
 
     val drawerContent: @Composable () -> Unit = {
@@ -203,13 +201,11 @@ fun ChatDrawerContent(
                     name = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
                     value = settings.displaySetting.userAvatar,
                     onUpdate = { newAvatar ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 displaySetting = settings.displaySetting.copy(
                                     userAvatar = newAvatar
                                 )
-                            )
-                        )
+                            ) }
                     },
                     modifier = Modifier.size(50.dp),
                 )

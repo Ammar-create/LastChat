@@ -13,6 +13,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicInteger
@@ -80,6 +82,7 @@ class SettingsStore(
         // UI设置
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val SETUP_COMPLETED = booleanPreferencesKey("setup_completed")
+        val STORE_REVISION = androidx.datastore.preferences.core.longPreferencesKey("settings_store_revision")
         val THEME_ID = stringPreferencesKey("theme_id")
         val DISPLAY_SETTING = stringPreferencesKey("display_setting")
         val DEVELOPER_MODE = booleanPreferencesKey("developer_mode")
@@ -178,6 +181,7 @@ class SettingsStore(
         }.map { preferences ->
             runCatching {
                 Settings(
+                    storeRevision = preferences[STORE_REVISION] ?: 0L,
                     setupCompleted = preferences[SETUP_COMPLETED] == true,
                     enableWebSearch = preferences[ENABLE_WEB_SEARCH] == true,
                     favoriteModels = decodePreferenceList(preferences[FAVORITE_MODELS]) ?: emptyList(),
@@ -435,58 +439,53 @@ class SettingsStore(
 
     /**
      * In-memory settings. [update] writes here first, then to DataStore. DataStore re-emits
-     * through a slow pipeline, so an emission of an *earlier* write can arrive after a newer
-     * in-memory value and revert it (the chat then used old providers/keys/params until the
-     * settings screen was opened again and re-saved). Emissions are ignored while a write is
-     * in flight and, for a short settle window afterwards, unless they match what we wrote.
+     * through a slow pipeline, so a re-read of an *earlier* write could arrive after a newer
+     * in-memory value and revert it. Every write bumps [Settings.storeRevision] (persisted as
+     * [STORE_REVISION]); a re-read is taken only when no write is in flight and its revision is
+     * at least the last one written. No timers: a newer edit is never dropped and an older
+     * value never comes back.
      */
     val settingsFlow: MutableStateFlow<Settings> = MutableStateFlow(quickCache.createCachedSettings())
 
     private val writeMutex = Mutex()
     private val pendingWrites = AtomicInteger(0)
     @Volatile
-    private var settleUntilNanos = 0L
+    private var lastWrittenRevision = 0L
+    @Volatile
+    private var lastPersisted: Settings? = null
+
+    /** Ordered, app-lifetime write queue used by screens; survives the screen and its ViewModel. */
+    private val writeQueue = kotlinx.coroutines.channels.Channel<suspend () -> Unit>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    private val queuedWrites = MutableStateFlow(0)
 
     init {
         scope.launch {
             runCatching {
                 settingsPipeline.collect { value ->
                     lastPersisted = value
-                    if (shouldAcceptPersisted(
-                            pendingWrites = pendingWrites.get(),
-                            nowNanos = System.nanoTime(),
-                            settleUntilNanos = settleUntilNanos,
-                            matchesInMemory = value == settingsFlow.value,
-                        )
-                    ) {
-                        settingsFlow.value = value
-                    } else {
-                        scheduleSettleCheck()
-                    }
+                    adoptPersistedIfFresh()
                 }
             }.onFailure { Log.e(TAG, "Error while collecting settings", it) }
         }
+        scope.launch(Dispatchers.IO) {
+            for (job in writeQueue) {
+                try {
+                    job()
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Queued settings write failed", t)
+                } finally {
+                    queuedWrites.update { it - 1 }
+                }
+            }
+        }
     }
 
-    @Volatile
-    private var lastPersisted: Settings? = null
-    private var settleJob: kotlinx.coroutines.Job? = null
-    private val settleScope = scope
-
-    /**
-     * After the settle window, the newest DataStore value is the truth (it includes our writes and
-     * any external one, e.g. a backup restore), so adopt it if memory still differs.
-     */
-    private fun scheduleSettleCheck() {
-        settleJob?.cancel()
-        settleJob = settleScope.launch {
-            while (true) {
-                val wait = (settleUntilNanos - System.nanoTime()) / 1_000_000L
-                kotlinx.coroutines.delay(wait.coerceAtLeast(50L))
-                if (pendingWrites.get() == 0 && System.nanoTime() - settleUntilNanos >= 0) break
-            }
-            val persisted = lastPersisted ?: return@launch
-            if (persisted != settingsFlow.value) settingsFlow.value = persisted
+    private fun adoptPersistedIfFresh() {
+        val value = lastPersisted ?: return
+        if (shouldAcceptPersisted(pendingWrites.get(), value.storeRevision, lastWrittenRevision) &&
+            value != settingsFlow.value
+        ) {
+            settingsFlow.value = value
         }
     }
 
@@ -495,8 +494,51 @@ class SettingsStore(
         try {
             return block()
         } finally {
-            settleUntilNanos = System.nanoTime() + SETTLE_WINDOW_NANOS
             pendingWrites.decrementAndGet()
+            adoptPersistedIfFresh()
+        }
+    }
+
+    private fun nextRevision(): Long {
+        val next = maxOf(lastWrittenRevision, settingsFlow.value.storeRevision, lastPersisted?.storeRevision ?: 0L) + 1
+        lastWrittenRevision = next
+        return next
+    }
+
+    /**
+     * Queues `fn(latest)` behind every earlier queued write and returns (before, after).
+     * Non-blocking for the caller; runs even if the calling screen is gone.
+     */
+    fun enqueueUpdate(fn: (Settings) -> Settings): kotlinx.coroutines.Deferred<Pair<Settings, Settings>> {
+        val result = kotlinx.coroutines.CompletableDeferred<Pair<Settings, Settings>>()
+        queuedWrites.update { it + 1 }
+        val sent = writeQueue.trySend {
+            try {
+                var before: Settings? = null
+                update { latest -> before = latest; fn(latest) }
+                result.complete((before ?: settingsFlow.value) to settingsFlow.value)
+            } catch (t: Throwable) {
+                result.completeExceptionally(t)
+                throw t
+            }
+        }
+        if (sent.isFailure) {
+            queuedWrites.update { it - 1 }
+            result.completeExceptionally(IllegalStateException("settings write queue closed"))
+        }
+        return result
+    }
+
+    /** Suspends until every queued write has reached DataStore. */
+    suspend fun awaitQueuedWrites() {
+        queuedWrites.first { it <= 0 }
+        writeMutex.withLock { }
+    }
+
+    /** For process stop: block briefly so writes queued just before backgrounding hit disk. */
+    fun flushBlocking(timeoutMs: Long = 3_000L) {
+        kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { awaitQueuedWrites() }
         }
     }
 
@@ -587,10 +629,13 @@ class SettingsStore(
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(normalizedSettings)
             .normalizeFontSettings()
 
+        val revision = nextRevision()
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
             .normalizeFontSettings()
             .normalizeTtsSettings()
+            .copy(storeRevision = revision)
         dataStore.edit { preferences ->
+            preferences[STORE_REVISION] = revision
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
             preferences[SETUP_COMPLETED] = normalizedSettings.setupCompleted
             preferences[THEME_ID] = normalizedSettings.themeId
@@ -670,6 +715,8 @@ class SettingsStore(
 
     /** Applies [fn] to the latest settings under the write lock, so concurrent edits don't drop each other. */
     suspend fun update(fn: (Settings) -> Settings) = writeMutex.withLock {
+        // An edit queued before settings finished loading must wait, not be dropped as "dummy".
+        if (settingsFlow.value.init) settingsFlow.first { !it.init }
         guardedWrite { updateLocked(fn(settingsFlow.value)) }
     }
 
@@ -688,11 +735,14 @@ class SettingsStore(
             }
             settingsFlow.value = current.copy(
                 assistantId = assistantId,
-                recentlyUsedAssistants = updatedRecentlyUsed
+                recentlyUsedAssistants = updatedRecentlyUsed,
             )
         }
+        val revision = nextRevision()
+        settingsFlow.value = settingsFlow.value.copy(storeRevision = revision)
         // Persist to DataStore
         dataStore.edit { preferences ->
+            preferences[STORE_REVISION] = revision
             preferences[SELECT_ASSISTANT] = assistantId.toString()
         }
     }

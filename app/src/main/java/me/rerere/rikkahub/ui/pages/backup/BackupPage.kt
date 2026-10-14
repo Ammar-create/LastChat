@@ -311,7 +311,7 @@ private fun WebDavPage(
     }
 
     fun updateWebDavConfig(newConfig: WebDavConfig) {
-        vm.updateSettings(settings.copy(webDavConfig = newConfig))
+        vm.updateSettings { settings -> settings.copy(webDavConfig = newConfig) }
     }
 
     Box(

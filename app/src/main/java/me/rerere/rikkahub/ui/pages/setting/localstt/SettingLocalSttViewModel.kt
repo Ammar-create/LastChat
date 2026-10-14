@@ -124,7 +124,7 @@ class SettingLocalSttViewModel(
             } else {
                 settings.providers.map { if (it is ProviderSetting.LiteRtLocal) updatedLocal else it }
             }
-            settingsStore.update(settings.copy(providers = providers, sttModelId = aiModel.id))
+            settingsStore.update { settings -> settings.copy(providers = providers, sttModelId = aiModel.id) }
         }
     }
 
@@ -147,7 +147,7 @@ class SettingLocalSttViewModel(
         val selectedStillExists = selectedLocalModel == null || selectedLocalModel.modelId in installedIds
         val sttModelId = settings.sttModelId.takeIf { selectedStillExists }
         if (updated.providers == settings.providers && sttModelId == settings.sttModelId) return
-        settingsStore.update(updated.copy(sttModelId = sttModelId))
+        settingsStore.update { updated -> updated.copy(sttModelId = sttModelId) }
     }
 
     private fun InstalledSherpaModel.toAiModel(existing: Model?): Model = (existing ?: Model()).copy(

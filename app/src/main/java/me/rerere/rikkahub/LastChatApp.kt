@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filter
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.syncInstalledLocalModelsToSettings
+import me.rerere.rikkahub.data.datastore.mergeSettingsEdit
 import me.rerere.rikkahub.data.datastore.withRecoveredAssistantsFromConversations
 import me.rerere.rikkahub.data.ai.models.ModelMetadataResolver
 import me.rerere.rikkahub.data.ai.models.ModelCatalogService
@@ -185,6 +186,12 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
                     }
                 }
             }
+
+            // App went to the background: make sure settings edits queued just before reach disk,
+            // so killing the app right after a change doesn't lose it.
+            override fun onStop(owner: LifecycleOwner) {
+                runCatching { get<SettingsStore>().flushBlocking() }
+            }
         })
         
         get<AppScope>().launch(Dispatchers.IO) {
@@ -197,7 +204,7 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
                 )
                 if (recovered != settings) {
                     Log.i(TAG, "Restored ${recovered.assistants.size - settings.assistants.size} assistants from existing chats")
-                    settingsStore.update(recovered)
+                    settingsStore.update { latest -> mergeSettingsEdit(settings, recovered, latest) }
                 }
             }.onFailure {
                 Log.w(TAG, "Conversation assistant recovery failed", it)
@@ -214,7 +221,7 @@ class LastChatApp : Application(), SingletonImageLoader.Factory {
                     resolver = get<ModelMetadataResolver>(),
                 )
                 if (merged != settings) {
-                    settingsStore.update(merged)
+                    settingsStore.update { latest -> mergeSettingsEdit(settings, merged, latest) }
                 }
             }.onFailure {
                 Log.w(TAG, "Model catalog warm-up failed", it)

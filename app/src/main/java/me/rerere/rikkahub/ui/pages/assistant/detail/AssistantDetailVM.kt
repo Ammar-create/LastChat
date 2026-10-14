@@ -164,22 +164,18 @@ class AssistantDetailVM(
         viewModelScope.launch {
             // First, update the global tags list
             val currentSettings = settingsStore.settingsFlow.value
-            settingsStore.update(
-                settings = currentSettings.copy(
+            settingsStore.update { currentSettings -> currentSettings.copy(
                     assistantTags = tags
-                )
-            )
+                ) }
             
             // Then, update this assistant's tags
             val updatedAssistant = assistant.value.copy(tags = tagIds.toList())
             val latestSettings = settingsStore.settingsFlow.value
-            settingsStore.update(
-                settings = latestSettings.copy(
+            settingsStore.update { latestSettings -> latestSettings.copy(
                     assistants = latestSettings.assistants.map {
                         if (it.id == updatedAssistant.id) updatedAssistant else it
                     }
-                )
-            )
+                ) }
             
             Log.d(TAG, "updateTags: ${tagIds.joinToString(",")}")
             
@@ -218,12 +214,10 @@ class AssistantDetailVM(
         val needUpdateTags = cleanedTags.size != settings.assistantTags.size
 
         if (needUpdateAssistants || needUpdateTags) {
-            settingsStore.update(
-                settings = settings.copy(
+            settingsStore.update { settings -> settings.copy(
                     assistants = cleanedAssistants,
                     assistantTags = cleanedTags
-                )
-            )
+                ) }
             Log.d(TAG, "cleanupUnusedTags: removed ${settings.assistantTags.size - cleanedTags.size} unused tags")
         }
     }
@@ -261,16 +255,14 @@ class AssistantDetailVM(
                     checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
                     checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
                 }
-                settingsStore.update(
-                    settings = currentSettings.copy(
+                settingsStore.update { currentSettings -> currentSettings.copy(
                         assistants = currentSettings.assistants.map {
                             if (it.id == assistant.id) {
                                 assistant
                             } else {
                                 it
                             }
-                        })
-                )
+                        }) }
                 appStorageRepository.deleteFilesIfUnreferenced(
                     oldAssistant?.collectRemovedMediaRefs(new = assistant).orEmpty()
                 )

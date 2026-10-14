@@ -5,23 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsWriteGuardTest {
-    @Test
-    fun staleEmissionIgnoredWhileWriteInFlight() {
-        assertFalse(shouldAcceptPersisted(pendingWrites = 1, nowNanos = 10, settleUntilNanos = 0, matchesInMemory = false))
-    }
-
-    @Test
-    fun staleEmissionIgnoredDuringSettleWindow() {
-        assertFalse(shouldAcceptPersisted(pendingWrites = 0, nowNanos = 10, settleUntilNanos = 20, matchesInMemory = false))
-    }
-
-    @Test
-    fun matchingEmissionAlwaysAccepted() {
-        assertTrue(shouldAcceptPersisted(pendingWrites = 2, nowNanos = 10, settleUntilNanos = 20, matchesInMemory = true))
-    }
-
-    @Test
-    fun externalChangeAcceptedAfterSettle() {
-        assertTrue(shouldAcceptPersisted(pendingWrites = 0, nowNanos = 30, settleUntilNanos = 20, matchesInMemory = false))
-    }
+    @Test fun nothingTakenWhileWriting() = assertFalse(shouldAcceptPersisted(1, 9, 5))
+    @Test fun olderReReadRejected() = assertFalse(shouldAcceptPersisted(0, 4, 5))
+    @Test fun echoOfLastWriteAccepted() = assertTrue(shouldAcceptPersisted(0, 5, 5))
+    @Test fun newerExternalAccepted() = assertTrue(shouldAcceptPersisted(0, 6, 5))
 }

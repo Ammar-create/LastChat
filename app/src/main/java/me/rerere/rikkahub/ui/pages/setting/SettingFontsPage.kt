@@ -98,7 +98,7 @@ fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
     fun persistFontSettings(fontSettings: FontSettings) {
         val normalizedFontSettings = fontSettings.normalize()
         val newDisplaySetting = settings.displaySetting.copy(fontSettings = normalizedFontSettings)
-        vm.updateSettings(settings.copy(displaySetting = newDisplaySetting))
+        vm.updateSettings { settings -> settings.copy(displaySetting = newDisplaySetting) }
     }
 
     fun updateLocalFontSettings(fontSettings: FontSettings, persist: Boolean = false) {

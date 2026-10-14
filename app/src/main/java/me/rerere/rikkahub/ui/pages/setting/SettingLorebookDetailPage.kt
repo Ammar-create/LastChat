@@ -231,11 +231,11 @@ fun SettingLorebookDetailPage(
     val canDelete = true
     
     fun updateLorebook(updated: Lorebook) {
-        vm.updateSettings(settings.copy(
+        vm.updateSettings { settings -> settings.copy(
             lorebooks = settings.lorebooks.map {
                 if (it.id == lorebook.id) updated else it
             }
-        ))
+        ) }
     }
     
     fun exportLorebook(format: String) {
@@ -662,11 +662,11 @@ fun SettingLorebookDetailPage(
             lorebook = lorebook,
             assistants = settings.assistants,
             onUpdateAssistant = { assistant ->
-                vm.updateSettings(settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                     assistants = settings.assistants.map { 
                         if (it.id == assistant.id) assistant else it 
                     }
-                ))
+                ) }
             },
             onDismiss = { showAssistantToggleSheet = false }
         )

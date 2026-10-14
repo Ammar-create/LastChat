@@ -65,9 +65,7 @@ class SettingVM(
                 }
             }
             val current = settings.value
-            updateSettings(
-                current.copy(providers = current.providers.filter { it.id != provider.id })
-            )
+            updateSettings { current -> current.copy(providers = current.providers.filter { it.id != provider.id }) }
         }
     }
 
@@ -91,19 +89,22 @@ class SettingVM(
     }
 
     suspend fun flushProviderEdit() {
-        val pending = _pendingProviderEdit.value ?: return
-        settingsStore.update { latest ->
+        enqueueProviderFlush()?.await()
+    }
+
+    private fun enqueueProviderFlush(): kotlinx.coroutines.Deferred<Pair<Settings, Settings>>? {
+        val pending = _pendingProviderEdit.value ?: return null
+        providerSaveJob?.cancel()
+        val result = settingsStore.enqueueUpdate { latest ->
             latest.copy(providers = latest.providers.map { if (it.id == pending.id) pending else it })
         }
         _pendingProviderEdit.compareAndSet(pending, null)
+        return result
     }
 
-    /** Saves a pending provider edit now, e.g. when leaving the screen. Survives the ViewModel. */
+    /** Saves a pending provider edit now (leaving the screen, app backgrounded). Survives the ViewModel. */
     fun flushProviderEditNow() {
-        if (_pendingProviderEdit.value == null) return
-        providerSaveJob?.cancel()
-        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { flushProviderEdit() }
+        enqueueProviderFlush()
     }
 
     /** Drops the pending edit because the caller is saving a newer copy of the same provider. */
@@ -117,30 +118,39 @@ class SettingVM(
         super.onCleared()
     }
 
+    /**
+     * Whole-snapshot save. Only the fields that differ from the snapshot the screen is showing
+     * are applied to the latest settings (see [mergeSettingsEdit]), so nothing saved meanwhile
+     * is overwritten. Prefer the transform overload.
+     */
     fun updateSettings(
         newSettings: Settings,
         afterPersist: (() -> Unit)? = null,
+        base: Settings = settings.value,
+    ) = updateSettings(afterPersist) { latest -> me.rerere.rikkahub.data.datastore.mergeSettingsEdit(base, newSettings, latest) }
+
+    /**
+     * Applies [transform] to the latest stored settings through the store's ordered queue, so
+     * quick successive changes from any screen all land and a change made while leaving the
+     * screen still persists.
+     */
+    fun updateSettings(
+        afterPersist: (() -> Unit)? = null,
+        transform: (Settings) -> Settings,
     ) {
-        // Not viewModelScope: a save fired while leaving the screen must still land.
+        val result = settingsStore.enqueueUpdate(transform)
         @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main.immediate) {
-            val oldSettings = settings.value
-            settingsStore.update(newSettings)
+            val (oldSettings, newSettings) = runCatching { result.await() }.getOrNull() ?: return@launch
             afterPersist?.invoke()
-            
-            // Check if providers were removed and trigger icon cleanup
             val oldProviderIds = oldSettings.providers.map { it.id }.toSet()
             val newProviderIds = newSettings.providers.map { it.id }.toSet()
-            
             if (oldProviderIds != newProviderIds) {
-                // Providers changed, schedule cleanup in background
-                launch(Dispatchers.IO) {
-                    cleanupUnusedIcons(newSettings)
-                }
+                launch(Dispatchers.IO) { cleanupUnusedIcons(newSettings) }
             }
         }
     }
-    
+
     /**
      * Clean up icons that are no longer used by any model/provider.
      */
@@ -215,13 +225,13 @@ class SettingVM(
             runCatching {
                 val status = modelCatalogService.refreshCatalog()
                 modelCatalogService.snapshotOrNull()?.let { snapshot ->
-                    settingsStore.update(
+                    settingsStore.update { latest ->
                         mergeCatalogIntoSettings(
-                            settings = settings.value,
+                            settings = latest,
                             snapshot = snapshot,
                             resolver = modelMetadataResolver,
                         )
-                    )
+                    }
                 }
                 status
             }.onSuccess {

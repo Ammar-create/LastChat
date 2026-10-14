@@ -329,12 +329,17 @@ class ChatVM(
     val mcpManager = chatService.mcpManager
 
     // 更新设置
-    fun updateSettings(newSettings: Settings) {
-        viewModelScope.launch {
-            val oldSettings = settings.value
-            // 检查用户头像是否有变化，如果有则删除旧头像
+    /** Whole-snapshot save from [base]; merged onto the latest settings (see [mergeSettingsEdit]). */
+    fun updateSettings(newSettings: Settings, base: Settings = settings.value) =
+        updateSettings { latest -> me.rerere.rikkahub.data.datastore.mergeSettingsEdit(base, newSettings, latest) }
+
+    /** Applies [transform] to the latest settings via the store's ordered queue. */
+    fun updateSettings(transform: (Settings) -> Settings) {
+        val result = settingsStore.enqueueUpdate(transform)
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch {
+            val (oldSettings, newSettings) = runCatching { result.await() }.getOrNull() ?: return@launch
             checkUserAvatarDelete(oldSettings, newSettings)
-            settingsStore.update(newSettings)
             appStorageRepository.deleteFilesIfUnreferenced(
                 collectRemovedUserAvatarRefs(oldSettings, newSettings)
             )

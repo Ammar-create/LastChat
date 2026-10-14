@@ -125,7 +125,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
         if (uri != null) {
             when (val result = LorebookExportImport.importFromUri(context, uri)) {
                 is LorebookExportImport.ImportResult.Success -> {
-                    vm.updateSettings(settings.copy(lorebooks = settings.lorebooks + result.lorebook))
+                    vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks + result.lorebook) }
                     haptics.perform(HapticPattern.Success)
                     toaster.show(
                         message = context.getString(R.string.lorebook_import_success, result.lorebook.name),
@@ -265,7 +265,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
         LorebookCreatorSheet(
             onDismiss = { showAddDialog = false },
             onSave = { lorebook ->
-                vm.updateSettings(settings.copy(lorebooks = settings.lorebooks + lorebook))
+                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks + lorebook) }
                 showAddDialog = false
                 // Navigate to detail page to add entries
                 navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
@@ -422,9 +422,7 @@ fun LorebooksPageContent(
                                 onDelete = {
                                     val deletedLorebook = lorebook
                                     val cleanupKey = "lorebook:${deletedLorebook.id}"
-                                    vm.updateSettings(
-                                        settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id })
-                                    )
+                                    vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id }) }
                                     vm.cleanupFilesIfUnreferenced(
                                         fileRefs = deletedLorebook.collectMediaFileRefs(),
                                         delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
@@ -440,11 +438,9 @@ fun LorebooksPageContent(
                                             label = context.getString(R.string.undo),
                                             onClick = {
                                                 vm.cancelUnreferencedFileCleanup(cleanupKey)
-                                                vm.updateSettings(
-                                                    settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
+                                                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
                                                         add(index.coerceAtMost(size), deletedLorebook)
-                                                    })
-                                                )
+                                                    }) }
                                             }
                                         )
                                     )
@@ -472,7 +468,7 @@ fun LorebooksPageContent(
                                                     isReordering = false
                                                     if (orderedLorebooks.map { it.id } != settings.lorebooks.map { it.id }) {
                                                         awaitingPersistedOrder = true
-                                                        vm.updateSettings(settings.copy(lorebooks = orderedLorebooks))
+                                                        vm.updateSettings { settings -> settings.copy(lorebooks = orderedLorebooks) }
                                                     }
                                                     haptics.perform(HapticPattern.Thud)
                                                 }
