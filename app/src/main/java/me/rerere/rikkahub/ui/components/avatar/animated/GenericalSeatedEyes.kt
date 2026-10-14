@@ -55,11 +55,11 @@ object GenericalFace {
             // Built only from the hand-made eyes, so corners and outline match.
             val n = face("Neutral") ?: return null
             val built = if (exprId == "confused") {
-                // Left: the Neutral eye, raised a touch. Right: the Sad eye flipped
-                // upside down (its slope now on the lower lid), seated where the
-                // Neutral eye's bottom was.
+                // Left: the Neutral eye, raised a touch. Right: the hand-made Sad eye
+                // mirrored left-right (slope now dips toward the nose), seated where
+                // the Neutral eye's bottom was.
                 val sad = face("Sad") ?: return null
-                val r = flipV(sad.right)
+                val r = flipH(sad.right)
                 Face(translate(n.left, 0f, -8f), place(r, bboxCx(n.right), n.right.y.max() - 6f))
             } else {
                 // 🤨: Neutral eye raised; the other is the hand-made Bored (squint) eye.
@@ -88,11 +88,11 @@ object GenericalFace {
         return Face(l, r).also { faces[exprId] = it }
     }
 
-    /** Upside down about its own box centre (point order kept clockwise). */
-    private fun flipV(o: Outline): Outline {
-        val c = bboxCy(o)
-        val ys = FloatArray(N) { 2f * c - o.y[it] }
-        val xs = o.x.copyOf()
+    /** Mirrored left-right about its own box centre (point order kept clockwise). */
+    private fun flipH(o: Outline): Outline {
+        val c = bboxCx(o)
+        val xs = FloatArray(N) { 2f * c - o.x[it] }
+        val ys = o.y.copyOf()
         xs.reverse(); ys.reverse()
         return reStart(Outline(xs, ys))
     }
