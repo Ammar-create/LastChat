@@ -179,3 +179,9 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
 - **Sad/Worried Grok**: inward tilt 28° → 19°, set wider (+0.015 offX, +0.03 spread); inner tops read clearly apart.
 - **Heart edge**: inset measured on the true projected silhouette path; Generical margin 0.17 → 0.21 R.
 - **Startle**: 0.6 s startle window forces lids fully open (no blink), Startled accent stronger (sx 1.2, sy 1.4) and 0.75 s; double-blink moved to 1.15 s after.
+
+## engine9
+- **Gaze itinerary** (AvatarMotionState): rest near centre 0.4–1.0 s → look point (eyes 0.5–0.8 of range, any direction) held 0.5–1.2 s → 60% chain to a second point → rest. Each point carries a 10–18° body/head turn, pitch tilt and (40%) a head tilt, on underdamped springs (ω≈14, ζ≈0.42) for follow-through. Hold cap resets per itinerary point (no more dead 1.5 s recenter); hard recenter is 0.5–0.75 s.
+- **Breathing** squash/bob roughly 2× (visible), plus a small bounce every 3.5–6.5 s with landing squash.
+- **Startle**: life targets snap to front during the startle window and resume 0.3 s after, so the clip keeps living to the end.
+- **Check**: `contact_check.py` samples every 0.5 s, measures eye centre from pixels; FAIL if 5 consecutive samples move < 6 px and turn < 8°. engine9: 0 windows.

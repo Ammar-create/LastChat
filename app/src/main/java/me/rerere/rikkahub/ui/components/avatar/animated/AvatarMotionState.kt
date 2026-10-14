@@ -675,38 +675,69 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val mk = 1f - exp(-dt / 0.03f)
         microX += (microTx - microX) * mk
         microY += (microTy - microY) * mk
-        // Perceptible life beats: every 1.5–2.2 s the character visibly does something —
-        // a look away (eyes + a real head/body turn) or a look back to centre. Sub-pixel
-        // drift alone reads as a frozen stare, especially when sampled sparsely.
+        // Perceptible life (engine9): a little gaze "itinerary". Rest near centre ≤ 1.2 s →
+        // look to a point (eyes 0.5–0.8 of range + a 10–18° springy head/body turn) and HOLD
+        // 0.5–1.2 s → often chain to a second point → back to rest. Plus occasional head tilts
+        // (curious look-arounds) and small bounces. All springs are underdamped (lively).
         lifeBeatT -= dt
-        if (lifeBeatT <= 0f && settle < 0.5f && !director.startling && startleHoldT <= 0f) {
-            lifeBeatT = 1.5f + rng.nextFloat() * 0.7f
-            if (lifeAway) {
+        if (director.startling || startleHoldT > 0f) {
+            // Startle snaps attention back to front; life resumes right after the window.
+            lifeAway = false; lifeHxT = 0f; lifeHyT = 0f; lifeTurnTx = 0f; lifeTiltTx = 0f; lifeRollTx = 0f
+            lifeBeatT = 0.3f
+        } else if (lifeBeatT <= 0f && settle < 0.5f) {
+            holdT = 0f // a new itinerary point is a new look, not a continued hold
+            if (lifeAway && lifeChain > 0 && rng.nextFloat() < 0.6f) {
+                lifeChain--
+                pickLifePoint(chainFrom = lifeHxT)
+                lifeBeatT = 0.5f + rng.nextFloat() * 0.7f
+            } else if (lifeAway) {
                 lifeAway = false
+                lifeHxT = (rng.nextFloat() - 0.5f) * 0.12f; lifeHyT = (rng.nextFloat() - 0.5f) * 0.1f
                 lifeTurnTx = 0f; lifeTiltTx = 0f
-                gaze.focus((rng.nextFloat() - 0.5f) * 0.1f, (rng.nextFloat() - 0.4f) * 0.08f, lifeBeatT, priority = 2)
+                lifeRollTx = if (rng.nextFloat() < 0.3f) (if (rng.nextBoolean()) 1f else -1f) * (4f + rng.nextFloat() * 4f) else 0f
+                lifeBeatT = 0.4f + rng.nextFloat() * 0.6f
             } else {
-                lifeAway = true
-                val side = if (rng.nextBoolean()) 1f else -1f
-                val gx = side * (0.35f + rng.nextFloat() * 0.3f)
-                val gy = (rng.nextFloat() * 2f - 1f) * 0.3f
-                lifeTurnTx = side * (7f + rng.nextFloat() * 6f)
-                lifeTiltTx = gy * 10f
-                gaze.focus(gx, gy, lifeBeatT, priority = 2)
+                lifeAway = true; lifeChain = 1
+                pickLifePoint(chainFrom = null)
+                lifeBeatT = 0.5f + rng.nextFloat() * 0.7f
             }
         }
-        val lk = 1f - exp(-dt / 0.13f)
-        lifeTurn += (lifeTurnTx * keep - lifeTurn) * lk
-        lifeTilt += (lifeTiltTx * keep - lifeTilt) * lk
+        // Underdamped springs (ω≈15, ζ≈0.45): quick arrival with a small overshoot/follow-through.
+        val sdt = dt.coerceIn(0f, 1f / 30f)
+        fun spring(x: Float, v: Float, tx: Float, om: Float, ze: Float): Pair<Float, Float> {
+            val a = om * om * (tx - x) - 2f * ze * om * v
+            val nv = v + a * sdt
+            return (x + nv * sdt) to nv
+        }
+        run {
+            var r = spring(lifeTurn, lifeTurnV, lifeTurnTx * keep, 14f, 0.42f); lifeTurn = r.first; lifeTurnV = r.second
+            r = spring(lifeTilt, lifeTiltV, lifeTiltTx * keep, 14f, 0.45f); lifeTilt = r.first; lifeTiltV = r.second
+            r = spring(lifeRoll, lifeRollV, lifeRollTx * keep, 12f, 0.4f); lifeRoll = r.first; lifeRollV = r.second
+            r = spring(lifeHx, lifeHxV, lifeHxT * keep, 20f, 0.6f); lifeHx = r.first; lifeHxV = r.second
+            r = spring(lifeHy, lifeHyV, lifeHyT * keep, 20f, 0.6f); lifeHy = r.first; lifeHyV = r.second
+        }
+        // Occasional small bounce (hop + squash on landing).
+        bounceIn -= dt
+        if (bounceIn <= 0f) {
+            bounceIn = 3.5f + rng.nextFloat() * 3f
+            if (settle < 0.5f && !director.startling) bounceV -= 0.55f
+        }
+        val bk = spring(bounce, bounceV, 0f, 17f, 0.32f); bounce = bk.first; bounceV = bk.second
         val bodyBase0 = body.lerpTo(BodyPose.REST, w)
-        val bodyBase = bodyBase0.copy(yaw = bodyBase0.yaw + lifeTurn, pitch = bodyBase0.pitch + lifeTilt, roll = bodyBase0.roll - lifeTurn * 0.25f)
-        val bodyOut = bodyBase.copy(
-            posY = bodyBase.posY - 0.01f * br,
-            squashX = bodyBase.squashX * (1f - 0.01f * br),
-            squashY = bodyBase.squashY * (1f + 0.014f * br),
+        val bodyBase = bodyBase0.copy(
+            yaw = bodyBase0.yaw + lifeTurn,
+            pitch = bodyBase0.pitch + lifeTilt,
+            roll = bodyBase0.roll - lifeTurn * 0.3f + lifeRoll,
         )
-        var hx = gaze.headX * keep + (microX + driftX) * keep * awakeLife
-        var hy = gaze.headY * keep + (microY + driftY) * keep * awakeLife
+        // Clearly visible breathing (≈3.4 s cycle) + bounce squash/stretch.
+        val bSq = (-bounce * 1.6f).coerceIn(-0.08f, 0.08f)
+        val bodyOut = bodyBase.copy(
+            posY = bodyBase.posY - 0.018f * br + bounce,
+            squashX = bodyBase.squashX * (1f - 0.022f * br) * (1f - bSq * 0.6f),
+            squashY = bodyBase.squashY * (1f + 0.03f * br) * (1f + bSq),
+        )
+        var hx = (gaze.headX * keep + lifeHx + (microX + driftX) * keep * awakeLife).coerceIn(-1f, 1f)
+        var hy = (gaze.headY * keep + lifeHy + (microY + driftY) * keep * awakeLife).coerceIn(-1f, 1f)
         var lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
         val yawTot = bodyOut.yaw + 22f * hx + 60f * lx
@@ -758,13 +789,13 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val upRightNow = yawNow > 3f && pitchNow < -2f
         if (away > 0.35f) holdT += dt else holdT = (holdT - dt * 1.5f).coerceAtLeast(0f)
         if (upRightNow) upRightT += dt else upRightT = (upRightT - dt * 2f).coerceAtLeast(0f)
-        val overHold = holdT > 2.4f || upRightT > 0.85f
+        val overHold = holdT > 2.8f || upRightT > 0.85f
         if (overHold && recenterLeft <= 0f && settle < 0.5f) {
-            recenterLeft = 1.0f + rng.nextFloat() * 0.5f
+            recenterLeft = 0.5f + rng.nextFloat() * 0.25f
             holdT = 0f; upRightT = 0f
-            lifeAway = false; lifeTurnTx = 0f; lifeTiltTx = 0f; lifeBeatT = recenterLeft + 0.2f
+            lifeAway = false; lifeTurnTx = 0f; lifeTiltTx = 0f; lifeHxT = 0f; lifeHyT = 0f; lifeBeatT = 0.6f
             // Always return near centre (never another off-centre target).
-            gaze.focus((rng.nextFloat() - 0.5f) * 0.1f, (rng.nextFloat() - 0.2f) * 0.08f, recenterLeft + 0.5f, priority = 5)
+            gaze.focus((rng.nextFloat() - 0.5f) * 0.1f, (rng.nextFloat() - 0.2f) * 0.08f, recenterLeft + 0.1f, priority = 5)
             microTx = 0f; microTy = 0.02f; microIn = 0.6f
         }
         recenterLeft -= dt
@@ -798,6 +829,36 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var lifeTiltTx = 0f
     private var lifeTurn = 0f
     private var lifeTilt = 0f
+    private var lifeTurnV = 0f
+    private var lifeTiltV = 0f
+    private var lifeRoll = 0f
+    private var lifeRollV = 0f
+    private var lifeRollTx = 0f
+    private var lifeHx = 0f
+    private var lifeHxV = 0f
+    private var lifeHxT = 0f
+    private var lifeHy = 0f
+    private var lifeHyV = 0f
+    private var lifeHyT = 0f
+    private var lifeChain = 0
+    private var bounce = 0f
+    private var bounceV = 0f
+    private var bounceIn = 2.5f
+
+    /** Next look point: eyes 0.5–0.8 of range, any direction, with a matching 10–18° turn. */
+    private fun pickLifePoint(chainFrom: Float?) {
+        val side = when {
+            chainFrom == null -> if (rng.nextBoolean()) 1f else -1f
+            rng.nextFloat() < 0.5f -> -kotlin.math.sign(chainFrom).let { if (it == 0f) 1f else it }
+            else -> kotlin.math.sign(chainFrom).let { if (it == 0f) 1f else it }
+        }
+        val mag = 0.5f + rng.nextFloat() * 0.3f
+        lifeHxT = side * mag
+        lifeHyT = (rng.nextFloat() * 2f - 1f) * 0.45f
+        lifeTurnTx = side * (10f + (mag - 0.5f) / 0.3f * 8f)
+        lifeTiltTx = lifeHyT * 12f
+        lifeRollTx = if (rng.nextFloat() < 0.4f) side * (3f + rng.nextFloat() * 5f) else 0f
+    }
     private var startleHoldT = 0f
     private var wasStartling = false
     private var driftPh = 0f
