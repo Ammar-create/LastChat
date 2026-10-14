@@ -2015,9 +2015,11 @@ internal fun AssistantTurnHeader(
     avatarProgressOverride: Float? = null,
 ) {
     if (!showIcon && !showModelName && pill == null) return
-    Row(
-        verticalAlignment = if (pill == null) Alignment.CenterVertically else Alignment.Top,
-    ) {
+    // The name always starts at the message's left edge (same as turns without an
+    // avatar), so nothing above the text shifts sideways between turns. The avatar
+    // sits directly left of the pill, centred on it; without a pill, centred on the
+    // name. Its slot eases open/closed, so only the pill/name glides, never jumps.
+    val avatar: @Composable () -> Unit = {
         if (showIcon) {
             AssistantAvatarSlot(visible = avatarVisible, progressOverride = avatarProgressOverride) {
                 UIAvatar(
@@ -2028,18 +2030,27 @@ internal fun AssistantTurnHeader(
                 )
             }
         }
-        if (showModelName || pill != null) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (showModelName) {
-                    Text(
-                        text = avatarName,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.graphicsLayer { alpha = nameAlpha }
-                    )
-                }
-                pill?.invoke()
+    }
+    val name: @Composable () -> Unit = {
+        Text(
+            text = avatarName,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.graphicsLayer { alpha = nameAlpha }
+        )
+    }
+    if (pill != null) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (showModelName) name()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                avatar()
+                pill()
             }
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            avatar()
+            if (showModelName) name()
         }
     }
 }

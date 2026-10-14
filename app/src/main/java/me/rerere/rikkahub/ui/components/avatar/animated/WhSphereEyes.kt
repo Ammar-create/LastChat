@@ -164,7 +164,13 @@ object WhSphereEyes {
                 val e = en(UR, 0.5f, 90f, 0.01f)
                 listOf(e, e)
             }
-            "confused" -> {
+            // Confused: same eyes as every other face, one lid tilted, the other raised.
+            "confused" -> listOf(
+                en(UR, 0.6f, 0f, 0f).copy(offY = 0.03f),
+                en(UR, 0.44f, -16f, 0f),
+            )
+            // >< squeeze (dizzy).
+            "dizzy" -> {
                 val e = pr(-0.1f, 0f, 0f, IU,
                     floatArrayOf(0.01f, 0.16f), floatArrayOf(-0.17f, 0f), floatArrayOf(0.01f, -0.16f))
                 listOf(e, e)
@@ -205,7 +211,7 @@ object WhSphereEyes {
         "happy" -> floatArrayOf(0.022f, 0.022f)
         "sleepy", "sleeping" -> floatArrayOf(0.028f, 0.028f)
         "squinted", "bored", "calm" -> floatArrayOf(0.024f, 0.024f)
-        "confused" -> floatArrayOf(0.085f, 0.085f)
+        "dizzy" -> floatArrayOf(0.085f, 0.085f)
         else -> NO_SPREAD
     }
 

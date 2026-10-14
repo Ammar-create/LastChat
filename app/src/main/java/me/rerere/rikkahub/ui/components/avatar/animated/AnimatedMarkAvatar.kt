@@ -45,6 +45,10 @@ fun AnimatedMarkAvatar(
     colorPreset: String? = null,
     /** Null = mode default eye color. */
     eyeColorHex: String? = null,
+    /** Generical eye bottom shade on/off (glides between the two). */
+    eyeShade: Boolean = true,
+    /** Character traits; null = sensible default for the eye style. */
+    personality: Personality? = null,
     calmPreview: Boolean = false,
     /**
      * False = static (older chat messages): eases to the rest pose and stops; flipping
@@ -78,7 +82,12 @@ fun AnimatedMarkAvatar(
         label = "markBody",
     )
     val eyeColor = MarkColors.eyeColor(eyeType, eyeColorHex, colorHex, colorPreset)
-    val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor)
+    val shadeStrength by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (eyeShade) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(380),
+        label = "eyeShade",
+    )
+    val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor, shadeStrength)
 
     // Shape swap (editor) gets a soft settle; first appearance never pops in size.
     val morphAnim = remember { Animatable(1f) }
@@ -98,6 +107,7 @@ fun AnimatedMarkAvatar(
     if (!frozen) {
         motionState.stage = stage
         motionState.stageId = stageId
+        motionState.personality = personality ?: Personality.defaultFor(eyeType)
         DisposableEffect(stageId) {
             onDispose { stage.remove(stageId) }
         }

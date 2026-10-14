@@ -800,6 +800,7 @@ private fun DrawerAvatarVisual(
                     colorHex = avatar.colorHex,
                     colorPreset = avatar.colorPreset,
                     eyeColorHex = avatar.eyeColorHex,
+                eyeShade = avatar.eyeShade,
                     isLoading = false,
                     modifier = Modifier.fillMaxSize()
                 )

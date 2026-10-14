@@ -155,6 +155,7 @@
     <string name="avatar_animated_eye_generical">Generical</string>
     <string name="avatar_animated_color">Color</string>
     <string name="avatar_animated_eye_color">Eye color</string>
+    <string name="avatar_animated_eye_shade">Eye shade</string>
     <string name="avatar_animated_eye_color_default">Default</string>
     <string name="avatar_animated_save">Save</string>
     <string name="avatar_input_url">Input URL</string>

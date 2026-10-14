@@ -43,10 +43,32 @@ object GenericalFace {
     private val faces = HashMap<String, Face>()
     private val shifts = HashMap<String, Int>()
 
-    /** "skeptical" (🤨) = the reference "confused" face, re-centred on the face. */
+    /**
+     * "confused" and "skeptical" (🤨) are built from the Neutral eyes so they keep the
+     * same size and style as every other face (the old reference confused face was
+     * much smaller): only the lids tilt / narrow asymmetrically.
+     */
     fun face(exprId: String): Face? {
         faces[exprId]?.let { return it }
         if (!AvatarPackData.isLoaded()) return null
+        if (exprId == "confused" || exprId == "skeptical") {
+            val n = face("Neutral") ?: return null
+            val built = if (exprId == "confused") {
+                // Left eye slightly raised and taller; right eye with a lid tilted
+                // down toward the nose.
+                Face(
+                    scaleY(n.left, 1.05f, -6f),
+                    lidCut(n.right, topAtInner = 0.36f, topAtOuter = 0.14f),
+                )
+            } else {
+                // 🤨: one eye open and a touch raised, the other flat-lidded.
+                Face(
+                    scaleY(n.left, 1.04f, -8f),
+                    lidCut(n.right, topAtInner = 0.42f, topAtOuter = 0.40f),
+                )
+            }
+            return built.also { faces[exprId] = it }
+        }
         val key = if (exprId == "skeptical") "confused" else exprId
         val expr = AvatarPackData.generical.expressions[key]
             ?: AvatarPackData.generical.expressions["Neutral"]
@@ -65,6 +87,30 @@ object GenericalFace {
             r = translate(r, dx, dy)
         }
         return Face(l, r).also { faces[exprId] = it }
+    }
+
+    private fun scaleY(o: Outline, k: Float, dy: Float): Outline {
+        val cy = bboxCy(o)
+        return Outline(o.x.copyOf(), FloatArray(N) { cy + (o.y[it] - cy) * k + dy })
+    }
+
+    /**
+     * Pushes the top of an eye down to a straight, possibly tilted lid line. The
+     * fractions are how far down the eye (0 = top, 1 = bottom) the lid sits at the
+     * inner (toward the face centre) and outer edges. Point count is unchanged so
+     * morphs stay smooth.
+     */
+    private fun lidCut(o: Outline, topAtInner: Float, topAtOuter: Float): Outline {
+        val x0 = o.x.min(); val x1 = o.x.max()
+        val y0 = o.y.min(); val y1 = o.y.max()
+        val h = y1 - y0
+        val innerIsLeft = (x0 + x1) / 2f > 250f
+        return Outline(o.x.copyOf(), FloatArray(N) {
+            val u = ((o.x[it] - x0) / (x1 - x0)).coerceIn(0f, 1f)
+            val fromInner = if (innerIsLeft) u else 1f - u
+            val lid = y0 + h * (topAtInner + (topAtOuter - topAtInner) * fromInner)
+            maxOf(o.y[it], lid)
+        })
     }
 
     private fun bboxCx(o: Outline) = (o.x.min() + o.x.max()) / 2f

@@ -432,6 +432,17 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     val lifecycle: MarkLifecycle get() = director.lifecycle
 
     internal val director = MotionDirector(rng)
+
+    /** Character engine (traits, emotions, drives, spontaneous beats). */
+    internal val aliveness = AlivenessEngine(rng)
+
+    /** Character traits; set per avatar (see [Personality.defaultFor]). */
+    var personality: Personality
+        get() = aliveness.personality
+        set(v) { aliveness.personality = v }
+
+    /** Per-message tone from outside (e.g. a classifier); colours mood and face. */
+    fun feedTone(t: ToneHint) = aliveness.feedTone(t)
     private val gaze = GazeDirector(rng)
     private val expr = ExpressionDirector(rng)
     private val blink = Blinker(rng)
@@ -478,7 +489,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private val rig = FaceRig(rng)
     private var hourCheckIn = 0f
     private var accentCooldown = 0f
-    private var busyAccentIn = 6f + rng.nextFloat() * 8f
     private var mirror: Pair<FaceAccent, Float>? = null
     private var mirrorIn = 0f
     private var flingCooldown = 0f
@@ -579,7 +589,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 } else {
                     gaze.focus(c.x, c.y, c.holdSec, priority = 1)
                 }
-                if (c.kind == "ponder" && rng.nextFloat() < 0.35f) accent(FaceAccent.Puzzled, 1.4f + rng.nextFloat())
+                if (c.kind == "ponder" && rng.nextFloat() < 0.2f) accent(FaceAccent.Puzzled, 1.4f + rng.nextFloat())
             }
         }
 
@@ -681,7 +691,30 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (clipExpr != null && life != MarkLifecycle.Idle && life != MarkLifecycle.Listening) {
             mapClipExpression(clipExpr)?.let { return it }
         }
+        // Busy phases rotate through a varied, non-repeating set of faces instead of
+        // holding one "thinking" face the whole time.
+        if (MotionDirector.isBusy(life)) return aliveness.busyFace
         return MarkLifecycleMapper.defaultExpression(life)
+    }
+
+    private fun playBeat(b: AlivenessEngine.Beat) {
+        when (b) {
+            is AlivenessEngine.Beat.Gesture -> director.gesture(b.g)
+            is AlivenessEngine.Beat.Accent -> accent(b.a, b.sec)
+            is AlivenessEngine.Beat.Face -> if (reaction == null) setReaction(b.expr, b.sec)
+            is AlivenessEngine.Beat.Blink -> blink.request(minGap = 0.8f)
+            is AlivenessEngine.Beat.DoubleBlink -> blink.request(double = true, minGap = 0.8f)
+            is AlivenessEngine.Beat.Glance -> {
+                if (gaze.focused) return
+                val real = if (b.kind == "read") stage?.target(AvatarStage.Target.StreamingText)?.let { r ->
+                    Offset(r.left + r.width * (0.15f + 0.7f * rng.nextFloat()), r.bottom - minOf(r.height, 120f) * rng.nextFloat())
+                } else null
+                if (real != null) {
+                    val (gx, gy) = lookAt(real)
+                    gaze.focus(gx, gy, b.sec, priority = 0)
+                } else gaze.focus(b.x, b.y, b.sec, priority = 0)
+            }
+        }
     }
 
     private fun setReaction(e: String, sec: Float) {
@@ -707,18 +740,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 mood.nudge(0.25f, 0f)
             }
         }
-        if (MotionDirector.isBusy(director.lifecycle)) {
-            busyAccentIn -= dt
-            if (busyAccentIn <= 0f) {
-                busyAccentIn = 7f + rng.nextFloat() * 12f
-                val r = rng.nextFloat()
-                when {
-                    r < 0.35f -> accent(FaceAccent.Focused, 1.6f + rng.nextFloat() * 2f)
-                    r < 0.5f && director.lifecycle == MarkLifecycle.Thinking -> accent(FaceAccent.Puzzled, 1.3f)
-                    r < 0.6f && director.lifecycle == MarkLifecycle.Streaming -> accent(FaceAccent.Glee, 1.2f)
-                }
-            }
-        }
+        // ---- aliveness engine: spontaneous, context-aware beats ----
+        val engineCalm = social == null && reaction == null && followLeft <= 0f && !drowsy
+        aliveness.update(dt, director.lifecycle, mood.valence, mood.arousal, engineCalm)?.let { playBeat(it) }
+        aliveness.takeMoodNudge()?.let { (v, a) -> mood.nudge(v, a) }
         typingCooldown -= dt
         pokeWindow -= dt
         if (pokeWindow <= 0f) pokeCount = 0
@@ -754,7 +779,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     g < 0.6f -> director.gesture(MotionDirector.Gesture.Nod)
                 }
             } else {
-                blink.request()
+                aliveness.onReplyFinished()?.let { playBeat(it) } ?: blink.request()
             }
         }
 
@@ -1089,6 +1114,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      * them at once.
      */
     private fun onUiEvent(e: AvatarStage.Event, calm: Boolean): Boolean {
+        if (e.source != stageId) aliveness.onEvent(e.kind)
         fun glance(at: Offset?, hold: Float, prio: Int = 2) {
             val p = at ?: return
             val (gx, gy) = lookAt(p)

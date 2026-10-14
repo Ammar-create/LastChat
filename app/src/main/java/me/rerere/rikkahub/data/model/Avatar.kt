@@ -34,6 +34,8 @@ sealed class Avatar {
          * (Grok dark capsules / Generical white eyes).
          */
         val eyeColorHex: String? = null,
+        /** Generical eyes: soft shade toward the body colour at the bottom. */
+        val eyeShade: Boolean = true,
     ) : Avatar() {
         // Field defaults above stay as they were so data that omits a field (imports,
         // older exports) still decodes to the same avatar.

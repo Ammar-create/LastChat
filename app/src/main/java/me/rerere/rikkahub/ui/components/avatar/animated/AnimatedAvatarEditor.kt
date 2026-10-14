@@ -74,6 +74,7 @@ fun AnimatedAvatarEditor(
     var colorHex by remember { mutableStateOf(startBody.first) }
     var colorPreset by remember { mutableStateOf(startBody.second) }
     var eyeColorHex by remember { mutableStateOf(initialAvatar?.eyeColorHex) }
+    var eyeShade by remember { mutableStateOf(initialAvatar?.eyeShade ?: true) }
     var showColorPicker by remember { mutableStateOf(false) }
     var showEyeColorPicker by remember { mutableStateOf(false) }
 
@@ -114,6 +115,8 @@ fun AnimatedAvatarEditor(
             onColor = { hex, preset -> colorHex = hex; colorPreset = preset },
             eyeColorHex = eyeColorHex,
             onEyeColor = { eyeColorHex = it },
+            eyeShade = eyeShade,
+            onEyeShade = { eyeShade = it },
             onPickColor = { showColorPicker = true },
             onPickEyeColor = { showEyeColorPicker = true },
             onDismiss = onDismiss,
@@ -125,6 +128,7 @@ fun AnimatedAvatarEditor(
                         colorHex = MarkColors.normalizeHex(colorHex),
                         colorPreset = colorPreset,
                         eyeColorHex = eyeColorHex?.let { MarkColors.normalizeHex(it) },
+                        eyeShade = eyeShade,
                     )
                 )
             },
@@ -162,6 +166,8 @@ internal fun AnimatedAvatarEditorContent(
     onColor: (String, String?) -> Unit,
     eyeColorHex: String?,
     onEyeColor: (String?) -> Unit,
+    eyeShade: Boolean = true,
+    onEyeShade: (Boolean) -> Unit = {},
     onPickColor: () -> Unit,
     onPickEyeColor: () -> Unit,
     onDismiss: () -> Unit,
@@ -186,6 +192,7 @@ internal fun AnimatedAvatarEditorContent(
                     colorHex = colorHex,
                     colorPreset = colorPreset,
                     eyeColorHex = eyeColorHex,
+                    eyeShade = eyeShade,
                     isLoading = false,
                     calmPreview = true,
                     modifier = Modifier.size(168.dp),
@@ -278,6 +285,25 @@ internal fun AnimatedAvatarEditorContent(
                     }
                 }
 
+                if (eyeType.equals("generical", ignoreCase = true)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onEyeShade(!eyeShade) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.avatar_animated_eye_shade),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        androidx.compose.material3.Switch(
+                            checked = eyeShade,
+                            onCheckedChange = onEyeShade,
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(stringResource(R.string.avatar_animated_color), style = MaterialTheme.typography.labelLarge)
@@ -357,6 +383,7 @@ internal fun AnimatedAvatarEditorContent(
                                 colorHex = colorHex,
                                 colorPreset = colorPreset,
                                 eyeColorHex = eyeColorHex,
+                                eyeShade = eyeShade,
                                 isLoading = false,
                                 calmPreview = true,
                                 modifier = Modifier.size(34.dp),

@@ -509,7 +509,7 @@ class MotionDirector(
         // Base weights per phase; cooldowns scale them down after use.
         val base: List<Pair<String, Float>> = when (life) {
             MarkLifecycle.Thinking -> listOf(
-                "turn" to 0.22f, "lookAround" to 0.2f, "ponder" to 0.2f, "pause" to 0.16f,
+                "turn" to 0.24f, "lookAround" to 0.24f, "ponder" to 0.09f, "pause" to 0.19f,
                 "tilt" to 0.12f, "nod" to 0.05f, "pill" to 0.05f,
             )
             MarkLifecycle.Streaming -> listOf(
@@ -517,7 +517,7 @@ class MotionDirector(
                 "tilt" to 0.1f, "lookAround" to 0.12f, "bob" to 0.06f,
             )
             else -> listOf(
-                "turn" to 0.24f, "lookAround" to 0.18f, "pause" to 0.13f, "ponder" to 0.1f,
+                "turn" to 0.26f, "lookAround" to 0.2f, "pause" to 0.15f, "ponder" to 0.05f,
                 "tilt" to 0.1f, "nod" to 0.07f, "pill" to 0.1f, "bob" to 0.06f, "spin" to 0.02f,
             )
         }

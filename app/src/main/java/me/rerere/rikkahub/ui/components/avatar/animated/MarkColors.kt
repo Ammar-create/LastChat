@@ -144,7 +144,18 @@ object MarkColors {
     }
 
     @Suppress("UNUSED_PARAMETER")
-    fun genericalEyeFade(body: Color, eye: Color): Color = body.copy(alpha = 1f)
+    fun genericalEyeFade(body: Color, eye: Color, strength: Float = 1f): Color {
+        // 80% of the way from the eye colour to the surface colour at full strength.
+        val t = (EYE_SHADE_MIX * strength).coerceIn(0f, 1f)
+        return Color(
+            red = eye.red + (body.red - eye.red) * t,
+            green = eye.green + (body.green - eye.green) * t,
+            blue = eye.blue + (body.blue - eye.blue) * t,
+            alpha = 1f,
+        )
+    }
+
+    const val EYE_SHADE_MIX = 0.8f
 
     fun presetHexOrNull(name: String?): String? =
         name?.lowercase()?.let { PRESETS[it] }
