@@ -192,6 +192,8 @@ android {
             isIncludeAndroidResources = true
             all {
                 it.systemProperty("lastchat.renderDir", System.getProperty("lastchat.renderDir") ?: "")
+                it.systemProperty("lastchat.videoDir", System.getProperty("lastchat.videoDir") ?: "")
+                it.systemProperty("lastchat.videoOnly", System.getProperty("lastchat.videoOnly") ?: "")
                 it.maxHeapSize = "2g"
             }
         }

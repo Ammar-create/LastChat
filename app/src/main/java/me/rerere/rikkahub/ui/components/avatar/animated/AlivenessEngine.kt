@@ -40,6 +40,8 @@ internal class AlivenessEngine(private val rng: Random) {
     /** Wish to look at other avatars. */
     var social = 0.2f; private set
 
+    internal fun debugBoredom(v: Float) { boredom = v.coerceIn(0f, 1f) }
+
     // ---- short-term emotion ----
     var emotion: Emotion? = null; private set
     var emotionLevel = 0f; private set
@@ -311,8 +313,8 @@ internal class AlivenessEngine(private val rng: Random) {
             "blink" -> Beat.Blink
             "dblink" -> Beat.DoubleBlink
             // Up and to the LEFT only (never the up-right brand stare).
-            "glanceUpLeft" -> Beat.Glance(-(0.3f + 0.35f * rng.nextFloat()), -(0.1f + 0.2f * rng.nextFloat()), logRange(0.7f, 1.8f), "think")
-            "glanceDown" -> Beat.Glance(-0.2f + 0.5f * rng.nextFloat(), 0.35f + 0.25f * rng.nextFloat(), logRange(0.8f, 2f), "read")
+            "glanceUpLeft" -> Beat.Glance(-(0.3f + 0.35f * rng.nextFloat()), -(0.1f + 0.2f * rng.nextFloat()), logRange(0.5f, 1.2f), "think")
+            "glanceDown" -> Beat.Glance(-0.2f + 0.5f * rng.nextFloat(), 0.35f + 0.25f * rng.nextFloat(), logRange(0.5f, 1.3f), "read")
             "focus" -> Beat.Accent(FaceAccent.Focused, logRange(1.0f, 2.4f))
             "puzzled" -> Beat.Accent(FaceAccent.Puzzled, logRange(1.0f, 1.8f))
             "glee" -> Beat.Accent(FaceAccent.Glee, logRange(0.8f, 1.4f))
@@ -358,17 +360,17 @@ internal class AlivenessEngine(private val rng: Random) {
                 val side = if (rng.nextBoolean()) 1f else -1f
                 // Right-side glances stay level or low (no up-right stare).
                 val y = if (side > 0f) 0.05f + 0.3f * rng.nextFloat() else -0.2f + 0.45f * rng.nextFloat()
-                Beat.Glance(side * (0.2f + 0.4f * rng.nextFloat()), y, logRange(0.6f, 1.6f), "idle")
+                Beat.Glance(side * (0.2f + 0.4f * rng.nextFloat()), y, logRange(0.4f, 1.1f), "idle")
             }
             "drowsy" -> Beat.Accent(FaceAccent.Drowsy, logRange(1.2f, 2.2f))
             "tilt" -> { lastUsed["tiltI"] = clock; Beat.Gesture(MotionDirector.Gesture.Tilt) }
             "wink" -> Beat.Face("hurt or cute", logRange(0.6f, 0.9f))
-            "shyLook" -> Beat.Glance(-(0.3f + 0.3f * rng.nextFloat()), 0.3f + 0.2f * rng.nextFloat(), logRange(0.8f, 1.6f), "idle")
+            "shyLook" -> Beat.Glance(-(0.3f + 0.3f * rng.nextFloat()), 0.3f + 0.2f * rng.nextFloat(), logRange(0.5f, 1.1f), "idle")
             "hop" -> Beat.Gesture(MotionDirector.Gesture.Hop)
             "worried" -> Beat.Accent(FaceAccent.Worried, logRange(1f, 1.8f))
             "daydream" -> {
                 // Gaze drifts up-left, lids soften, slow blink, back.
-                val hold = logRange(2.2f, 4f)
+                val hold = logRange(1.3f, 2.4f)
                 sequence(
                     0.6f to Beat.Accent(FaceAccent.Drowsy, hold * 0.8f),
                     hold * 0.7f to Beat.Blink,
@@ -382,7 +384,7 @@ internal class AlivenessEngine(private val rng: Random) {
                     t += logRange(0.7f, 1.5f)
                     val x = -0.6f + 1.2f * rng.nextFloat()
                     val y = if (x > 0f) 0.05f + 0.4f * rng.nextFloat() else -0.25f + 0.6f * rng.nextFloat()
-                    t to (Beat.Glance(x, y, logRange(0.5f, 1.1f), "idle") as Beat)
+                    t to (Beat.Glance(x, y, logRange(0.35f, 0.8f), "idle") as Beat)
                 }
                 sequence(*steps.toTypedArray())
                 Beat.Blink

@@ -48,8 +48,8 @@ class AlivenessEngineTest {
 
     @Test
     fun personalityChangesTempo() {
-        val lively = Personality(energy = 1f, calmness = 0f, expressiveness = 1f)
-        val calm = Personality(energy = 0f, calmness = 1f, expressiveness = 0f)
+        val lively = Personality(energy = 1f, playfulness = 0.8f, expressiveness = 1f)
+        val calm = Personality(energy = 0f, playfulness = 0.2f, expressiveness = 0f)
         var a = 0; var b = 0
         for (seed in 1..5) {
             a += simulate(seed, MarkLifecycle.Idle, lively).second.values.sum()

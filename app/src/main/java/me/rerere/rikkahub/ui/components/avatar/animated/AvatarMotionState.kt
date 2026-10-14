@@ -60,7 +60,7 @@ data class MotionFrame(
  * Never parks up-right (Grok brand look).
  */
 internal class GazeDirector(private val rng: Random) {
-    private companion object { const val HEAD_ZETA = 0.74f }
+    private companion object { const val HEAD_ZETA = 0.6f }
 
     private var tx = 0f
     private var ty = 0f
@@ -145,8 +145,10 @@ internal class GazeDirector(private val rng: Random) {
             headDelay -= dt
             if (headDelay <= 0f) { htx = tx; hty = ty }
         }
-        val eyeW = if (drowsy) 12f else 26f
-        val headW = if (drowsy) 3.5f else 6.5f
+        // Eyes: fast saccades. Head: quick, slightly underdamped follow (no slow
+        // creeping looks); drowsy stays soft and slow.
+        val eyeW = if (drowsy) 12f else 38f
+        val headW = if (drowsy) 3.5f else 11f
         var rem = dt
         while (rem > 1e-6f) {
             val h = min(rem, 1f / 120f)
@@ -182,7 +184,7 @@ internal class GazeDirector(private val rng: Random) {
                 setTarget(rr(-0.12f, 0.12f), rr(0f, 0.15f)); holdLeft = rr(0.6f, 1.6f)
             }
             MarkLifecycle.Listening -> if (r < 0.7f) {
-                setTarget(rr(-0.15f, 0.15f), rr(0.35f, 0.55f)); holdLeft = rr(1.2f, 3f)
+                setTarget(rr(-0.15f, 0.15f), rr(0.35f, 0.55f)); holdLeft = rr(0.8f, 2f)
             } else {
                 setTarget(rr(-0.1f, 0.1f), rr(0f, 0.1f)); holdLeft = rr(0.8f, 1.8f)
             }
@@ -190,13 +192,13 @@ internal class GazeDirector(private val rng: Random) {
                 // Thinking look-aside: sideways / slightly up on the left, level on the right.
                 val x = if (rng.nextBoolean()) rr(0.3f, 0.6f) else -rr(0.3f, 0.6f)
                 val y = if (x < 0f) rr(-0.28f, 0.05f) else rr(0f, 0.12f)
-                setTarget(x, y); holdLeft = rr(0.9f, 2.2f)
+                setTarget(x, y); holdLeft = rr(0.6f, 1.4f)
             } else {
                 setTarget(rr(-0.1f, 0.1f), rr(0f, 0.15f)); holdLeft = rr(0.8f, 2f)
             }
             MarkLifecycle.Streaming -> when {
                 r < 0.5f -> { setTarget(rr(-0.08f, 0.08f), rr(0f, 0.08f)); holdLeft = rr(1.2f, 3f) }
-                r < 0.8f -> { setTarget(rr(-0.25f, 0.25f), rr(0.25f, 0.45f)); holdLeft = rr(0.8f, 2f) }
+                r < 0.8f -> { setTarget(rr(-0.25f, 0.25f), rr(0.25f, 0.45f)); holdLeft = rr(0.6f, 1.4f) }
                 else -> { setTarget(if (rng.nextBoolean()) rr(0.35f, 0.6f) else -rr(0.35f, 0.6f), rr(0f, 0.15f)); holdLeft = rr(0.6f, 1.2f); returnToCenter = true }
             }
             MarkLifecycle.Failed -> {
@@ -212,10 +214,10 @@ internal class GazeDirector(private val rng: Random) {
                 r < 0.70f -> {
                     val x = rr(-0.75f, 0.75f)
                     val y = rr(-0.18f, 0.35f)
-                    setTarget(x, y); holdLeft = rr(0.8f, 2.6f)
+                    setTarget(x, y); holdLeft = rr(0.5f, 1.5f)
                 }
                 // … glance down at the conversation …
-                r < 0.85f -> { setTarget(rr(-0.3f, 0.3f), rr(0.3f, 0.5f)); holdLeft = rr(0.9f, 2.4f) }
+                r < 0.85f -> { setTarget(rr(-0.3f, 0.3f), rr(0.3f, 0.5f)); holdLeft = rr(0.6f, 1.5f) }
                 // … or a quick side glance and back.
                 else -> {
                     setTarget(if (rng.nextBoolean()) rr(0.5f, 0.85f) else -rr(0.5f, 0.85f), rr(-0.05f, 0.2f))
@@ -440,6 +442,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     var personality: Personality
         get() = aliveness.personality
         set(v) { aliveness.personality = v }
+
+    /** Harness hooks. */
+    internal fun debugReact(expr: String, sec: Float) = setReaction(expr, sec)
+    internal fun debugBoredom(v: Float) = aliveness.debugBoredom(v)
 
     /** Per-message tone from outside (e.g. a classifier); colours mood and face. */
     fun feedTone(t: ToneHint) = aliveness.feedTone(t)

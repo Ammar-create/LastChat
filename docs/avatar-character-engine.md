@@ -77,3 +77,23 @@ valence/arousal mood with OCC-style named emotions on top.
 - **Fatigue**: late night / early morning slows the beat tempo and enables yawns.
 - **Editor**: "Advanced personality" section with nine trait sliders, stored as
   `Avatar.Animated.traits` overrides on top of the style default; "Reset" clears.
+
+## engine2 update
+
+### Personality: four knobs
+`Personality(energy, warmth, playfulness, expressiveness)`, each in 0..1. The engine derives
+curiosity, shyness, attentiveness, mischief, calmness, tempo, showiness and blinkRate internally.
+The editor exposes no sliders. Per-character defaults are in `Personality.resolve(eyeType, traits)`.
+
+### Motion model
+- Pose layers crossfade in 0.14–0.34 s (`FADE_SNAP`) through an underdamped spring
+  (ω19, ζ0.62 on angles; position, squash and scale use ω16, critically damped; drowsy uses ω9, ζ1).
+- Large target changes add an anticipation kick (`ANTICIPATION`): the head dips back before it goes.
+- Gestures (nod, recoil, busy beats) use `snapCurve`: anticipation, fast attack, then a damped
+  rebound that settles to exactly 0.
+- Holds are short (most under 2 s), so there are no long stares or slow creeping turns.
+- An up-right guard removes upward pitch when the head is turned right.
+
+### Grok eye gap
+`GrokEyeGap` keeps the two Grok eye paths at least 0.085 × the mark radius apart in every
+expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 445 frames per shape.

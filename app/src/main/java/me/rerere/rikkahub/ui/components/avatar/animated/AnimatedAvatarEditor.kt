@@ -1,8 +1,5 @@
 package me.rerere.rikkahub.ui.components.avatar.animated
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -78,7 +75,8 @@ fun AnimatedAvatarEditor(
     var colorPreset by remember { mutableStateOf(startBody.second) }
     var eyeColorHex by remember { mutableStateOf(initialAvatar?.eyeColorHex) }
     var eyeShade by remember { mutableStateOf(initialAvatar?.eyeShade ?: true) }
-    var traits by remember { mutableStateOf(initialAvatar?.traits) }
+    // Personality knobs are set by the model, not here; keep whatever is stored.
+    val traits = initialAvatar?.traits
     var showColorPicker by remember { mutableStateOf(false) }
     var showEyeColorPicker by remember { mutableStateOf(false) }
 
@@ -122,7 +120,6 @@ fun AnimatedAvatarEditor(
             eyeShade = eyeShade,
             onEyeShade = { eyeShade = it },
             traits = traits,
-            onTraits = { traits = it },
             onPickColor = { showColorPicker = true },
             onPickEyeColor = { showEyeColorPicker = true },
             onDismiss = onDismiss,
@@ -176,9 +173,6 @@ internal fun AnimatedAvatarEditorContent(
     eyeShade: Boolean = true,
     onEyeShade: (Boolean) -> Unit = {},
     traits: Map<String, Float>? = null,
-    onTraits: (Map<String, Float>?) -> Unit = {},
-    /** Harness: open the advanced section. */
-    advancedOpenInitially: Boolean = false,
     onPickColor: () -> Unit,
     onPickEyeColor: () -> Unit,
     onDismiss: () -> Unit,
@@ -368,14 +362,6 @@ internal fun AnimatedAvatarEditorContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                AdvancedPersonalitySection(
-                    eyeType = eyeType,
-                    traits = traits,
-                    onTraits = onTraits,
-                    openInitially = advancedOpenInitially,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
                 Text(stringResource(R.string.avatar_animated_shape), style = MaterialTheme.typography.labelLarge)
                 Spacer(modifier = Modifier.height(8.dp))
                 // FlowRow scrolls with parent — no nested LazyVerticalGrid pushing Save off-screen.
@@ -437,73 +423,3 @@ internal fun AnimatedAvatarEditorContent(
         }
     }
 
-
-/**
- * Hidden-by-default trait sliders. Stored values override the eye style's default
- * character; "Reset" clears them. Changes apply live to the preview.
- */
-@Composable
-private fun AdvancedPersonalitySection(
-    eyeType: String,
-    traits: Map<String, Float>?,
-    onTraits: (Map<String, Float>?) -> Unit,
-    openInitially: Boolean,
-) {
-    var open by remember { mutableStateOf(openInitially) }
-    val current = Personality.resolve(eyeType, traits)
-    Column(modifier = Modifier.fillMaxWidth().animateContentSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { open = !open }
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.avatar_animated_personality),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                if (open) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                contentDescription = null,
-            )
-        }
-        if (open) {
-            val values = current.toMap()
-            Personality.TRAITS.forEach { name ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        traitLabel(name),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.width(104.dp),
-                    )
-                    androidx.compose.material3.Slider(
-                        value = values[name] ?: 0.5f,
-                        onValueChange = { v -> onTraits((traits ?: emptyMap()) + (name to v)) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            androidx.compose.material3.TextButton(
-                onClick = { onTraits(null) },
-                enabled = !traits.isNullOrEmpty(),
-            ) { Text(stringResource(R.string.avatar_animated_personality_reset)) }
-        }
-    }
-}
-
-@Composable
-private fun traitLabel(name: String): String = stringResource(
-    when (name) {
-        "energy" -> R.string.avatar_trait_energy
-        "curiosity" -> R.string.avatar_trait_curiosity
-        "warmth" -> R.string.avatar_trait_warmth
-        "playfulness" -> R.string.avatar_trait_playfulness
-        "shyness" -> R.string.avatar_trait_shyness
-        "expressiveness" -> R.string.avatar_trait_expressiveness
-        "attentiveness" -> R.string.avatar_trait_attentiveness
-        "mischief" -> R.string.avatar_trait_mischief
-        else -> R.string.avatar_trait_calmness
-    }
-)

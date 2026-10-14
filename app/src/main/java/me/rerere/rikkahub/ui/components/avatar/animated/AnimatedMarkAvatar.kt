@@ -287,6 +287,14 @@ internal fun DrawScope.drawMark(
             val ss = WhSphereEyes.projectPair(WhSphereEyes.expressionPair("neutral", lidForPair), pitch, yaw, roll, he)
             left = ss.first; right = ss.second
         }
+        // Never let the eyes touch or overlap (Sad ^ ^, closed arcs, mid-morph, turned).
+        if (ok(left) && ok(right)) {
+            val (dl, dr) = GrokEyeGap.separation(left, right, he)
+            if (dl != androidx.compose.ui.geometry.Offset.Zero) {
+                left = Path().apply { addPath(left, dl) }
+                right = Path().apply { addPath(right, dr) }
+            }
+        }
         if (lid >= 0.07f) {
             Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
                 if (ok(left)) drawPath(left, eye)
