@@ -68,7 +68,7 @@ class ToneAndHobbyTest {
     }
 
     @Test
-    fun boredIdleCharacterDoesHobbiesAndNeverStaresUpRight() {
+    fun boredIdleCharacterDoesHobbiesAndGlancesAnywhere() {
         val glances = ArrayList<AlivenessEngine.Beat.Glance>()
         val kinds = HashSet<String>()
         for (seed in 1..8) {
@@ -83,6 +83,9 @@ class ToneAndHobbyTest {
             }
         }
         assertTrue("kinds=$kinds", kinds.size >= 6)
-        assertTrue("up-right glance", glances.none { it.x > 0.1f && it.y < -0.05f })
+        // Julian: gaze is unrestricted (any direction, up-right included); only long holds are banned
+        // (enforced in AvatarMotionState's hold cap). Glances should spread over several directions.
+        val quadrants = glances.map { (if (it.x > 0f) 1 else 0) + (if (it.y < 0f) 2 else 0) }.toSet()
+        assertTrue("quadrants=$quadrants", quadrants.size >= 3)
     }
 }
