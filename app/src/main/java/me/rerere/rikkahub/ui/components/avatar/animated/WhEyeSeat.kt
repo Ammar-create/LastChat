@@ -125,6 +125,8 @@ object WhEyeSeat {
         /** Eyes lead the head on the surface (normalized face units, y down). */
         leadX: Float = 0f,
         leadY: Float = 0f,
+        /** Extra half-gap in normalized face units, applied on the surface (rigid spins). */
+        extraHalfGap: Float = 0f,
     ): Pair<Path, Path> {
         val empty = Path() to Path()
         if (!AvatarPackData.isLoaded()) return empty
@@ -181,7 +183,7 @@ object WhEyeSeat {
         // the face and slanted ~63°, which is exactly the rejected "up-right stare". Same desktop En(ur,.57) capsule the sphere path seats.
         val expr = upright(expressionId, lid)
         val eyes = eyesOverride ?: WhSphereEyes.expressionPair(expr, lid)
-        val halfGap = (tune.gap / 2f) * eyeGap.coerceIn(0.7f, 1.2f)
+        val halfGap = (tune.gap / 2f) * eyeGap.coerceIn(0.7f, 1.2f) + extraHalfGap
         fun loopNorm(side: Int): List<WhMesh.V2> {
             val e = eyes.getOrNull(side) ?: return emptyList()
             val outline = WhSphereEyes.stadiumOutline(e)

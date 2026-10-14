@@ -160,16 +160,49 @@ class AvatarMotionVideoTest {
         }
     }
 
-    /** Spin sweep 0…345° (15° steps) per shape, through the real soft-3D solid. */
+    /** Spin sweep 0…355° (5° steps) per shape, through the real soft-3D solid. */
     @Test
     fun renderSpinSweep() {
         val out = outDir
         assumeTrue(out != null && (only == null || "sweep" in only))
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
-        val frames = (0 until 24).map { MotionFrame(spinYaw = it * 15f + 0.01f) }
+        val frames = (0 until 72).map { MotionFrame(spinYaw = it * 5f + 0.01f) }
         for (mode in listOf("grok", "generical")) for (shape in listOf("heart", "blob", "star", "flower", "hex")) {
             captureStrip(File(out, "sweep_${mode}_$shape.png"), shape, mode, frames)
         }
+    }
+
+    /** Draw cost per frame: rest vs spin, through the real drawMark (software canvas). */
+    @Test
+    fun spinDrawCost() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "cost" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val sb = StringBuilder("shape,mode,phase,mean_ms,p95_ms,max_ms\n")
+        val px = 160
+        for (shape in listOf("heart", "blob", "star", "flower", "hex")) for (mode in listOf("grok", "generical")) {
+            val gs = MarkShapes.resolve(shape) ?: continue
+            for (phase in listOf("rest", "spin")) {
+                val ts = ArrayList<Double>()
+                for (i in 0 until 150) {
+                    val f = if (phase == "rest") MotionFrame(timeSec = i / 60f)
+                        else MotionFrame(spinYaw = 3f + i * 357f / 150f, timeSec = 0f)
+                    val img = androidx.compose.ui.graphics.ImageBitmap(px, px)
+                    val cv = androidx.compose.ui.graphics.Canvas(img)
+                    val t0 = System.nanoTime()
+                    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+                        androidx.compose.ui.unit.Density(2f), androidx.compose.ui.unit.LayoutDirection.Ltr, cv,
+                        androidx.compose.ui.geometry.Size(px.toFloat(), px.toFloat()),
+                    ) {
+                        drawMark(gs, shape, mode == "grok", f, false, 1f, Color(0xFF2A92FE), Color(0xFF14171C), Color(0xFF14171C))
+                    }
+                    if (i >= 10) ts += (System.nanoTime() - t0) / 1e6
+                }
+                ts.sort()
+                sb.append("%s,%s,%s,%.2f,%.2f,%.2f\n".format(shape, mode, phase, ts.average(), ts[(ts.size * 0.95).toInt()], ts.last()))
+            }
+        }
+        File(out, "draw_cost.csv").writeText(sb.toString())
     }
 
     @Test

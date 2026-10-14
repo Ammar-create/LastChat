@@ -370,7 +370,7 @@ object GenericalSeat {
             val rx = r[0] * x + r[1] * y + r[2] * z
             val ry = r[3] * x + r[4] * y + r[5] * z
             val rz = r[6] * x + r[7] * y + r[8] * z
-            if (keepAll || rz > 0.02f) out += WhMesh.V2(he * rx, -he * ry)
+            if (keepAll || rz > 0f) out += WhMesh.V2(he * rx, -he * ry)
         }
         return if (out.size >= 3 || (keepAll && out.size >= 2)) out else null
     }

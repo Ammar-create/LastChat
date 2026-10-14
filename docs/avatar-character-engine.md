@@ -333,12 +333,15 @@ Circle/blob is the reference and unchanged (min gap 0.40 × mark radius). Shapes
 or narrower face scale the minimum gap (`WhEyeSeat.grokGapFix`: heart 0.72, star 0.62, wedge 0.74,
 flower 0.87, hex 0.88, sparkle 0.90) so separation relative to the face matches the circle.
 
-### engine12b: spins are real soft-3D rotations
-The card-squash spin is gone. Spins add to the solid's yaw after the per-shape turn cap and go
-through the ring-mesh projection like every turn. Once the solid turns (fades in from ~4° to 30°),
-the lit ring-mesh faces (Lambert, relative to a face-on facet at 50 % strength) shade it, so the
-front keeps the brand ink at rest. Eyes are seated on the rotated surface, clipped to the rotated
-silhouette, fade as their side goes edge-on and are hidden on the back. The heart's lump came from
-its loft depth (0.62 → a pillow as thick as it is tall). Depth is now 0.30, so edge-on it is a
-slim lens and at 45° it keeps both lobes. projectBody's degenerate-hull floor scales with
-|cos yaw|, so a correct thin edge-on hull is no longer swapped for the flat face-on outline.
+### engine12c: rigid, flat, single-curve spins
+- Real soft-3D rotation: the spin adds to the solid's yaw after the per-shape cap; the silhouette
+  comes from the ring-mesh projection. The body is one flat fill, always. There is no mesh shading.
+- Eyes are rigid on the front surface: seated through the same projection at the full yaw with no
+  safe-region squeeze, gap push or drift. The rest-pose gap offset is baked into the surface seating
+  once per spin. An eye's tangent plane is culled exactly when it turns past edge-on (normal z <= 0),
+  and the silhouette clip occludes any part beyond the limb. There is no early fade.
+- During a spin, gaze, head look, lead, lids, expression and the other body rotation layers are held.
+  Afterwards they hand back over 0.35 s.
+- The spin curve is one ease-in-out sweep to just past the stop, then one small ease back.
+  Velocity is unimodal, and the only sign change is the end overshoot. Nothing re-targets it.
+- Heart loft depth is 0.30, down from 0.62, so edge-on the heart is a slim lens instead of a lump.

@@ -179,6 +179,8 @@ fun AnimatedMarkAvatar(
 
 internal val CALM_FRAME = MotionFrame()
 
+private val SPIN_GAP_CACHE = HashMap<String, Float>()
+
 /** Thinnest a Grok eye gets when the lids are shut (fraction of the open height). */
 internal const val GROK_SLIT = 0.12f
 
@@ -205,8 +207,9 @@ private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
 /**
  * Character-moment spins (engine12b) are real soft-3D rotations: the spin is added to the
  * solid's yaw after the per-shape turn cap, the ring mesh is projected at that angle, and the
- * eyes are seated on the rotated surface (no safe-region squeeze while spinning); they fade
- * as their side turns edge-on and are not drawn while it faces away.
+ * eyes are seated rigidly on the rotated surface (same mesh projection, no safe-region squeeze,
+ * no drift); an eye disappears when its surface point turns past the limb, and the silhouette
+ * clip occludes any part beyond the edge. The body stays one flat fill.
  */
 internal fun DrawScope.drawMark(
     shape: GrokShape,
@@ -219,14 +222,7 @@ internal fun DrawScope.drawMark(
     eye: Color,
     eyeFade: Color,
 ) {
-    if (kotlin.math.abs(f.spinYaw) < 0.5f) {
-        drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body, eye, eyeFade)
-        return
-    }
-    val facing = kotlin.math.cos(Math.toRadians(f.spinYaw.toDouble())).toFloat()
-    val eyeK = ((facing - 0.12f) / 0.25f).coerceIn(0f, 1f)
-    drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body,
-        eye.copy(alpha = eye.alpha * eyeK), eyeFade.copy(alpha = eyeFade.alpha * eyeK))
+    drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body, eye, eyeFade)
 }
 
 private fun DrawScope.drawMarkInner(
@@ -302,7 +298,7 @@ private fun DrawScope.drawMarkInner(
         val safeBody = EyeSafeRegion.Body(projected)
         // The turn applied to the eyes is scaled down only as far as needed to keep
         // them inside the silhouette (body turn itself is untouched).
-        fun seatGrok(k: Float) = WhEyeSeat.buildSeatedGrokEyes(
+        fun seatGrok(k: Float, yawOverride: Float? = null, extra: Float = 0f) = WhEyeSeat.buildSeatedGrokEyes(
             pickerId = shapeId,
             solidKind = bodyKind,
             he = he,
@@ -312,8 +308,8 @@ private fun DrawScope.drawMarkInner(
             eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
-            awake = if (calm) 0f else 1f,
-            yawDeg = yaw * k,
+            awake = if (calm || spinning) 0f else 1f,
+            yawDeg = yawOverride ?: (yaw * k),
             pitchDeg = pitch * k,
             rollDeg = roll,
             shape = shape,
@@ -322,8 +318,25 @@ private fun DrawScope.drawMarkInner(
             eyesOverride = pair,
             leadX = f.leadX * k,
             leadY = f.leadY * k,
+            extraHalfGap = extra,
         )
-        var (left, right) = if (bodyKind == "sphere" || spinning) seatGrok(1f)
+        // Rigid spin: take the spacing the gap pass gives the un-spun face and bake it into the
+        // surface seating, so the eyes stay on fixed surface points for the whole turn.
+        fun seatSpin(): Pair<Path, Path> {
+            if (bodyKind == "sphere") return seatGrok(1f)
+            // The face is frozen during a spin, so the baked spacing is computed once per spin.
+            val key = "$shapeId|${f.exprFrom}|${f.exprTo}|${f.exprT}|$lidG|${f.eyeGap}|${f.eyeScale}|$pitch|$roll|${yaw - f.spinYaw}|$he"
+            val extra = SPIN_GAP_CACHE[key] ?: run {
+                val (l0, r0) = seatGrok(1f, yawOverride = yaw - f.spinYaw)
+                val (dl, dr) = GrokEyeGap.separation(l0, r0, he, WhEyeSeat.grokGapFix(shapeId))
+                ((dr.x - dl.x) / 2f / he).coerceAtLeast(0f).also {
+                    if (SPIN_GAP_CACHE.size > 32) SPIN_GAP_CACHE.clear()
+                    SPIN_GAP_CACHE[key] = it
+                }
+            }
+            return seatGrok(1f, extra = extra)
+        }
+        var (left, right) = if (spinning) seatSpin() else if (bodyKind == "sphere") seatGrok(1f)
             else EyeSafeRegion.fit(safeBody, he * GROK_EDGE_MARGIN, ::seatGrok) { listOf(it.first, it.second) }
         // Reject only empty / degenerate seating, never valid capsules.
         fun ok(p: Path): Boolean {
@@ -336,7 +349,9 @@ private fun DrawScope.drawMarkInner(
             left = ss.first; right = ss.second
         }
         // Never let the eyes touch or overlap (Sad ^ ^, closed arcs, mid-morph, turned).
-        if (ok(left) && ok(right)) {
+        // A spin is a rigid rotation of the face: the projected gap narrows with the surface, so
+        // the gap pass (which would push the eyes off their surface points) is skipped then.
+        if (ok(left) && ok(right) && !spinning) {
             val (dl, dr) = GrokEyeGap.separation(left, right, he, WhEyeSeat.grokGapFix(shapeId))
             if (dl != androidx.compose.ui.geometry.Offset.Zero) {
                 left = Path().apply { addPath(left, dl) }
