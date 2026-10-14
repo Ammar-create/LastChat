@@ -201,6 +201,12 @@ class MotionDirector(
     var moodValence: Float = 0f
     var moodArousal: Float = 0.5f
 
+    /** Temperament activity (0.1 calm … 0.8 lively): pacing, hold lengths, amplitude. */
+    var activity: Float = 0.35f
+    /** Playful mood: springy overshoot and anticipation allowed; otherwise critically damped. */
+    var playful: Boolean = false
+    private fun lerpA(a: Float, b: Float) = a + (b - a) * ((activity - 0.1f) / 0.7f).coerceIn(0f, 1f)
+
     /** Set by the alive brain: long idle → slower, drooping holds. */
     var drowsy: Boolean = false
 
@@ -276,8 +282,11 @@ class MotionDirector(
                 val d = range(0.62f, 0.8f)
                 val deep = range(6f, 9f)
                 gazeCue = GazeCue(0f, 0.28f, d * 0.55f, "nod")
-                Layer(ProceduralSource("nod", d) { u -> springNodPose(u, deep) },
-                    0f, d, 1f, 0.15f, "nod", gesture = true)
+                val springy = playful
+                Layer(ProceduralSource("nod", d) { u ->
+                    if (springy) springNodPose(u, deep)
+                    else BodyPose(pitch = deep * nodCurve(u, 0.08f), posY = 0.012f * nodCurve(u, 0f))
+                }, 0f, d, 1f, 0.15f, "nod", gesture = true)
             }
             Gesture.Recoil -> {
                 // Startle: a snappy pop up and back (stretch), a squashy landing, then a
@@ -428,9 +437,9 @@ class MotionDirector(
         val slow = drowsy || lifecycle == MarkLifecycle.Sleeping || lIn.kind == "blend"
         val l = if (slow || lIn.gesture) lIn else Layer(
             lIn.source, lIn.t, lIn.tEnd, lIn.speed,
-            (lIn.fadeIn * FADE_SNAP).coerceIn(0.14f, 0.34f), lIn.kind, lIn.gesture,
+            (lIn.fadeIn * lerpA(1f, 0.55f)).coerceIn(0.35f, 1.3f), lIn.kind, lIn.gesture,
         )
-        if (!slow && before != null && filterReady) anticipate(before, l.pose())
+        if (!slow && playful && before != null && filterReady) anticipate(before, l.pose())
         // Stack full: fold the two bottom layers into one frozen pose so nothing
         // that is still visible gets dropped (dropping it would be a jump).
         if (layers.size >= 4) {
@@ -495,9 +504,9 @@ class MotionDirector(
         // mood tilts the head now and then.
         val a = moodArousal.coerceIn(0f, 1f)
         val pos = moodValence.coerceAtLeast(0f)
-        if (last != "hold") opts += "hold" to 0.40f * (1.5f - a)
-        if (last != "idleB" || recentKinds.count { it == "idleB" } < 2) opts += "idleB" to 0.22f
-        if (last != "look") opts += "look" to 0.17f * (0.5f + a)
+        if (last != "hold") opts += "hold" to 0.62f * (1.5f - a)
+        if (last != "idleB" || recentKinds.count { it == "idleB" } < 2) opts += "idleB" to 0.12f
+        if (last != "look") opts += "look" to 0.06f * (0.5f + a)
         if (last != "tilt" && last != "hold") opts += "tilt" to 0.09f * (0.7f + 0.6f * a + pos)
         return when (weighted(opts)) {
             "idleB" -> clipBeat("Idle_B", 0.55f, 1f, fade, "idleB")
@@ -508,8 +517,8 @@ class MotionDirector(
                     // a rare gesture now, not every time Idle_A comes round).
                     val end = range(3.0f, 3.85f)
                     val start = range(0.2f, 0.45f)
-                    Layer(ClipSource(clip, range(0.5f, 0.8f), rng.nextBoolean(), end), start, end,
-                        range(1.1f, 1.35f), fade, "look")
+                    Layer(ClipSource(clip, range(0.35f, 0.55f), rng.nextBoolean(), end), start, end,
+                        range(0.75f, 0.95f), fade, "look")
                 } else null
             }
             "tilt" -> {
@@ -682,7 +691,8 @@ class MotionDirector(
      * random 35–55 % of each segment so the pace keeps changing.
      */
     private fun keyframed(name: String, fade: Float, build: () -> List<Pair<BodyPose, Float>>): Layer {
-        val stops = build()
+        val sc = lerpA(1.9f, 1.2f); val am = lerpA(0.55f, 0.85f)
+        val stops = build().map { (p, d) -> p.copy(pitch = p.pitch * am, yaw = p.yaw * am, roll = p.roll * am) to (d * sc).let { if (p.yaw > 3f && p.pitch < -2f) it.coerceAtMost(0.9f) else it } }
         val starts = FloatArray(stops.size)
         val moveFrac = FloatArray(stops.size) { if (drowsy) range(0.35f, 0.55f) else range(0.16f, 0.28f) }
         var acc = 0f
@@ -706,7 +716,7 @@ class MotionDirector(
         fade: Float,
         kind: String,
         // Authored clips play a little brisker than recorded (they read sluggish on a small avatar).
-        speed: Float = range(1.05f, 1.35f),
+        speed: Float = range(0.8f, 1.0f),
     ): Layer? {
         val clip = clipLookup(name) ?: return null
         val dur = clip.duration
@@ -719,8 +729,14 @@ class MotionDirector(
         return Layer(ClipSource(clip, range(ampMin, ampMax), rng.nextBoolean(), end), start, end, speed, fade, kind)
     }
 
-    private fun hold(name: String, p: BodyPose, dur: Float, fade: Float, kind: String = "hold"): Layer =
-        Layer(HoldSource(name, p, dur), 0f, dur, 1f, fade, kind)
+    private fun hold(name: String, p: BodyPose, dur: Float, fade: Float, kind: String = "hold"): Layer {
+        // Human pacing: calm holds last ~2× longer; turns shrink with low energy.
+        var d = dur * lerpA(2.3f, 1.3f)
+        // Up-right (screen) is a glance, never a resting pose.
+        if (p.yaw > 3f && p.pitch < -2f) d = d.coerceAtMost(0.9f)
+        val a = lerpA(0.55f, 0.85f)
+        return Layer(HoldSource(name, p.copy(pitch = p.pitch * a, yaw = p.yaw * a, roll = p.roll * a), d), 0f, d, 1f, fade, kind)
+    }
 
     private fun lastKind(): String? = recentKinds.lastOrNull()
 
@@ -779,15 +795,16 @@ class MotionDirector(
                     val w = when {
                         i == 7 -> 30f
                         drowsy -> OMEGA_DROWSY
-                        i >= 3 -> 24f // bob and squash: quick enough for springy pops
-                        else -> OMEGA
+                        i >= 3 -> if (playful) 20f else 14f
+                        else -> lerpA(8f, 12f) * (if (playful) 1.15f else 1f)
                     }
                     // Angles a little underdamped (snappy, small overshoot); the bob is
                     // bouncier (follow-through); squash / scale / lids critically damped.
                     val z = when {
                         drowsy || i >= 4 -> 1f
-                        i < 3 -> ZETA_TURN
-                        else -> ZETA_BOUNCE
+                        // Critically damped unless in a playful mood (then a small overshoot).
+                        i < 3 -> if (playful) ZETA_TURN else 1f
+                        else -> if (playful) ZETA_BOUNCE else 1f
                     }
                     val a = w * w * (target[i] - fx[i]) - 2f * z * w * fv[i]
                     fv[i] += a * h

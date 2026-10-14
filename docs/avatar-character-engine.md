@@ -189,3 +189,108 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
 ## engine10
 - **Visual turn cap** (drawMark): total body + head yaw/pitch soft-capped with tanh per shape — sphere 22°/15°, heart 13°/10° (its 3D projection lumps past ~14°), other shapes 17°/12°. Life turns toned down to 6–11° body, 0.45–0.75 eye range. Non-sphere eye in-face shift raised (px 0.07→0.10) so the heart still reads its look direction.
 - **Black-eye blends**: blendPairs matches spine direction (opposite spines crossed mid-blend → dot) and floors blend length at 60% of the shorter endpoint; barBlend stub keeps ≥65% of the longer bar.
+
+## Human behavior model (engine11)
+
+Engine8–10 chased a reviewer metric ("no 2.5 s without visible change") and the result was a
+hyperactive, sped-up character. Engine11 throws that layer away (life itinerary, anti-freeze
+glances, hold-cap recenters, bounces, drift sines) and rebuilds behaviour from how people
+actually behave in front of a screen. Goal: a small Generical that lives in the phone —
+intentional but unscripted; calm by default; stillness is allowed.
+
+Code: `HumanBehavior.kt` (decisions) + `AvatarMotionState` / `MotionDirector` (execution).
+
+### 1. Temperament (slow mood / energy)
+State: `energy`, `boredom`, `curiosity`, `valence` (from the mood engine). Energy and curiosity
+wander as Ornstein–Uhlenbeck processes (τ ≈ 1–2 min) around a baseline from the personality
+knobs (energy, curiosity derived from energy/playfulness/warmth); time-of-day fatigue lowers it.
+Boredom builds over minutes of quiet (≈ 150 s to saturate) and drops fast on any event.
+Readable states: Tired, Bored, Calm (default), Curious, Lively.
+Outputs: `activity` 0.1–0.8 (**capped: never hyperactive**), `tempo` 0.7–1.1 (move speed),
+`amplitude` 0.5–1.0 (turn size), `playful` (good mood + energy + playful personality).
+Why: mood should change *how* it moves over minutes, not flip per second.
+
+### 2. Attention & perception
+`Attention.perceive()` decides whether and when a stimulus is noticed:
+- Probability rises with salience, falls with eccentricity from the current gaze (acuity cone),
+  absorption in a task (thinking 0.75, reading 0.6, idle 0.3), boredom, low energy. Out-of-view
+  ("behind") events are heard, not seen: lower probability.
+- Latency 150–600 ms: longer when tired, absorbed, or the event is far from gaze; higher salience
+  is faster. Touch (poke) is felt directly: 100–280 ms, never missed.
+- Off-gaze / out-of-view: +0.55–1.35 s, and the response is mostly a **double-take**
+  (glance, start to look back, snap back and hold, blink, sometimes Surprised).
+- Low-salience events can be missed entirely (logged as `missed`).
+No omniscience: everything the avatar reacts to (stage events, typing, pokes, messages) goes
+through this gate; the old per-event handlers now run only *after* a percept lands.
+
+### 3. Response repertoire
+`Repertoire.choose()` picks from: None, EyesOnly, Glance, GlanceBlink, Acknowledge (nod),
+Smile, CuriousTilt, SlowBlink, Sigh, and for big things Startle / dumbfounded Freeze.
+Weights depend on salience, energy, boredom, curiosity, warmth, expressiveness. History per
+stimulus kind: the previous pick ×0.25, anything in the last three ×0.6, so the same event
+gets a different answer. "No visible reaction" is always on the table (more when tired, bored,
+low salience, low expressiveness). Startle is likeliest when caught off guard (bored/tired).
+
+### 4. Idle as human timing
+`IdlePlanner` fixations are log-normal: median ≈ 4.8 s when calm down to ≈ 2.5 s when lively,
+range 2–8 s. Kinds: rest near front (most), slow drift (smooth pursuit 1.4–2.8 s), thinking
+stare off to the side (2–7 s), look down at the conversation, occasional side glance that
+returns. Small shifts are eyes only; the head joins bigger ones (~75 % of the way, 80–140 ms
+after the eyes). Micro-saccades every 1.2–4 s, tiny. Blinks: log-normal gaps (median 3.4 s,
+sometimes a long stare), ~9 % doubles, rare triples. Fidgets: a 2–4° posture shift every
+10–28 s / activity. Sighs only when bored or tired, every 25–65 s at most.
+Up-right is only ever a short glance (≤ 0.9 s, then back to centre).
+
+### 5. Motion vocabulary
+| Action | Curve | Parameters | Why |
+|---|---|---|---|
+| Saccade | critically damped | ω 38 | ballistic, 30–80 ms, no visible overshoot |
+| Micro-saccade | critically damped | ω 38, ≤0.02 | re-fixation inside a stare |
+| Smooth pursuit / drift | ease-in-out glide | 1.4–2.8 s | eyes following / wandering, constant-ish speed |
+| Head turn | critically damped | ω 7.5×tempo | heads are heavy and controlled — no wobble |
+| Head turn (playful) | underdamped | ω 9, ζ 0.62 | overshoot only reads right when happy/lively |
+| Body filter | critically damped | ω 8–12 by activity | pose changes land softly; ζ 0.7 only when playful |
+| Nod | ease-in-out arc | 0.62–0.8 s | acknowledgement: one dip, no ringing |
+| Nod (playful) | spring | springNodPose | happy agreement gets follow-through |
+| Startle | snap + spring | 70 ms pop, squash, settle; eyes wide 0.6 s | reflex; the one deliberately springy reaction |
+| Dumbfounded freeze | snap + rigid hold | 1.1–1.7 s, thaw on a blink | stiffness as a stylistic choice |
+| Settle / layer crossfade | ease (smootherstep) | 0.35–1.3 s | returning to rest is quiet |
+| Breathing | sinusoid | 4.2 s × (1.25−0.35·energy), tiny | presence without motion noise |
+| Blink | ease-in close / ease-out open | ~60 / ~120 ms | real blink profile |
+| Sigh | ease-in-out bump | 2.2 s, head sinks 4°, squash | boredom/tiredness made visible once |
+| Fidget | critically damped | ω 6, 2–4° | weight shift, not a gesture |
+| Double-take | critically damped | 0.45 s look, 0.25 s back, snap | the second look is faster |
+| Curious tilt | eased hold | 1.2–1.6 s | interest, held while looking |
+Anticipation (counter-move before a big turn) is only used when playful.
+
+### 6. Expression transitions
+Faces change quickly, with a style picked from context:
+- **Blink swap** (38 % by default): the face changes while the lids are shut — the blink is the transition.
+- **Snap** (40 %): 120–220 ms ease-out; used for reactions (Surprised always snaps).
+- **Hesitate** (22 %): a partial move to ~45 %, a short hold, then settle — a micro-expression.
+- **Gradual** (0.9–1.4 s ease-in-out): mood drift, tiredness, Bored/Sleeping.
+The old 0.45–0.7 s uniform morph read as slow and mechanical.
+
+### 7. Knobs (decision model, no user sliders)
+energy → temperament baseline (activity, tempo, amplitude), blink rate.
+warmth → acknowledging / smiling responses, social glances, attentiveness.
+playfulness → playful mood gate (springy heads, playful nods, anticipation), curiosity.
+expressiveness → face responses, startle / freeze likelihood, fewer "no reaction" picks.
+
+### Motion budget
+Measured as summed |Δyaw|+|Δpitch|+|Δroll| of the composed look plus eye travel per second
+(`budget.py`); engine11 targets ≤ 1/3 of engine10. Measured: idle 9.8 vs 71.9 deg/s (≈1/7),
+busy 9.9 vs 64.6 deg/s (≈1/6.5); eye travel 15.8–21 vs 59–69 px/s (≈1/3–1/4); squash ≈1/4.
+
+### What was removed and why
+- engine8–10 "life itinerary" (forced look every 1.5–2.2 s), anti-freeze glances, hold-cap
+  recenters, periodic bounces, drift sines: they existed to satisfy a "no 2.5 s stillness"
+  metric that was wrong. Stillness is now allowed; liveliness comes from timing and variety.
+- Underdamped springs as the default for body/head: now critically damped; springiness is
+  reserved for startle and playful moods.
+- Uniform 0.45–0.7 s expression morphs: replaced by the four transition styles above.
+
+### Verification clips (engine11)
+idle 40 s, busy 30 s, reactions 38 s (same ping 6×: EyesOnly, GlanceBlink, Smile,
+Acknowledge, EyesOnly, None — 310–360 ms latency; an out-of-view event noticed 1.0 s late →
+double-take), startle, expr. Behaviour logs: `<clip>_behavior.csv`.

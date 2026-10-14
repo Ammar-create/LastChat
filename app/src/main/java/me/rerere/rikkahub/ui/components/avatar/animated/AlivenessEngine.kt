@@ -29,6 +29,9 @@ internal class AlivenessEngine(private val rng: Random) {
         data object DoubleBlink : Beat
     }
 
+    /** Temperament activity (set by the motion state): spontaneous beats get rarer when calm. */
+    var activity: Float = 0.35f
+
     var personality: Personality = Personality.GENERICAL
         set(v) { field = v.clamped() }
 
@@ -245,7 +248,7 @@ internal class AlivenessEngine(private val rng: Random) {
         if (beatIn > 0f || !calm) return null
         // Livelier mood and character → beats more often.
         val pace = (1.3f - 0.5f * arousal) / p.tempo.coerceAtLeast(0.3f) * (1f + 0.5f * fatigue())
-        beatIn = logRange(2.0f, 8.5f) * pace
+        beatIn = logRange(4.0f, 14f) * pace * (1.9f - 1.3f * activity.coerceIn(0.1f, 0.8f))
         return if (busy) busyBeat(life, valence) else idleBeat(valence, arousal)
     }
 

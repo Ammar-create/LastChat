@@ -50,22 +50,26 @@ class AvatarMotionVideoTest {
     private class Script(val name: String, val seconds: Float, val preRoll: Float = 0f, val at: (AvatarMotionState, AvatarStage, Float, Long) -> AvatarMotionHints)
 
     private val scripts = listOf(
-        Script("busy", 22f) { _, _, t, _ ->
+        Script("busy", 30f) { _, _, t, _ ->
             when {
                 t < 1f -> AvatarMotionHints()
-                t < 9f -> AvatarMotionHints(isGenerating = true)
-                t < 18f -> AvatarMotionHints(isGenerating = true, hasStreamedTokens = true)
+                t < 11f -> AvatarMotionHints(isGenerating = true)
+                t < 25f -> AvatarMotionHints(isGenerating = true, hasStreamedTokens = true)
                 else -> AvatarMotionHints()
             }
         },
-        Script("idle", 24f, preRoll = 20f) { s, _, t, _ ->
-            if (t < 0.05f) s.debugBoredom(0.8f)
+        Script("idle", 40f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() },
+        // Same stimulus six times (variation, latency, sometimes nothing), then one
+        // off-gaze / out-of-view event that has to be noticed late.
+        Script("reactions", 38f, preRoll = 10f) { s, _, t, _ ->
+            val pings = listOf(2f, 7f, 12f, 17f, 22f, 27f)
+            for (p in pings) if (t >= p && fired.add(p)) s.debugStimulus("ping", 0.45f, 0.35f, 0.7f)
+            if (t >= 32f && fired.add(32f)) s.debugStimulus("behind", -0.95f, 0.05f, 0.85f, inView = false)
             AvatarMotionHints()
         },
-        Script("startle", 7f, preRoll = 30f) { s, st, t, ms ->
-            if (t < 0.05f) s.debugBoredom(0.9f)
-            if (t in 1.5f..1.55f) st.emit(AvatarStage.EventKind.UserTyping, nowMs = ms)
-            AvatarMotionHints(isTyping = t > 1.5f && t < 4f)
+        Script("startle", 7f, preRoll = 30f) { s, _, t, _ ->
+            if (t >= 1.5f && fired.add(1.5f)) s.debugPerform(Response.Startle)
+            AvatarMotionHints()
         },
         Script("expr", 14f) { s, _, t, _ ->
             val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "angered or concentrated", "Worried")
@@ -75,7 +79,11 @@ class AvatarMotionVideoTest {
         },
     )
 
+    private var lastLog: List<String> = emptyList()
+    private val fired = HashSet<Float>()
+
     private fun simulate(sc: Script, seed: Int): List<MotionFrame> {
+        fired.clear()
         val stage = AvatarStage(Random(seed))
         val s = AvatarMotionState(Random(seed))
         val id = stage.newId()
@@ -92,6 +100,7 @@ class AvatarMotionVideoTest {
             if (t >= nextFrame - 1e-4f) { frames += s.frame; nextFrame += 1f / fps }
             t += dt; ms += (dt * 1000).toLong()
         }
+        lastLog = s.behaviorLog.map { l -> val (a, b) = l.split(',', limit = 2); "%.2f,%s".format(a.toFloat() - sc.preRoll, b) }
         return frames
     }
 
@@ -134,6 +143,7 @@ class AvatarMotionVideoTest {
             AvatarDebugMetrics.label = sc.name
             if (only != null && sc.name !in only) continue
             val frames = simulate(sc, 7)
+            File(out, "${sc.name}_behavior.csv").writeText("t,event\n" + lastLog.joinToString("\n") + "\n")
             if (sc.name == "startle") {
                 // The startle must visibly play: a quick stretch pop right after typing starts.
                 val win = frames.subList((1.5f * fps).toInt(), (2.3f * fps).toInt())
