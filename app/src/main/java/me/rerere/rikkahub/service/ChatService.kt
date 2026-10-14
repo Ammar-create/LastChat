@@ -2082,7 +2082,7 @@ class ChatService(
                                 if (!currentProps.containsKey("include_images")) {
                                     currentProps["include_images"] = buildJsonObject {
                                         put("type", "boolean")
-                                        put("description", "Whether to fetch and visually inspect relevant images for the search query.")
+                                        put("description", "Whether to include relevant image results (URLs and titles) for the search query.")
                                     }
                                 }
                                 if (!currentProps.containsKey("topic")) {
@@ -2134,70 +2134,6 @@ class ChatService(
                             }
                         }
 
-                        val supportsVision = model?.inputModalities?.contains(Modality.IMAGE) == true
-                        val injectedImageObjects = mutableListOf<JsonObject>()
-
-                        if (supportsVision && searchResult.images.isNotEmpty()) {
-                            val maxImages = minOf(searchResult.images.size, 4, model?.maxImagesInContext ?: 4)
-                            val candidateImages = searchResult.images
-                                .filter { img ->
-                                    val lowerUrl = img.url.lowercase()
-                                    !lowerUrl.endsWith(".svg") && !lowerUrl.endsWith(".ico")
-                                }
-                                .take(maxImages)
-
-                            coroutineScope {
-                                val downloadJobs = candidateImages.mapIndexed { index, img ->
-                                    async(Dispatchers.IO) {
-                                        runCatching {
-                                            withTimeoutOrNull(6_000L) {
-                                                val response = platformHttpClient.execute(
-                                                    PlatformHttpRequest(
-                                                        url = img.url,
-                                                        method = "GET",
-                                                        headers = mapOf(
-                                                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                                                            "Accept" to "image/jpeg,image/png,image/webp;q=0.9",
-                                                        ),
-                                                    )
-                                                )
-                                                if (response.statusCode in 200..299 && response.body.isNotEmpty()) {
-                                                    val contentType = (response.headers.entries
-                                                        .firstOrNull { it.key.equals("content-type", ignoreCase = true) }
-                                                        ?.value?.firstOrNull() ?: "").lowercase()
-                                                    if (contentType.startsWith("text/") || contentType.contains("image/svg")) {
-                                                        null
-                                                    } else {
-                                                        val prepared = me.rerere.rikkahub.data.ai.tools.prepareImageForModelInspection(
-                                                            path = img.url,
-                                                            bytes = response.body,
-                                                            minDimension = 48,
-                                                        )
-                                                        if (prepared != null) {
-                                                            Triple(index + 1, img, prepared)
-                                                        } else null
-                                                    }
-                                                } else null
-                                            }
-                                        }.getOrNull()
-                                    }
-                                }
-                                val downloaded = downloadJobs.awaitAll().filterNotNull()
-                                downloaded.forEach { (index, img, prepared) ->
-                                    injectedImageObjects.add(
-                                        buildJsonObject {
-                                            put("data_url", JsonPrimitive(prepared.dataUrl))
-                                            put("mime_type", JsonPrimitive(prepared.mimeType))
-                                            put("title", JsonPrimitive(img.title))
-                                            put("source_url", JsonPrimitive(img.url))
-                                            put("markdown_image", JsonPrimitive(img.markdownImage))
-                                            put("origin_tool", JsonPrimitive("search_web"))
-                                        }
-                                    )
-                                }
-                            }
-                        }
-
                         val results =
                             JsonInstantPretty.encodeToJsonElement(searchResult).jsonObject.let { json ->
                                 val map = json.toMutableMap()
@@ -2214,9 +2150,6 @@ class ChatService(
                                         }
                                     })
                                 }
-                                if (injectedImageObjects.isNotEmpty()) {
-                                    map[TOOL_RESULT_INJECT_USER_IMAGE_PARTS_KEY] = JsonArray(injectedImageObjects)
-                                }
                                 JsonObject(map)
                             }
                         results
@@ -2224,7 +2157,6 @@ class ChatService(
                         val hasToolCall =
                             messages.any { it.getToolCalls().any { toolCall -> toolCall.toolName == "search_web" } }
                         val prompt = StringBuilder()
-                        val visionSupported = promptModel.inputModalities.contains(Modality.IMAGE)
                         prompt.append(
                             """
                     ## tool: search_web
@@ -2236,13 +2168,10 @@ class ChatService(
                     - Today is {{cur_date}}
                     - Trust structured weather `answer` fields over encyclopedia snippets.
                     - For news, prefer items with recent `publishedAt` dates. Do not treat Wikipedia as live news.
-                    - Search results and any retrieved images are private behind-the-scenes data for your eyes only. The user CANNOT see them and did NOT provide or upload them.
+                    - Search results are private behind-the-scenes data for your eyes only. The user CANNOT see them and did NOT provide or upload them.
                     - When the result includes an `images` array, if the user asks for images or if an image is useful, put 1–4 relevant `markdown_image` values (e.g. `![title](url)`) each on their own line in your reply so they render inline for the user. If you do not explicitly embed `![title](url)`, the user will see nothing.
                     """.trimIndent()
                         )
-                        if (visionSupported) {
-                            prompt.append("\n- When images are retrieved from a search, they are automatically delivered directly into your context for your private visual inspection so you can verify what they look like before deciding whether to show them. Remember: the user CANNOT see these images and did NOT provide them; you must embed `![title](url)` in your reply if the user should see them.")
-                        }
                         if (hasToolCall) {
                             prompt.append(
                                 """

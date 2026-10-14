@@ -343,9 +343,6 @@ private fun LastChatComposerInsetRemoveButton(
 
 private val AttachmentShape = RoundedCornerShape(12.dp)
 
-/** Sent-message photo and file tiles. Same outer radius as the chat bubble. Composer tiles stay at 12dp. */
-val LastChatMessageAttachmentShape = AppShapes.CardMedium
-
 private fun attachmentIcon(name: String, path: String): ImageVector = ImageVector.Builder(
     name = name,
     defaultWidth = 24.dp,
