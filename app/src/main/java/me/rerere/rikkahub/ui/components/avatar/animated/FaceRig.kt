@@ -206,7 +206,7 @@ class FaceRig(private val rng: Random) {
             else EyeShape(sx = 0.98f, sy = 0.9f, upper = 0.86f, rot = 4f * s)
             FaceAccent.Annoyed -> EyeShape(upper = 0.6f, slant = 0.32f, sy = 0.96f)
             FaceAccent.Shy -> EyeShape(lower = 0.68f, sy = 0.94f, dy = 0.02f)
-            FaceAccent.Startled -> EyeShape(sx = 1.18f, sy = 1.28f, dy = -0.014f)
+            FaceAccent.Startled -> EyeShape(sx = 1.2f, sy = 1.4f, dy = -0.016f)
             FaceAccent.Dizzy -> {
                 // Eyes circle in opposite phase, slowly settling.
                 val ph = time * 7f + side * PI.toFloat()

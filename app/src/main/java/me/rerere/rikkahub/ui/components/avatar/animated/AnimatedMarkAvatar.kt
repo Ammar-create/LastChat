@@ -183,7 +183,7 @@ internal const val GROK_SLIT = 0.12f
 
 /** Clear margin kept between the eyes and the silhouette edge (fraction of mark radius). */
 internal const val GROK_EDGE_MARGIN = 0.20f
-internal const val GEN_EDGE_MARGIN = 0.17f
+internal const val GEN_EDGE_MARGIN = 0.21f
 
 /** Harness: a raw clip pose as a frame (expression from the clip, eyes open). */
 private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(

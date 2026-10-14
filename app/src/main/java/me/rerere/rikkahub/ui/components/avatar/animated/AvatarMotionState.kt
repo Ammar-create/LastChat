@@ -622,7 +622,13 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         scaleKnob += (pose.eyeScale - scaleKnob) * k
         val drowsyTarget = if (drowsy) 0.55f else 1f
         drowsyLid += (drowsyTarget - drowsyLid) * (1f - exp(-dt / if (drowsy) 2.5f else 0.3f))
-        val lid = (lidKnob.coerceAtMost(1f) * body.lidOpen * drowsyLid * (1f - blink.closed)).coerceIn(0f, 1f)
+        // Startle window: eyes snap wide open and stay open (~0.55 s) — no blink, no droop.
+        if (director.startling && !wasStartling) startleHoldT = 0.6f
+        wasStartling = director.startling
+        startleHoldT -= dt
+        val inStartle = startleHoldT > 0f
+        val lid = if (inStartle) 1f
+            else (lidKnob.coerceAtMost(1f) * body.lidOpen * drowsyLid * (1f - blink.closed)).coerceIn(0f, 1f)
 
         // ---- mood + parametric face ----
         hourCheckIn -= dt
@@ -669,7 +675,31 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val mk = 1f - exp(-dt / 0.03f)
         microX += (microTx - microX) * mk
         microY += (microTy - microY) * mk
-        val bodyBase = body.lerpTo(BodyPose.REST, w)
+        // Perceptible life beats: every 1.5–2.2 s the character visibly does something —
+        // a look away (eyes + a real head/body turn) or a look back to centre. Sub-pixel
+        // drift alone reads as a frozen stare, especially when sampled sparsely.
+        lifeBeatT -= dt
+        if (lifeBeatT <= 0f && settle < 0.5f && !director.startling && startleHoldT <= 0f) {
+            lifeBeatT = 1.5f + rng.nextFloat() * 0.7f
+            if (lifeAway) {
+                lifeAway = false
+                lifeTurnTx = 0f; lifeTiltTx = 0f
+                gaze.focus((rng.nextFloat() - 0.5f) * 0.1f, (rng.nextFloat() - 0.4f) * 0.08f, lifeBeatT, priority = 2)
+            } else {
+                lifeAway = true
+                val side = if (rng.nextBoolean()) 1f else -1f
+                val gx = side * (0.35f + rng.nextFloat() * 0.3f)
+                val gy = (rng.nextFloat() * 2f - 1f) * 0.3f
+                lifeTurnTx = side * (7f + rng.nextFloat() * 6f)
+                lifeTiltTx = gy * 10f
+                gaze.focus(gx, gy, lifeBeatT, priority = 2)
+            }
+        }
+        val lk = 1f - exp(-dt / 0.13f)
+        lifeTurn += (lifeTurnTx * keep - lifeTurn) * lk
+        lifeTilt += (lifeTiltTx * keep - lifeTilt) * lk
+        val bodyBase0 = body.lerpTo(BodyPose.REST, w)
+        val bodyBase = bodyBase0.copy(yaw = bodyBase0.yaw + lifeTurn, pitch = bodyBase0.pitch + lifeTilt, roll = bodyBase0.roll - lifeTurn * 0.25f)
         val bodyOut = bodyBase.copy(
             posY = bodyBase.posY - 0.01f * br,
             squashX = bodyBase.squashX * (1f - 0.01f * br),
@@ -728,17 +758,18 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val upRightNow = yawNow > 3f && pitchNow < -2f
         if (away > 0.35f) holdT += dt else holdT = (holdT - dt * 1.5f).coerceAtLeast(0f)
         if (upRightNow) upRightT += dt else upRightT = (upRightT - dt * 2f).coerceAtLeast(0f)
-        val overHold = holdT > 1.5f || upRightT > 0.85f
+        val overHold = holdT > 2.4f || upRightT > 0.85f
         if (overHold && recenterLeft <= 0f && settle < 0.5f) {
             recenterLeft = 1.0f + rng.nextFloat() * 0.5f
             holdT = 0f; upRightT = 0f
+            lifeAway = false; lifeTurnTx = 0f; lifeTiltTx = 0f; lifeBeatT = recenterLeft + 0.2f
             // Always return near centre (never another off-centre target).
             gaze.focus((rng.nextFloat() - 0.5f) * 0.1f, (rng.nextFloat() - 0.2f) * 0.08f, recenterLeft + 0.5f, priority = 5)
             microTx = 0f; microTy = 0.02f; microIn = 0.6f
         }
         recenterLeft -= dt
         recenterK += ((if (recenterLeft > 0f) 1f else 0f) - recenterK) * (1f - exp(-dt / 0.11f))
-        val rs = 1f - 0.85f * recenterK
+        val rs = 1f - 0.65f * recenterK
         hx *= rs; hy *= rs; lx *= rs; ly *= rs
         val bodyRc = if (recenterK > 1e-3f) bodyOut.copy(yaw = bodyOut.yaw * rs, pitch = bodyOut.pitch * rs, roll = bodyOut.roll * rs) else bodyOut
         val pitchOut = bodyRc.pitch
@@ -761,6 +792,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     }
 
     private var breathPh = 0f
+    private var lifeBeatT = 1.0f
+    private var lifeAway = false
+    private var lifeTurnTx = 0f
+    private var lifeTiltTx = 0f
+    private var lifeTurn = 0f
+    private var lifeTilt = 0f
+    private var startleHoldT = 0f
+    private var wasStartling = false
     private var driftPh = 0f
     private var holdRefYaw = 0f
     private var holdRefPitch = 0f

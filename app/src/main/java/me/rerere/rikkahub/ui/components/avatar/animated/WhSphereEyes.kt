@@ -157,7 +157,9 @@ object WhSphereEyes {
                 listOf(e, e)
             }
             "sad" -> {
-                val e = en(UR, 0.5f, -28f, -0.05f)
+                // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
+                // the / \ pair read clearly apart at a glance.
+                val e = en(UR, 0.5f, -19f, 0.015f)
                 listOf(e, e)
             }
             "sleepy", "sleeping" -> {
@@ -213,6 +215,7 @@ object WhSphereEyes {
         "sleepy", "sleeping" -> floatArrayOf(0.028f, 0.028f)
         "squinted", "bored", "calm" -> floatArrayOf(0.024f, 0.024f)
         "dizzy" -> floatArrayOf(0.085f, 0.085f)
+        "sad" -> floatArrayOf(0.03f, 0.03f)
         else -> NO_SPREAD
     }
 

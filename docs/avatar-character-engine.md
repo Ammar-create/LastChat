@@ -173,3 +173,9 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
   squash landing, spring settle), so it is not rounded off. `AvatarMotionVideoTest` asserts it plays.
 - `metrics.csv` carries the expression, gap, inset and rendered eye centroid per frame
   (`engine7_report.py` turns it into the gap, inset, freeze and up-right-hold report).
+
+## engine8
+- **Perceptible life beats** (AvatarMotionState): every 1.5–2.2 s a visible beat alternates look-away (eyes 0.35–0.65 + real head/body turn 7–13°, tilt, roll) and look-back to centre. Hold cap raised to 2.4 s (up-right still 0.85 s) so it no longer cancels beats; recenter keeps 35% motion. Report: longest gap between perceptible events (≥0.08 R eye move, blink or ≥6° turn) ≤ 2.23 s in every clip.
+- **Sad/Worried Grok**: inward tilt 28° → 19°, set wider (+0.015 offX, +0.03 spread); inner tops read clearly apart.
+- **Heart edge**: inset measured on the true projected silhouette path; Generical margin 0.17 → 0.21 R.
+- **Startle**: 0.6 s startle window forces lids fully open (no blink), Startled accent stronger (sx 1.2, sy 1.4) and 0.75 s; double-blink moved to 1.15 s after.

@@ -156,8 +156,8 @@ internal class AlivenessEngine(private val rng: Random) {
         remember("startle")
         sequence(
             0f to Beat.Gesture(MotionDirector.Gesture.Recoil),
-            0.01f to Beat.Accent(FaceAccent.Startled, 0.7f),
-            0.85f to Beat.DoubleBlink,
+            0.01f to Beat.Accent(FaceAccent.Startled, 0.75f),
+            1.15f to Beat.DoubleBlink,
         )
     }
 
