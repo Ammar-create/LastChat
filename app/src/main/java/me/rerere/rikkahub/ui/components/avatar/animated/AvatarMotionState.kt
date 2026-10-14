@@ -1114,7 +1114,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      * them at once.
      */
     private fun onUiEvent(e: AvatarStage.Event, calm: Boolean): Boolean {
-        if (e.source != stageId) aliveness.onEvent(e.kind)
+        if (e.source != stageId) aliveness.onEvent(e)
         fun glance(at: Offset?, hold: Float, prio: Int = 2) {
             val p = at ?: return
             val (gx, gy) = lookAt(p)

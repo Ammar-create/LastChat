@@ -34,6 +34,20 @@ data class Personality(
 
     private fun c(v: Float) = v.coerceIn(0f, 1f)
 
+    fun toMap(): Map<String, Float> = mapOf(
+        "energy" to energy, "curiosity" to curiosity, "warmth" to warmth, "playfulness" to playfulness,
+        "shyness" to shyness, "expressiveness" to expressiveness, "attentiveness" to attentiveness,
+        "mischief" to mischief, "calmness" to calmness,
+    )
+
+    fun with(name: String, v: Float): Personality = when (name) {
+        "energy" -> copy(energy = v); "curiosity" -> copy(curiosity = v); "warmth" -> copy(warmth = v)
+        "playfulness" -> copy(playfulness = v); "shyness" -> copy(shyness = v)
+        "expressiveness" -> copy(expressiveness = v); "attentiveness" -> copy(attentiveness = v)
+        "mischief" -> copy(mischief = v); "calmness" -> copy(calmness = v)
+        else -> this
+    }.clamped()
+
     companion object {
         /** Generical: warm, curious, a little playful. */
         val GENERICAL = Personality(
@@ -50,6 +64,18 @@ data class Personality(
 
         fun defaultFor(eyeType: String): Personality =
             if (eyeType.equals("grok", ignoreCase = true)) GROK else GENERICAL
+
+        val TRAITS = listOf(
+            "energy", "curiosity", "warmth", "playfulness", "shyness",
+            "expressiveness", "attentiveness", "mischief", "calmness",
+        )
+
+        /** Stored overrides on top of the style default; unknown keys ignored. */
+        fun resolve(eyeType: String, traits: Map<String, Float>?): Personality {
+            var p = defaultFor(eyeType)
+            traits?.forEach { (k, v) -> p = p.with(k, v) }
+            return p
+        }
     }
 }
 

@@ -156,6 +156,17 @@
     <string name="avatar_animated_color">Color</string>
     <string name="avatar_animated_eye_color">Eye color</string>
     <string name="avatar_animated_eye_shade">Eye shade</string>
+    <string name="avatar_animated_personality">Advanced personality</string>
+    <string name="avatar_animated_personality_reset">Reset to default</string>
+    <string name="avatar_trait_energy">Energy</string>
+    <string name="avatar_trait_curiosity">Curiosity</string>
+    <string name="avatar_trait_warmth">Warmth</string>
+    <string name="avatar_trait_playfulness">Playfulness</string>
+    <string name="avatar_trait_shyness">Shyness</string>
+    <string name="avatar_trait_expressiveness">Expressiveness</string>
+    <string name="avatar_trait_attentiveness">Attentiveness</string>
+    <string name="avatar_trait_mischief">Mischief</string>
+    <string name="avatar_trait_calmness">Calmness</string>
     <string name="avatar_animated_eye_color_default">Default</string>
     <string name="avatar_animated_save">Save</string>
     <string name="avatar_input_url">Input URL</string>

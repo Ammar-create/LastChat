@@ -801,6 +801,7 @@ private fun DrawerAvatarVisual(
                     colorPreset = avatar.colorPreset,
                     eyeColorHex = avatar.eyeColorHex,
                 eyeShade = avatar.eyeShade,
+                personality = me.rerere.rikkahub.ui.components.avatar.animated.Personality.resolve(avatar.eyeType, avatar.traits),
                     isLoading = false,
                     modifier = Modifier.fillMaxSize()
                 )

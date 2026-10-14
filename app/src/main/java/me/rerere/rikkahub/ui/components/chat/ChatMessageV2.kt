@@ -51,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -1522,6 +1523,25 @@ private fun AssistantMessageTurn(
         }
     }
     
+    // When the newest reply finishes, let the avatars react to its tone.
+    val avatarStageForTone = me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage.current
+    val replyTextForTone = allTextBubbles.joinToString("\n") { it.second.text }
+    var toneSeenLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(loading, isLastTurn) {
+        if (loading && isLastTurn) toneSeenLoading = true
+        if (!loading && isLastTurn && toneSeenLoading) {
+            toneSeenLoading = false
+            me.rerere.rikkahub.ui.components.avatar.animated.ToneAnalyzer.read(replyTextForTone)?.let { t ->
+                avatarStageForTone.emit(
+                    me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.ReplyTone,
+                    magnitude = t.valence,
+                    extra = (t.emotion?.ordinal ?: -1) + 1,
+                    direction = (t.intensity * 100).toInt(),
+                )
+            }
+        }
+    }
+
     // Consistent spacing between all elements
     val elementSpacing = 4.dp
     
@@ -1567,6 +1587,7 @@ private fun AssistantMessageTurn(
                 nameAlpha = nameAlpha,
                 pill = assistantPill,
             )
+
 
             AssistantBubbleStack(
                 group = group,

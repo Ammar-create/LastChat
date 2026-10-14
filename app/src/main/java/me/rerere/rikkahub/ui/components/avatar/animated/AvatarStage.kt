@@ -42,6 +42,8 @@ class AvatarStage(private val rng: Random = Random.Default) {
         Deleted,
         /** A request failed. */
         Error,
+        /** Tone of a finished reply: [Event.magnitude] = valence, [Event.extra] = Emotion ordinal + 1 (0 = none), [Event.direction] = intensity × 100. */
+        ReplyTone,
         /** The activity pill / timeline was expanded at [Event.at]. */
         PillExpanded,
         /** The app came back to the foreground. */

@@ -58,3 +58,31 @@ class AlivenessEngineTest {
         assertTrue("lively=$a calm=$b", a > b)
     }
 }
+
+class ToneAndHobbyTest {
+    @Test
+    fun toneReadsObviousCases() {
+        assertTrue(ToneAnalyzer.read("Haha, that's a funny one 😂")?.emotion == Emotion.Amusement)
+        assertTrue(ToneAnalyzer.read("I'm sorry, unfortunately that failed.")?.emotion == Emotion.Concern)
+        assertTrue(ToneAnalyzer.read("Here is the list you asked for.") == null)
+    }
+
+    @Test
+    fun boredIdleCharacterDoesHobbiesAndNeverStaresUpRight() {
+        val glances = ArrayList<AlivenessEngine.Beat.Glance>()
+        val kinds = HashSet<String>()
+        for (seed in 1..8) {
+            val e = AlivenessEngine(Random(seed)).apply { personality = Personality.GENERICAL }
+            var t = 0f
+            while (t < 900f) {
+                e.update(1f / 30f, MarkLifecycle.Idle, 0.2f, 0.4f, true)?.let { b ->
+                    kinds += b::class.simpleName + ((b as? AlivenessEngine.Beat.Gesture)?.g?.name ?: "")
+                    if (b is AlivenessEngine.Beat.Glance) glances += b
+                }
+                t += 1f / 30f
+            }
+        }
+        assertTrue("kinds=$kinds", kinds.size >= 6)
+        assertTrue("up-right glance", glances.none { it.x > 0.1f && it.y < -0.05f })
+    }
+}

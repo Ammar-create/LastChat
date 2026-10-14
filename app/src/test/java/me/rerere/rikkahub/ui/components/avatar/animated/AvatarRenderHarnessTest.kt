@@ -570,6 +570,20 @@ class AvatarRenderHarnessTest {
                 }
             }
         }
+        // Advanced personality section open (with one override), scrolled mid-way.
+        for (mode in listOf("generical", "grok")) {
+            capture("editor_${mode}_personality_411x1400", 411, 1400) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    AnimatedAvatarEditorContent(
+                        shape = "blob", onShape = {}, eyeType = mode, onEyeType = {},
+                        colorHex = "#2A92FE", colorPreset = "blue", onColor = { _, _ -> },
+                        eyeColorHex = null, onEyeColor = {}, onPickColor = {}, onPickEyeColor = {},
+                        onDismiss = {}, onSave = {}, modifier = Modifier.fillMaxSize(),
+                        traits = mapOf("playfulness" to 0.9f), advancedOpenInitially = true,
+                    )
+                }
+            }
+        }
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
     }
 

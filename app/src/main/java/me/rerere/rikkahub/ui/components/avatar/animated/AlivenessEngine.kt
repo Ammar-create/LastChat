@@ -59,8 +59,20 @@ internal class AlivenessEngine(private val rng: Random) {
     private var beatIn = 2f + rng.nextFloat() * 3f
     private var wasBusy = false
     private var nodsThisReply = 0
-    private var pending: Beat? = null
-    private var pendingIn = 0f
+    /** Scheduled beats (absolute engine clock time → beat), played in order. */
+    private val scheduled = ArrayList<Pair<Float, Beat>>()
+
+    /** Time-of-day tiredness 0…1 (late night / early morning), checked once a minute. */
+    private var fatigueCache = 0f
+    private var fatigueAt = -100f
+    private fun fatigue(): Float {
+        if (clock - fatigueAt > 60f) {
+            fatigueAt = clock
+            val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            fatigueCache = when (h) { 23, 0 -> 0.5f; in 1..5 -> 0.85f; 6 -> 0.4f; 22 -> 0.25f; else -> 0f }
+        }
+        return fatigueCache
+    }
 
     private fun ago(k: String) = clock - (lastUsed[k] ?: -1000f)
     private fun logRange(a: Float, b: Float) = exp(ln(a) + (ln(b) - ln(a)) * rng.nextFloat())
@@ -107,21 +119,64 @@ internal class AlivenessEngine(private val rng: Random) {
     }
 
     /** Chat / UI events (everything the stage reports, plus lifecycle edges). */
-    fun onEvent(kind: AvatarStage.EventKind) {
+    fun onEvent(e: AvatarStage.Event) {
         val p = personality
+        val wasDazed = boredom > 0.6f
         boredom = (boredom - 0.4f).coerceAtLeast(0f)
         attention = (attention + 0.2f + 0.2f * p.attentiveness).coerceAtMost(1f)
-        when (kind) {
+        when (e.kind) {
             AvatarStage.EventKind.MessageSent -> {
                 feel(Emotion.Interest, 0.4f + 0.4f * p.curiosity)
-                if (chance(0.25f * p.warmth)) queue(Beat.Gesture(MotionDirector.Gesture.Attend), logRange(0.15f, 0.5f))
+                if (wasDazed) startle()
+                else if (chance(0.25f * p.warmth)) queue(Beat.Gesture(MotionDirector.Gesture.Attend), logRange(0.15f, 0.5f))
             }
-            AvatarStage.EventKind.UserTyping -> feel(Emotion.Interest, 0.3f + 0.3f * p.curiosity)
+            AvatarStage.EventKind.UserTyping -> {
+                feel(Emotion.Interest, 0.3f + 0.3f * p.curiosity)
+                if (wasDazed) startle()
+            }
             AvatarStage.EventKind.Error -> feel(Emotion.Concern, 0.5f + 0.3f * p.warmth)
             AvatarStage.EventKind.Copied -> if (chance(0.3f * p.warmth)) feel(Emotion.Pride, 0.5f)
             AvatarStage.EventKind.Regenerated -> if (chance(0.4f)) feel(Emotion.Confusion, 0.3f + 0.3f * p.expressiveness)
             AvatarStage.EventKind.AvatarAccent -> social = (social + 0.25f * (0.5f + p.warmth)).coerceAtMost(1f)
+            AvatarStage.EventKind.ReplyTone -> {
+                val emo = Emotion.entries.getOrNull(e.extra - 1)
+                val intensity = (e.direction / 100f).coerceIn(0f, 1f)
+                feedTone(ToneHint(e.magnitude, 0.5f, emo, intensity))
+                if (emo != null) reactToTone(emo, intensity)
+            }
             else -> {}
+        }
+    }
+
+    /** Snapped out of a daze: a small jolt, then a double blink. */
+    private fun startle() {
+        if (ago("startle") < 30f) return
+        remember("startle")
+        sequence(
+            0f to Beat.Accent(FaceAccent.Startled, 0.5f),
+            0.05f to Beat.Gesture(MotionDirector.Gesture.Recoil),
+            0.55f to Beat.DoubleBlink,
+        )
+    }
+
+    /** The character's own reply had a tone: show it, scaled by expressiveness. */
+    private fun reactToTone(emo: Emotion, intensity: Float) {
+        val p = personality
+        if (!chance((0.35f + 0.6f * p.expressiveness) * (0.5f + intensity))) return
+        val d = logRange(0.3f, 0.9f)
+        when (emo) {
+            Emotion.Joy -> sequence(d to Beat.Face("Happy", logRange(1.2f, 2.2f)),
+                d + 0.2f to if (chance(0.25f * p.playfulness)) Beat.Gesture(MotionDirector.Gesture.Hop) else Beat.Blink)
+            Emotion.Amusement -> sequence(d to Beat.Accent(FaceAccent.Glee, logRange(1.0f, 1.8f)),
+                d + 0.3f to Beat.Gesture(MotionDirector.Gesture.Nod))
+            Emotion.Concern -> sequence(d to Beat.Accent(FaceAccent.Worried, logRange(1.2f, 2.0f)))
+            Emotion.Sadness -> sequence(d to Beat.Accent(FaceAccent.Sad, logRange(1.4f, 2.4f)),
+                d + 1.2f to Beat.Gesture(MotionDirector.Gesture.Droop))
+            Emotion.Surprise -> sequence(d to Beat.Accent(FaceAccent.Startled, 0.6f), d + 0.7f to Beat.Blink)
+            Emotion.Interest -> sequence(d to Beat.Accent(FaceAccent.Curious, logRange(1.0f, 1.6f)),
+                d + 0.1f to Beat.Gesture(MotionDirector.Gesture.Tilt))
+            Emotion.Confusion -> sequence(d to Beat.Face("confused", logRange(1.0f, 1.6f)))
+            Emotion.Pride, Emotion.Calm -> sequence(d to Beat.Accent(FaceAccent.Smug, logRange(0.9f, 1.4f)))
         }
     }
 
@@ -136,7 +191,13 @@ internal class AlivenessEngine(private val rng: Random) {
         return null
     }
 
-    private fun queue(b: Beat, inSec: Float) { pending = b; pendingIn = inSec }
+    private fun queue(b: Beat, inSec: Float) = sequence(inSec to b)
+
+    /** Schedule a multi-step behaviour (delays relative to now). Replaces anything pending. */
+    private fun sequence(vararg steps: Pair<Float, Beat>) {
+        scheduled.clear()
+        steps.forEach { (d, b) -> scheduled += (clock + d) to b }
+    }
 
     /**
      * Advance; returns at most one beat to play this frame. [calm] = nobody else is
@@ -167,14 +228,19 @@ internal class AlivenessEngine(private val rng: Random) {
             faceLeft -= dt
             if (faceLeft <= 0f) pickBusyFace(life, valence, arousal)
         }
-        pending?.let {
-            pendingIn -= dt
-            if (pendingIn <= 0f && calm) { pending = null; return it }
+        if (scheduled.isNotEmpty()) {
+            val (at, b) = scheduled[0]
+            if (clock >= at) {
+                scheduled.removeAt(0)
+                // A sequence step that can't play now is dropped, not delayed into a cut.
+                if (calm || b is Beat.Blink || b is Beat.DoubleBlink) return b
+            }
+            return null
         }
         beatIn -= dt
         if (beatIn > 0f || !calm) return null
         // Livelier mood and character → beats more often.
-        val pace = (1.3f - 0.5f * arousal) / p.tempo.coerceAtLeast(0.3f)
+        val pace = (1.3f - 0.5f * arousal) / p.tempo.coerceAtLeast(0.3f) * (1f + 0.5f * fatigue())
         beatIn = logRange(2.0f, 8.5f) * pace
         return if (busy) busyBeat(life, valence) else idleBeat(valence, arousal)
     }
@@ -273,6 +339,15 @@ internal class AlivenessEngine(private val rng: Random) {
             "shyLook" to 0.03f * p.shyness * cool("shyLook", 50f),
             "hop" to 0.012f * p.playfulness * p.energy * 4f * (1f - boredom) * cool("hop", 90f),
             "worried" to (if (emo == Emotion.Concern) 0.08f * emotionLevel else 0f),
+            // Hobbies: short multi-step routines, more likely as boredom grows.
+            "daydream" to 0.05f * (0.3f + boredom) * (0.5f + p.calmness) * cool("daydream", 70f),
+            "survey" to 0.05f * (0.3f + boredom) * (0.5f + p.curiosity) * cool("survey", 60f),
+            "hum" to 0.03f * (0.2f + boredom) * (0.4f + p.playfulness) * (0.5f + valence.coerceAtLeast(0f)) * cool("hum", 90f),
+            "peekaboo" to 0.012f * p.shyness * p.playfulness * 4f * cool("peekaboo", 180f),
+            // Easter eggs: rare.
+            "sneeze" to 0.004f * cool("sneeze", 600f),
+            "yawn" to 0.04f * fatigue() * cool("yawn", 240f),
+            "twirl" to 0.003f * p.playfulness * p.energy * 4f * (0.5f + valence.coerceAtLeast(0f)) * cool("twirl", 900f),
         ).map { (k, w) -> k to w * fresh(k) }.filter { it.second > 0f }
         val k = weighted(opts)
         remember(k)
@@ -292,6 +367,51 @@ internal class AlivenessEngine(private val rng: Random) {
             "shyLook" -> Beat.Glance(-(0.3f + 0.3f * rng.nextFloat()), 0.3f + 0.2f * rng.nextFloat(), logRange(0.8f, 1.6f), "idle")
             "hop" -> Beat.Gesture(MotionDirector.Gesture.Hop)
             "worried" -> Beat.Accent(FaceAccent.Worried, logRange(1f, 1.8f))
+            "daydream" -> {
+                // Gaze drifts up-left, lids soften, slow blink, back.
+                val hold = logRange(2.2f, 4f)
+                sequence(
+                    0.6f to Beat.Accent(FaceAccent.Drowsy, hold * 0.8f),
+                    hold * 0.7f to Beat.Blink,
+                )
+                Beat.Glance(-(0.35f + 0.25f * rng.nextFloat()), -(0.2f + 0.15f * rng.nextFloat()), hold, "think")
+            }
+            "survey" -> {
+                // Look around the screen: 3 irregular stops, never up-right.
+                var t = 0f
+                val steps = List(3) {
+                    t += logRange(0.7f, 1.5f)
+                    val x = -0.6f + 1.2f * rng.nextFloat()
+                    val y = if (x > 0f) 0.05f + 0.4f * rng.nextFloat() else -0.25f + 0.6f * rng.nextFloat()
+                    t to (Beat.Glance(x, y, logRange(0.5f, 1.1f), "idle") as Beat)
+                }
+                sequence(*steps.toTypedArray())
+                Beat.Blink
+            }
+            "hum" -> {
+                // Bopping along to a tune only it hears: 2–3 small irregular nods.
+                val n = 2 + rng.nextInt(2)
+                var t = 0f
+                sequence(*List(n) { t += logRange(0.55f, 0.95f); t to (Beat.Gesture(MotionDirector.Gesture.Nod) as Beat) }.toTypedArray())
+                Beat.Accent(FaceAccent.Glee, logRange(1.6f, 2.6f))
+            }
+            "peekaboo" -> {
+                sequence(logRange(0.9f, 1.4f) to Beat.Accent(FaceAccent.Glee, 1.0f))
+                Beat.Gesture(MotionDirector.Gesture.TurnAway)
+            }
+            "sneeze" -> {
+                sequence(0.5f to Beat.Gesture(MotionDirector.Gesture.Recoil), 0.6f to Beat.DoubleBlink)
+                Beat.Accent(FaceAccent.WakeSquint, 0.6f)
+            }
+            "yawn" -> {
+                sequence(1.3f to Beat.Blink)
+                Beat.Face("Sleeping", logRange(0.9f, 1.4f))
+            }
+            "twirl" -> {
+                // Anticipation: a quick blink, then the spin.
+                sequence(0.15f to Beat.Gesture(MotionDirector.Gesture.Spin), 1.9f to Beat.Accent(FaceAccent.Glee, 1.0f))
+                Beat.Blink
+            }
             else -> null
         }
     }

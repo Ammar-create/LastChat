@@ -52,3 +52,28 @@ Rules kept throughout: no up-right stare, no hard cuts, no size jumps.
 Generical eyes fade toward 80 % of the body colour at the bottom
 (`MarkColors.EYE_SHADE_MIX`). The avatar editor has an "Eye shade" switch
 (`Avatar.Animated.eyeShade`, default on); toggling glides over 380 ms.
+
+## Layered behaviours (engine pass)
+
+Grounded in the usual character-animation and game-AI toolbox: Pixar/Disney
+principles (anticipation, follow-through, secondary motion), Cozmo/Vector-style
+emotion-driven behaviour selection, utility AI with cooldowns, and a PAD-like
+valence/arousal mood with OCC-style named emotions on top.
+
+- **Sequences**: multi-step behaviours scheduled on the engine clock; random beats
+  pause while one runs, and a step that can't play (another system owns the face)
+  is dropped rather than delayed into a cut.
+- **Anticipation**: big moves (spin) start with a blink; startles lead with the
+  face, then the body, then a double blink (follow-through).
+- **Reply tone**: `ToneAnalyzer` reads a finished reply (emoji, punctuation,
+  short EN/RO/DE/ZH word lists) and emits `ReplyTone`; the engine feeds the mood
+  and, scaled by expressiveness, reacts (happy face, giggle + nod, worried,
+  sad droop, curious tilt, confused face, smug).
+- **Startle**: user activity after a long daze (high boredom) gives a small jolt.
+- **Hobbies** (grow with boredom): daydream (gaze up-left, soft lids, slow blink),
+  survey the screen (3 irregular stops), humming (2–3 irregular small nods with a
+  smile), peekaboo (shy + playful).
+- **Easter eggs** (rare): sneeze, late-night yawn, a happy twirl.
+- **Fatigue**: late night / early morning slows the beat tempo and enables yawns.
+- **Editor**: "Advanced personality" section with nine trait sliders, stored as
+  `Avatar.Animated.traits` overrides on top of the style default; "Reset" clears.

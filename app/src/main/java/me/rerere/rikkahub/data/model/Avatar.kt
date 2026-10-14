@@ -36,6 +36,8 @@ sealed class Avatar {
         val eyeColorHex: String? = null,
         /** Generical eyes: soft shade toward the body colour at the bottom. */
         val eyeShade: Boolean = true,
+        /** Optional character trait overrides (trait name → 0…1); null = style default. */
+        val traits: Map<String, Float>? = null,
     ) : Avatar() {
         // Field defaults above stay as they were so data that omits a field (imports,
         // older exports) still decodes to the same avatar.
