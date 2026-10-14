@@ -38,8 +38,9 @@ class ServiceAccountTokenProvider(
     /**
      * Generate cache key based on service account email and scopes
      */
-    private fun generateCacheKey(serviceAccountEmail: String, scopes: List<String>): String {
-        return "$serviceAccountEmail:${scopes.sorted().joinToString(",")}"
+    private fun generateCacheKey(serviceAccountEmail: String, privateKeyPem: String, scopes: List<String>): String {
+        // Include the key so replacing a service-account key takes effect without waiting an hour.
+        return "$serviceAccountEmail:${privateKeyPem.trim().hashCode()}:${scopes.sorted().joinToString(",")}"
     }
 
     /**
@@ -62,7 +63,7 @@ class ServiceAccountTokenProvider(
         privateKeyPem: String,
         scopes: List<String> = listOf("https://www.googleapis.com/auth/cloud-platform")
     ): String = withContext(me.rerere.ai.util.providerIoDispatcher) {
-        val cacheKey = generateCacheKey(serviceAccountEmail, scopes)
+        val cacheKey = generateCacheKey(serviceAccountEmail, privateKeyPem, scopes)
 
         // Check cache first
         tokenCache.load()[cacheKey]?.let { cachedToken ->

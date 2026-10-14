@@ -422,7 +422,13 @@ private object ApiModelListCache {
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val provider = settings.providers.find { it.id == id } ?: return
+    val pendingEdit by vm.pendingProviderEdit.collectAsStateWithLifecycle()
+    val storedProvider = settings.providers.find { it.id == id } ?: return
+    // Show the unsaved edit while its debounced save is pending, so both tabs build on it.
+    val provider = pendingEdit?.takeIf { it.id == id } ?: storedProvider
+    androidx.compose.runtime.DisposableEffect(id) {
+        onDispose { vm.flushProviderEditNow() }
+    }
     val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -431,24 +437,16 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     var isSaving by remember { mutableStateOf(false) }
 
     val onEdit = { newProvider: ProviderSetting ->
-        val newSettings = settings.copy(
-            providers = settings.providers.map {
-                if (newProvider.id == it.id) {
-                    newProvider
-                } else {
-                    it
-                }
-            }
-        )
         isSaving = true
         savingResetJob?.cancel()
-        vm.updateSettings(newSettings)
+        vm.editProvider(newProvider)
         savingResetJob = scope.launch {
             delay(600)
             isSaving = false
         }
     }
     val onDelete = {
+        vm.flushProviderEditNow()
         val newSettings = settings.copy(
             providers = settings.providers - provider
         )
@@ -622,6 +620,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                                     providers = updatedProviders,
                                     providerTags = cleanedTags
                                 )
+                                vm.supersedeProviderEdit()
                                 vm.updateSettings(newSettings)
                             },
                             contentPadding = contentPadding,
@@ -651,7 +650,10 @@ private fun SettingProviderConfigPage(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     isSaving: Boolean
 ) {
-    var internalProvider by remember(provider) { mutableStateOf(provider) }
+    // Keyed by id, not value: a save landing mid-typing must not reset the fields (cursor jumps,
+    // dropped keystrokes). Outside edits still arrive through the effect below.
+    var internalProvider by remember(provider.id) { mutableStateOf(provider) }
+    LaunchedEffect(provider) { internalProvider = provider }
     val scope = rememberCoroutineScope()
 
     Box(modifier = Modifier.fillMaxSize()) {

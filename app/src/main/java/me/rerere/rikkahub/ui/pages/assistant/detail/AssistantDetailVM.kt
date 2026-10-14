@@ -246,7 +246,10 @@ class AssistantDetailVM(
             assistantUpdateGeneration[assistant.id] = next
             next
         }
-        viewModelScope.launch {
+        // App-lifetime scope: the prompt page flushes its draft when it closes, and that save
+        // was cancelled along with viewModelScope, so the old prompt stayed in use.
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
             assistantUpdateMutex.withLock {
                 val latest = synchronized(assistantUpdateGeneration) {
                     assistantUpdateGeneration[assistant.id]

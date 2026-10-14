@@ -12,6 +12,10 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -404,7 +408,7 @@ class SettingsStore(
     // Track if we've done the one-time migration
     private var hasMigratedSecrets = false
 
-    val settingsFlow = settingsFlowRaw
+    private val settingsPipeline = settingsFlowRaw
         .distinctUntilChanged()
         .map { settings ->
             // Perform one-time migration on first settings load
@@ -428,7 +432,73 @@ class SettingsStore(
             secretKeyManager.populateSecretsForExport(settings).normalizeFontSettings()
         }
         .onEach { settings -> quickCache.updateCache(settings) }
-        .toMutableStateFlow(scope, quickCache.createCachedSettings())
+
+    /**
+     * In-memory settings. [update] writes here first, then to DataStore. DataStore re-emits
+     * through a slow pipeline, so an emission of an *earlier* write can arrive after a newer
+     * in-memory value and revert it (the chat then used old providers/keys/params until the
+     * settings screen was opened again and re-saved). Emissions are ignored while a write is
+     * in flight and, for a short settle window afterwards, unless they match what we wrote.
+     */
+    val settingsFlow: MutableStateFlow<Settings> = MutableStateFlow(quickCache.createCachedSettings())
+
+    private val writeMutex = Mutex()
+    private val pendingWrites = AtomicInteger(0)
+    @Volatile
+    private var settleUntilNanos = 0L
+
+    init {
+        scope.launch {
+            runCatching {
+                settingsPipeline.collect { value ->
+                    lastPersisted = value
+                    if (shouldAcceptPersisted(
+                            pendingWrites = pendingWrites.get(),
+                            nowNanos = System.nanoTime(),
+                            settleUntilNanos = settleUntilNanos,
+                            matchesInMemory = value == settingsFlow.value,
+                        )
+                    ) {
+                        settingsFlow.value = value
+                    } else {
+                        scheduleSettleCheck()
+                    }
+                }
+            }.onFailure { Log.e(TAG, "Error while collecting settings", it) }
+        }
+    }
+
+    @Volatile
+    private var lastPersisted: Settings? = null
+    private var settleJob: kotlinx.coroutines.Job? = null
+    private val settleScope = scope
+
+    /**
+     * After the settle window, the newest DataStore value is the truth (it includes our writes and
+     * any external one, e.g. a backup restore), so adopt it if memory still differs.
+     */
+    private fun scheduleSettleCheck() {
+        settleJob?.cancel()
+        settleJob = settleScope.launch {
+            while (true) {
+                val wait = (settleUntilNanos - System.nanoTime()) / 1_000_000L
+                kotlinx.coroutines.delay(wait.coerceAtLeast(50L))
+                if (pendingWrites.get() == 0 && System.nanoTime() - settleUntilNanos >= 0) break
+            }
+            val persisted = lastPersisted ?: return@launch
+            if (persisted != settingsFlow.value) settingsFlow.value = persisted
+        }
+    }
+
+    private suspend inline fun <T> guardedWrite(crossinline block: suspend () -> T): T {
+        pendingWrites.incrementAndGet()
+        try {
+            return block()
+        } finally {
+            settleUntilNanos = System.nanoTime() + SETTLE_WINDOW_NANOS
+            pendingWrites.decrementAndGet()
+        }
+    }
 
     /**
      * Persist settings after migration (to clear plaintext secrets from DataStore).
@@ -474,7 +544,9 @@ class SettingsStore(
     }
 
 
-    suspend fun update(settings: Settings) {
+    suspend fun update(settings: Settings) = writeMutex.withLock { guardedWrite { updateLocked(settings) } }
+
+    private suspend fun updateLocked(settings: Settings) {
         if(settings.init) {
             Log.w(TAG, "Cannot update dummy settings")
             return
@@ -596,11 +668,14 @@ class SettingsStore(
         }
     }
 
-    suspend fun update(fn: (Settings) -> Settings) {
-        update(fn(settingsFlow.value))
+    /** Applies [fn] to the latest settings under the write lock, so concurrent edits don't drop each other. */
+    suspend fun update(fn: (Settings) -> Settings) = writeMutex.withLock {
+        guardedWrite { updateLocked(fn(settingsFlow.value)) }
     }
 
-    suspend fun updateAssistant(assistantId: Uuid) {
+    suspend fun updateAssistant(assistantId: Uuid) = writeMutex.withLock { guardedWrite { updateAssistantLocked(assistantId) } }
+
+    private suspend fun updateAssistantLocked(assistantId: Uuid) {
         // Update in-memory state immediately to avoid race conditions
         val current = settingsFlow.value
         if (!current.init && current.assistants.any { it.id == assistantId }) {
@@ -640,7 +715,7 @@ class SettingsStore(
         }
         
         if (updatedList != current.recentlyUsedAssistants) {
-            update(current.copy(recentlyUsedAssistants = updatedList))
+            update { it.copy(recentlyUsedAssistants = updatedList) }
         }
     }
 }

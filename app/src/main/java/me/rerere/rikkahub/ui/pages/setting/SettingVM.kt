@@ -71,11 +71,59 @@ class SettingVM(
         }
     }
 
+    private val _pendingProviderEdit = kotlinx.coroutines.flow.MutableStateFlow<me.rerere.ai.provider.ProviderSetting?>(null)
+
+    /** The provider being edited on the detail page, ahead of its debounced save. */
+    val pendingProviderEdit: StateFlow<me.rerere.ai.provider.ProviderSetting?> = _pendingProviderEdit
+    private var providerSaveJob: Job? = null
+
+    /**
+     * Typing in provider fields (API key, base URL, headers…) updates local state at once and is
+     * saved after a short pause, applied to the latest settings so other changes aren't lost.
+     */
+    fun editProvider(provider: me.rerere.ai.provider.ProviderSetting) {
+        _pendingProviderEdit.value = provider
+        providerSaveJob?.cancel()
+        providerSaveJob = viewModelScope.launch(Dispatchers.Default) {
+            delay(PROVIDER_SAVE_DEBOUNCE_MS)
+            flushProviderEdit()
+        }
+    }
+
+    suspend fun flushProviderEdit() {
+        val pending = _pendingProviderEdit.value ?: return
+        settingsStore.update { latest ->
+            latest.copy(providers = latest.providers.map { if (it.id == pending.id) pending else it })
+        }
+        _pendingProviderEdit.compareAndSet(pending, null)
+    }
+
+    /** Saves a pending provider edit now, e.g. when leaving the screen. Survives the ViewModel. */
+    fun flushProviderEditNow() {
+        if (_pendingProviderEdit.value == null) return
+        providerSaveJob?.cancel()
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) { flushProviderEdit() }
+    }
+
+    /** Drops the pending edit because the caller is saving a newer copy of the same provider. */
+    fun supersedeProviderEdit() {
+        providerSaveJob?.cancel()
+        _pendingProviderEdit.value = null
+    }
+
+    override fun onCleared() {
+        flushProviderEditNow()
+        super.onCleared()
+    }
+
     fun updateSettings(
         newSettings: Settings,
         afterPersist: (() -> Unit)? = null,
     ) {
-        viewModelScope.launch {
+        // Not viewModelScope: a save fired while leaving the screen must still land.
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main.immediate) {
             val oldSettings = settings.value
             settingsStore.update(newSettings)
             afterPersist?.invoke()
@@ -213,3 +261,5 @@ class SettingVM(
         }
     }
 }
+
+private const val PROVIDER_SAVE_DEBOUNCE_MS = 400L
