@@ -286,11 +286,11 @@ internal class ExpressionDirector(private val rng: Random) {
         const val MIN_DWELL = 0.3f
 
         fun normalize(raw: String): String =
-            if (raw.equals("skeptical", true)) "skeptical" else EyeStyle.resolveGenericalExpressionId(raw)
+            EyeStyle.resolveGenericalExpressionId(raw)
 
         private fun group(e: String): Int = when (e) {
             "Happy", "Sleeping", "Eyes closed", "Bored", "hurt or cute" -> 1
-            "confused", "skeptical", "Group 3" -> 2
+            "confused", "Group 3" -> 2
             else -> 0
         }
     }
@@ -883,7 +883,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
         if (s.skepticAt > 0f && !s.skepticDone && s.t >= s.skepticAt) {
             s.skepticDone = true
-            setReaction("skeptical", 1.1f + rng.nextFloat() * 0.5f)
+            setReaction("confused", 1.1f + rng.nextFloat() * 0.5f)
             if (rng.nextFloat() < 0.7f) director.gesture(MotionDirector.Gesture.Tilt)
         }
         if (s.looking) contactSec += dt

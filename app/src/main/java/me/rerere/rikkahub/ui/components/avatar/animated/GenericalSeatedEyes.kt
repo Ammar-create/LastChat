@@ -44,31 +44,24 @@ object GenericalFace {
     private val shifts = HashMap<String, Int>()
 
     /**
-     * "confused" and "skeptical" (🤨) are built from the Neutral eyes so they keep the
+     * "confused" is built from the Neutral and Sad eyes so it keeps the
      * same size and style as every other face (the old reference confused face was
-     * much smaller): only the lids tilt / narrow asymmetrically.
+     * much smaller).
      */
     fun face(exprId: String): Face? {
         faces[exprId]?.let { return it }
         if (!AvatarPackData.isLoaded()) return null
-        if (exprId == "confused" || exprId == "skeptical") {
-            // Built only from the hand-made eyes, so corners and outline match.
+        if (exprId == "confused") {
+            // Built only from the hand-made eyes, so corners and outline match:
+            // the Neutral eye and the Sad eye mirrored left-right, both resting on
+            // the same bottom line as the Neutral pair.
             val n = face("Neutral") ?: return null
-            val built = if (exprId == "confused") {
-                // Left: the Neutral eye, raised a touch. Right: the hand-made Sad eye
-                // mirrored left-right (slope now dips toward the nose), seated where
-                // the Neutral eye's bottom was.
-                val sad = face("Sad") ?: return null
-                val r = flipH(sad.right)
-                Face(translate(n.left, 0f, -8f), place(r, bboxCx(n.right), n.right.y.max() - 6f))
-            } else {
-                // 🤨: Neutral eye raised; the other is the hand-made Bored (squint) eye.
-                val b = face("Bored") ?: return null
-                Face(translate(n.left, 0f, -10f), place(b.right, bboxCx(n.right), n.right.y.max()))
-            }
+            val sad = face("Sad") ?: return null
+            val bottom = n.right.y.max()
+            val built = Face(n.left, place(flipH(sad.right), bboxCx(n.right), bottom))
             return built.also { faces[exprId] = it }
         }
-        val key = if (exprId == "skeptical") "confused" else exprId
+        val key = exprId
         val expr = AvatarPackData.generical.expressions[key]
             ?: AvatarPackData.generical.expressions["Neutral"]
             ?: return null

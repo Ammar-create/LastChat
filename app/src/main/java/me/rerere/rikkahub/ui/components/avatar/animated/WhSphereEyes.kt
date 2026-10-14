@@ -164,10 +164,11 @@ object WhSphereEyes {
                 val e = en(UR, 0.5f, 90f, 0.01f)
                 listOf(e, e)
             }
-            // Confused: same eyes as every other face, one lid tilted, the other raised.
+            // Confused: same eyes as every other face, one lid tilted, both on one level.
             "confused" -> listOf(
-                en(UR, 0.6f, 0f, 0f).copy(offY = 0.03f),
-                en(UR, 0.44f, -16f, 0f),
+                en(UR, 0.6f, 0f, 0f),
+                // Shorter eye dropped so both bottoms sit on one line.
+                en(UR, 0.44f, -16f, 0f).copy(offY = -0.08f),
             )
             // >< squeeze (dizzy).
             "dizzy" -> {
@@ -175,11 +176,6 @@ object WhSphereEyes {
                     floatArrayOf(0.01f, 0.16f), floatArrayOf(-0.17f, 0f), floatArrayOf(0.01f, -0.16f))
                 listOf(e, e)
             }
-            // 🤨 — one eye open, the other narrowed and a touch lower.
-            "skeptical" -> listOf(
-                en(UR, 0.6f, 0f, 0f),
-                en(UR, 0.34f, 0f, 0.01f).copy(offY = -0.05f),
-            )
             // Playful wink: one soft closed arc, one open eye.
             "wink" -> listOf(
                 pr(0.01f, 0f, 0f, UR / 2f,
@@ -225,7 +221,6 @@ object WhSphereEyes {
         "Sleeping", "Eyes closed" -> "sleepy"
         "Bored", "pouty", "angered or concentrated" -> "squinted"
         "confused" -> "confused"
-        "skeptical" -> "skeptical"
         "hurt or cute" -> "wink"
         else -> "neutral"
     }

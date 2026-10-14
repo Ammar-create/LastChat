@@ -174,7 +174,7 @@ class AvatarRenderHarnessTest {
     fun renderExpressionSheets() {
         assumeTrue(outDir != null)
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
-        val names = listOf("Neutral", "Happy", "Surprised", "Sad", "Worried", "Sleeping", "Bored", "angered or concentrated", "pouty", "hurt or cute", "confused", "skeptical")
+        val names = listOf("Neutral", "Happy", "Surprised", "Sad", "Worried", "Sleeping", "Bored", "angered or concentrated", "pouty", "hurt or cute", "confused")
         for (mode in listOf("grok", "generical")) for (shape in MarkShapes.SHAPES) {
             stripCapture("exprsheet_${mode}_$shape", shape, mode,
                 names.map { MotionFrame(exprFrom = it, exprTo = it, exprT = 1f) }, cellDp = 90)
@@ -190,7 +190,7 @@ class AvatarRenderHarnessTest {
             "Neutral" to "Happy",
             "Neutral" to "Surprised",
             "Happy" to "Sad",
-            "Neutral" to "skeptical",
+            "Neutral" to "confused",
             "Neutral" to "angered or concentrated",
             "Surprised" to "Sleeping",
         )
@@ -223,7 +223,7 @@ class AvatarRenderHarnessTest {
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val exprs = listOf(
             "Neutral", "Happy", "Surprised", "Sad", "Eyes closed", "Bored",
-            "confused", "skeptical", "hurt or cute", "pouty", "angered or concentrated",
+            "confused", "hurt or cute", "pouty", "angered or concentrated",
         )
         for (mode in listOf("grok", "generical")) {
             for (shape in MarkShapes.SHAPES) {
@@ -319,7 +319,7 @@ class AvatarRenderHarnessTest {
                 }
                 if (started >= 0f) {
                     if (frames.isEmpty() || (t - started) >= frames.size * 0.4f) frames += a.frame to b.frame
-                    if (a.frame.exprTo == "skeptical" || b.frame.exprTo == "skeptical") skepticSeen = true
+                    if (a.frame.exprTo == "confused" || b.frame.exprTo == "confused") skepticSeen = true
                     if (t - started > 3.4f) {
                         if (skepticSeen) break
                         started = -1f
