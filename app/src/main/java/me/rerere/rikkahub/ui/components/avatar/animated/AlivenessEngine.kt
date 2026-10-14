@@ -313,8 +313,8 @@ internal class AlivenessEngine(private val rng: Random) {
             "nod" -> { nodsThisReply++; Beat.Gesture(MotionDirector.Gesture.Nod) }
             "blink" -> Beat.Blink
             "dblink" -> Beat.DoubleBlink
-            // Up and to the LEFT only (never the up-right brand stare).
-            "glanceUpLeft" -> Beat.Glance(-(0.3f + 0.35f * rng.nextFloat()), -(0.1f + 0.2f * rng.nextFloat()), logRange(0.5f, 1.2f), "think")
+            // A thinking glance up to either side (any direction is fine; holds stay short).
+            "glanceUpLeft" -> Beat.Glance((if (rng.nextBoolean()) 1f else -1f) * (0.3f + 0.35f * rng.nextFloat()), -(0.1f + 0.2f * rng.nextFloat()), logRange(0.5f, 1.2f), "think")
             "glanceDown" -> Beat.Glance(-0.2f + 0.5f * rng.nextFloat(), 0.35f + 0.25f * rng.nextFloat(), logRange(0.5f, 1.3f), "read")
             "focus" -> Beat.Accent(FaceAccent.Focused, logRange(1.0f, 2.4f))
             "puzzled" -> Beat.Accent(FaceAccent.Puzzled, logRange(1.0f, 1.8f))
@@ -358,8 +358,7 @@ internal class AlivenessEngine(private val rng: Random) {
             "smile" -> Beat.Accent(FaceAccent.Glee, logRange(0.8f, 1.3f))
             "glance" -> {
                 val side = if (rng.nextBoolean()) 1f else -1f
-                // Right-side glances stay level or low (no up-right stare).
-                val y = if (side > 0f) 0.05f + 0.3f * rng.nextFloat() else -0.2f + 0.45f * rng.nextFloat()
+                val y = -0.3f + 0.6f * rng.nextFloat()
                 Beat.Glance(side * (0.2f + 0.4f * rng.nextFloat()), y, logRange(0.4f, 1.1f), "idle")
             }
             "drowsy" -> Beat.Accent(FaceAccent.Drowsy, logRange(1.2f, 2.2f))
@@ -369,21 +368,21 @@ internal class AlivenessEngine(private val rng: Random) {
             "hop" -> Beat.Gesture(MotionDirector.Gesture.Hop)
             "worried" -> Beat.Accent(FaceAccent.Worried, logRange(1f, 1.8f))
             "daydream" -> {
-                // Gaze drifts up-left, lids soften, slow blink, back.
+                // Gaze drifts up to one side, lids soften, slow blink, back.
                 val hold = logRange(1.3f, 2.4f)
                 sequence(
                     0.6f to Beat.Accent(FaceAccent.Drowsy, hold * 0.8f),
                     hold * 0.7f to Beat.Blink,
                 )
-                Beat.Glance(-(0.35f + 0.25f * rng.nextFloat()), -(0.2f + 0.15f * rng.nextFloat()), hold, "think")
+                Beat.Glance((if (rng.nextBoolean()) 1f else -1f) * (0.35f + 0.25f * rng.nextFloat()), -(0.2f + 0.15f * rng.nextFloat()), hold.coerceAtMost(1.5f), "think")
             }
             "survey" -> {
-                // Look around the screen: 3 irregular stops, never up-right.
+                // Look around the screen: 3 irregular stops, anywhere.
                 var t = 0f
                 val steps = List(3) {
                     t += logRange(0.7f, 1.5f)
                     val x = -0.6f + 1.2f * rng.nextFloat()
-                    val y = if (x > 0f) 0.05f + 0.4f * rng.nextFloat() else -0.25f + 0.6f * rng.nextFloat()
+                    val y = -0.35f + 0.7f * rng.nextFloat()
                     t to (Beat.Glance(x, y, logRange(0.35f, 0.8f), "idle") as Beat)
                 }
                 sequence(*steps.toTypedArray())

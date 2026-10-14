@@ -134,6 +134,12 @@ class AvatarMotionVideoTest {
             AvatarDebugMetrics.label = sc.name
             if (only != null && sc.name !in only) continue
             val frames = simulate(sc, 7)
+            if (sc.name == "startle") {
+                // The startle must visibly play: a quick stretch pop right after typing starts.
+                val win = frames.subList((1.5f * fps).toInt(), (2.3f * fps).toInt())
+                val pop = win.maxOf { it.body.squashY }
+                org.junit.Assert.assertTrue("startle pop missing (max squashY $pop)", pop > 1.09f)
+            }
             File(out, "${sc.name}.csv").writeText("t,pitch,yaw,roll,posY,sqX,sqY,lookX,lookY,lid,exprFrom,exprTo,exprT\n" +
                 frames.withIndex().joinToString("\n") { (i, f) ->
                     "%.3f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%s,%s,%.3f".format(
@@ -148,7 +154,7 @@ class AvatarMotionVideoTest {
             }
         }
         AvatarDebugMetrics.enabled = false
-        File(out, "metrics.csv").writeText("label,gap_over_he,inset_over_he\n" +
-            AvatarDebugMetrics.rows.joinToString("\n") { (l, g, i) -> "$l,$g,$i" })
+        File(out, "metrics.csv").writeText("scenario,mode,shape,exprFrom,exprTo,exprT,gap_over_he,inset_over_he,eye_cx,eye_cy\n" +
+            AvatarDebugMetrics.rows.joinToString("\n"))
     }
 }

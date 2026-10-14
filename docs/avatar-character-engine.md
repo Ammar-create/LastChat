@@ -154,3 +154,22 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
 - Bent (^) arc eyes scale uniformly under face accents, so the two Happy arcs stay clean
   mirror images.
 - `AvatarMotionVideoTest` writes `metrics.csv`: the Grok gap and the edge inset per drawn frame.
+
+## engine7 update (engine6 review fixes)
+- Busy Happy: when the eye spine changes direction (vertical pill → horizontal arc bar), the bar
+  shrinks to a stub and grows out along the new direction (`barBlend`). It no longer swings
+  through an angry \ / diagonal.
+- Grok `MIN_GAP` = 40 % of mark radius. The metrics show ≥ 0.40 on every frame, Sad and Worried included.
+- Surface: edge margin is 0.20 (Grok) and 0.17 (Generical). The fit keeps ≥ 75 % of the turn,
+  then shrinks the pair about its centre (≥ 0.78; gaze motion survives), then nudges inward.
+- No frozen stares: the range of the composed look over a rolling 1.5 s window has to reach
+  10°, or a priority glance fires (also on the micro channel) within 0.55–0.9 s.
+- Hold cap: gaze is unrestricted, but more than 1.5 s off-centre, or more than 0.85 s
+  up-right, triggers an eased return near centre (body turn included).
+- All up-right biases are gone: idle glances, the survey, daydream, thinking look-aside and
+  ponder now go to either side and up or down. The brand-pose clips (Idle_D, Streaming_B,
+  Working_E) stay unscheduled because they REST up-right.
+- Startle: the pop is added after the smoothing filter (`startlePose`, ~70 ms rise, stretch,
+  squash landing, spring settle), so it is not rounded off. `AvatarMotionVideoTest` asserts it plays.
+- `metrics.csv` carries the expression, gap, inset and rendered eye centroid per frame
+  (`engine7_report.py` turns it into the gap, inset, freeze and up-right-hold report).

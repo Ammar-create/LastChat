@@ -283,7 +283,10 @@ class MotionDirector(
                 // Startle: a snappy pop up and back (stretch), a squashy landing, then a
                 // springy settle with overshoot (no anticipation: it's a surprise).
                 val d = range(0.8f, 0.95f)
-                Layer(ProceduralSource("recoil", d) { u -> startlePose(u) }, 0f, d, 1f, 0.05f, "recoil", gesture = true)
+                // The pop itself is added AFTER the smoothing filter (see update), so its
+                // ~70 ms rise is not rounded off; this layer just holds a calm base.
+                startleU = 0f; startleDur = d
+                Layer(ProceduralSource("recoil", d) { _ -> BodyPose() }, 0f, d, 1f, 0.05f, "recoil", gesture = true)
             }
             Gesture.TurnAway -> {
                 val side = if (rng.nextBoolean()) 1f else -1f
@@ -375,7 +378,18 @@ class MotionDirector(
         clipExpression = dom.source.expression(dom.t)
         rawPose = pose
 
-        return filter(pose, dt)
+        val out = filter(pose, dt)
+        if (startleU < 1f) {
+            startleU = (startleU + dt / startleDur).coerceAtMost(1f)
+            val sp = startlePose(startleU)
+            return out.copy(
+                pitch = out.pitch + sp.pitch,
+                posY = out.posY + sp.posY,
+                squashX = out.squashX * sp.squashX,
+                squashY = out.squashY * sp.squashY,
+            )
+        }
+        return out
     }
 
     // ------------------------------------------------------------------ beats
@@ -591,9 +605,10 @@ class MotionDirector(
                 }
             }
             "ponder" -> {
-                // Thoughtful: head a little up and to the left (never up-right), eyes away.
-                val p = BodyPose(pitch = -range(1f, 4f), yaw = -range(6f, 16f), roll = range(3f, 8f))
-                gazeCue = GazeCue(-range(0.35f, 0.65f), -range(0.05f, 0.25f), range(0.7f, 1.4f), "ponder")
+                // Thoughtful: head a little up and to one side, eyes away (either side).
+                val ps = if (rng.nextBoolean()) 1f else -1f
+                val p = BodyPose(pitch = -range(1f, 4f), yaw = ps * range(6f, 16f), roll = -ps * range(3f, 8f))
+                gazeCue = GazeCue(ps * range(0.35f, 0.65f), -range(0.05f, 0.25f), range(0.7f, 1.4f), "ponder")
                 hold("ponder", p, logRange(0.8f, 1.8f), range(0.8f, 1.3f), kind = "ponder")
             }
             "tilt" -> hold("tiltB", BodyPose(pitch = range(0f, 3f), yaw = side * range(2f, 8f), roll = side * range(5f, 10f)),
@@ -729,10 +744,12 @@ class MotionDirector(
 
     // ----------------------------------------------------------------- filter
 
+    /** Startle pop progress (0…1; 1 = idle), applied on top of the filtered pose. */
+    private var startleU = 1f
+    private var startleDur = 0.85f
+    val startling: Boolean get() = startleU < 1f
+
     private fun filter(p: BodyPose, dt: Float): BodyPose {
-        // No up-right look (brand): while turned right, an upward pitch fades out
-        // continuously with the turn (spins pass through freely).
-        val yawW = MarkClipEngine.wrap180(p.yaw)
         // Any direction is allowed (no up-right suppression).
         val raw = floatArrayOf(p.pitch, p.yaw, p.roll)
         if (!filterReady) {

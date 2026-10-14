@@ -277,6 +277,33 @@ object WhSphereEyes {
         return p.maxOf { kotlin.math.abs((it[0] - a[0]) * dy - (it[1] - a[1]) * dx) / len } > 0.02f
     }
 
+    /**
+     * Straight bar → straight bar. When the bars point in very different directions
+     * (vertical pill → horizontal arc bar) a point blend swings through a diagonal and
+     * reads as an angry \ / face; instead the bar shrinks to a short stub at its centre,
+     * then grows out along the new direction.
+     */
+    private fun barBlend(s0: EyeState, s1: EyeState, u: Float): EyeState {
+        fun dir(e: EyeState): Float { val a = e.pts.first(); val b = e.pts.last(); return kotlin.math.atan2(b[1] - a[1], b[0] - a[0]) }
+        var d = kotlin.math.abs(dir(s0) - dir(s1)) % PI.toFloat()
+        if (d > PI.toFloat() / 2f) d = PI.toFloat() - d
+        if (d < 0.6f) return blendPairs(listOf(s0), listOf(s1), u)[0]
+        fun ctr(e: EyeState) = floatArrayOf(e.pts.sumOf { it[0].toDouble() }.toFloat() / e.pts.size,
+            e.pts.sumOf { it[1].toDouble() }.toFloat() / e.pts.size)
+        val c0 = ctr(s0); val c1 = ctr(s1)
+        val mx = (c0[0] + c1[0]) / 2f; val my = (c0[1] + c1[1]) / 2f
+        // A short stub centred midway between both bars' centres (continuous at u = 0.5).
+        fun stub(e: EyeState, k: Float): EyeState {
+            val c = ctr(e)
+            return e.copy(pts = e.pts.map { floatArrayOf(mx + (it[0] - c[0]) * k, my + (it[1] - c[1]) * k) })
+        }
+        val m = blendPairs(listOf(s0), listOf(s1), u)[0]
+        val e = if (u < 0.5f) blendPairs(listOf(s0), listOf(stub(s0, 0.08f)), u / 0.5f)[0]
+            else blendPairs(listOf(stub(s1, 0.08f)), listOf(s1), (u - 0.5f) / 0.5f)[0]
+        // Spine shape from the stub path; position, width and tilt glide continuously.
+        return e.copy(offX = m.offX, offY = m.offY, wid = m.wid, tilt = m.tilt)
+    }
+
     /** Same eye with its spine pulled straight between its end points. */
     private fun straight(e: EyeState): EyeState {
         val p = e.pts; val a = p.first(); val b = p.last(); val n = p.size
@@ -300,7 +327,7 @@ object WhSphereEyes {
         val w = 1f / phases
         var x = u
         if (c0) { if (x < w) return blendPairs(listOf(e0), listOf(s0), x / w)[0]; x -= w }
-        if (x < w || !c1) return blendPairs(listOf(s0), listOf(s1), (x / w).coerceAtMost(1f))[0]
+        if (x < w || !c1) return barBlend(s0, s1, (x / w).coerceAtMost(1f))
         x -= w
         return blendPairs(listOf(s1), listOf(e1), (x / w).coerceAtMost(1f))[0]
     }

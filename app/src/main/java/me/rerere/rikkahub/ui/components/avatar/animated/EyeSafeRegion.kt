@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.asAndroidPath
  */
 internal object EyeSafeRegion {
     private const val SCALE = 4f
+    private const val KMIN = 0.75f
 
     class Body(path: Path) {
         private val region = Region()
@@ -50,8 +51,10 @@ internal object EyeSafeRegion {
     fun <T> fit(body: Body, margin: Float, seat: (Float) -> T, paths: (T) -> List<Path>): T {
         val full = seat(1f)
         if (inside(body, paths(full), margin)) return full
-        var lo = 0f; var hi = 1f
-        var best = seat(0f)
+        // Keep at least KMIN of the turn so gaze motion never dies on tight shapes; any
+        // remaining overlap is fixed by nudge / shrink.
+        var lo = KMIN; var hi = 1f
+        var best = seat(KMIN)
         if (!inside(body, paths(best), margin)) return best
         repeat(5) {
             val mid = (lo + hi) / 2f
@@ -79,6 +82,31 @@ internal object EyeSafeRegion {
         return dir * hi
     }
 
+    /**
+     * Last resort after [nudge]: the uniform scale (≥ 0.78) about the pair's centre that
+     * keeps the eyes inside with the margin. 1 = no change.
+     */
+    fun shrink(body: Body, eyes: List<Path>, margin: Float): Pair<Float, androidx.compose.ui.geometry.Offset> {
+        val c = AvatarDebugMetrics.centroid(eyes)
+        if (inside(body, eyes, margin)) return 1f to c
+        fun scaled(k: Float) = eyes.map { p ->
+            Path().apply {
+                addPath(p)
+                val m = android.graphics.Matrix().apply { setScale(k, k, c.x, c.y) }
+                asAndroidPath().transform(m)
+            }
+        }
+        if (!inside(body, scaled(0.78f), margin)) return 0.78f to c
+        var lo = 0.78f; var hi = 1f
+        repeat(6) { val mid = (lo + hi) / 2f; if (inside(body, scaled(mid), margin)) lo = mid else hi = mid }
+        return lo to c
+    }
+
+    fun scalePath(p: Path, k: Float, c: androidx.compose.ui.geometry.Offset): Path = Path().apply {
+        addPath(p)
+        asAndroidPath().transform(android.graphics.Matrix().apply { setScale(k, k, c.x, c.y) })
+    }
+
     /** Smallest clear distance from the eye outlines to the body edge (debug metric). */
     fun inset(body: Body, eyes: List<Path>, maxM: Float): Float {
         if (!inside(body, eyes, 0f)) return -1f
@@ -92,7 +120,12 @@ internal object EyeSafeRegion {
 /** Debug-only per-frame metrics recorded by drawMark when enabled (render harness). */
 internal object AvatarDebugMetrics {
     @Volatile var enabled = false
-    /** (label, grok gap / he, edge inset / he) per drawn eye pair. */
-    val rows = java.util.Collections.synchronizedList(ArrayList<Triple<String, Float, Float>>())
+    /** CSV rows: label,mode,shape,exprFrom,exprTo,exprT,gap/he,inset/he,eyeCx/he,eyeCy/he. */
+    val rows = java.util.Collections.synchronizedList(ArrayList<String>())
+    fun centroid(paths: List<androidx.compose.ui.graphics.Path>): androidx.compose.ui.geometry.Offset {
+        var x = 0f; var y = 0f; var n = 0
+        for (p in paths) { if (p.isEmpty) continue; val b = p.getBounds(); x += b.center.x; y += b.center.y; n++ }
+        return if (n == 0) androidx.compose.ui.geometry.Offset.Zero else androidx.compose.ui.geometry.Offset(x / n, y / n)
+    }
     @Volatile var label = ""
 }

@@ -15,7 +15,7 @@ import kotlin.math.max
  */
 object GrokEyeGap {
     /** Minimum clear gap between the eyes, as a fraction of the mark radius. */
-    const val MIN_GAP = 0.24f
+    const val MIN_GAP = 0.40f
     private const val SAMPLES = 72
 
     fun outline(p: Path): Array<FloatArray> {

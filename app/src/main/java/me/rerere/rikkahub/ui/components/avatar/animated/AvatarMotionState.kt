@@ -59,7 +59,7 @@ data class MotionFrame(
 
 /**
  * Gaze: eyes saccade to a fixation (fast spring), the head follows more slowly.
- * Never parks up-right (Grok brand look).
+ * Looks anywhere; no off-centre direction is held for long (hold cap).
  */
 internal class GazeDirector(private val rng: Random) {
     private companion object { const val HEAD_ZETA = 0.6f }
@@ -190,9 +190,9 @@ internal class GazeDirector(private val rng: Random) {
                 setTarget(rr(-0.1f, 0.1f), rr(0f, 0.1f)); holdLeft = rr(0.8f, 1.8f)
             }
             MarkLifecycle.Thinking -> if (r < 0.45f) {
-                // Thinking look-aside: sideways / slightly up on the left, level on the right.
+                // Thinking look-aside: sideways, a little up or down, either side.
                 val x = if (rng.nextBoolean()) rr(0.3f, 0.6f) else -rr(0.3f, 0.6f)
-                val y = if (x < 0f) rr(-0.28f, 0.05f) else rr(0f, 0.12f)
+                val y = rr(-0.28f, 0.12f)
                 setTarget(x, y); holdLeft = rr(0.6f, 1.4f)
             } else {
                 setTarget(rr(-0.1f, 0.1f), rr(0f, 0.15f)); holdLeft = rr(0.8f, 2f)
@@ -649,8 +649,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // Blend toward the static rest pose (weight eased so it starts and lands softly).
         val w = MotionDirector.easeInOutCubic(settle)
         val keep = 1f - w
-        // Final up-right guard on the composed look (body + head gaze + eye lead): the
-        // "up-right stare" must never appear, whichever layer asked for it.
         // Micro life that never stops while awake: breathing (squash + bob) and
         // micro-saccades (tiny quick eye hops every ~0.5–1.6 s), so no hold ever reads frozen.
         val awakeLife = if (drowsy || director.lifecycle == MarkLifecycle.Sleeping) 0.35f else 1f
@@ -659,19 +657,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         microIn -= dt
         quietSecLook += dt
         if (blink.closed > 0.5f) quietSecLook = 0f
-        if (quietSecLook > quietLimit && settle < 0.5f) {
-            // Nothing visible happened for a while: a quick small glance (visible at 36dp:
-            // ≥ ~4° of eye travel), mostly sideways or down, never up-right.
-            val side = if (rng.nextBoolean()) 1f else -1f
-            microTx = side * (0.32f + rng.nextFloat() * 0.16f)
-            microTy = (rng.nextFloat() * 2f - 1f) * 0.22f
-            microIn = 0.4f + rng.nextFloat() * 0.6f
-            quietSecLook = 0f
-            quietLimit = 0.9f + rng.nextFloat() * 0.7f
-        } else if (microIn <= 0f) {
-            microIn = 0.45f + rng.nextFloat() * 1.0f
-            microTx = (rng.nextFloat() * 2f - 1f) * 0.13f
-            microTy = (rng.nextFloat() * 2f - 1f) * 0.06f
+        if (microIn <= 0f) {
+            microIn = 0.35f + rng.nextFloat() * 0.7f
+            microTx = (rng.nextFloat() * 2f - 1f) * 0.18f
+            microTy = (rng.nextFloat() * 2f - 1f) * 0.1f
         }
         // Slow organic drift (two incommensurate sines) so a hold never reads as a stare.
         driftPh += dt
@@ -682,29 +671,79 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         microY += (microTy - microY) * mk
         val bodyBase = body.lerpTo(BodyPose.REST, w)
         val bodyOut = bodyBase.copy(
-            posY = bodyBase.posY - 0.006f * br,
-            squashX = bodyBase.squashX * (1f - 0.006f * br),
-            squashY = bodyBase.squashY * (1f + 0.009f * br),
+            posY = bodyBase.posY - 0.01f * br,
+            squashX = bodyBase.squashX * (1f - 0.01f * br),
+            squashY = bodyBase.squashY * (1f + 0.014f * br),
         )
         var hx = gaze.headX * keep + (microX + driftX) * keep * awakeLife
         var hy = gaze.headY * keep + (microY + driftY) * keep * awakeLife
-        val lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
+        var lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
         val yawTot = bodyOut.yaw + 22f * hx + 60f * lx
         val pitchTot = bodyOut.pitch + 16f * hy + 60f * ly
-        // Visible-motion tracker on the EYES (head gaze + eye lead, not the body): ≥ 6°
-        // since the last reference resets it; otherwise a glance fires within ~1–1.6 s.
-        val eyeYaw = 22f * hx + 60f * lx
-        val eyePitch = 16f * hy + 60f * ly
-        if (kotlin.math.abs(eyeYaw - lookRefYaw) + kotlin.math.abs(eyePitch - lookRefPitch) > 6f) {
-            lookRefYaw = eyeYaw; lookRefPitch = eyePitch; quietSecLook = 0f
+        // Rolling travel over the last ~1.5 s of the COMPOSED look. A slow drift of a few
+        // degrees never resets the quiet timer (it still looks frozen); only a clear move
+        // (≥ 8° in 1.5 s) or a blink counts as life. Otherwise a glance fires.
+        // Range (max − min) of the composed look over the last 1.5 s: back-and-forth jitter
+        // doesn't count, only real displacement does.
+        travelQ.addLast(dt to (yawTot * 1000f + 0f))
+        travelPitch.addLast(pitchTot)
+        travelAge += dt
+        while (travelAge > 1.5f && travelQ.size > 1) {
+            travelAge -= travelQ.removeFirst().first; travelPitch.removeFirst()
         }
-        // Gaze is unrestricted in every direction (no region is blocked or biased);
-        // only long frozen holds are prevented (visible-life glance above) and the
-        // renderer keeps the eyes on the surface (EyeSafeRegion fit + nudge).
-        val pitchOut = bodyOut.pitch
+        var yMin = Float.MAX_VALUE; var yMax = -Float.MAX_VALUE
+        for ((_, v) in travelQ) { val y = v / 1000f; if (y < yMin) yMin = y; if (y > yMax) yMax = y }
+        var pMin = Float.MAX_VALUE; var pMax = -Float.MAX_VALUE
+        for (v in travelPitch) { if (v < pMin) pMin = v; if (v > pMax) pMax = v }
+        travelWin = maxOf(yMax - yMin, pMax - pMin)
+        prevYawTot = yawTot; prevPitchTot = pitchTot
+        if (travelWin >= 10f || blink.closed > 0.5f) {
+            quietSecLook = 0f; lookRefYaw = yawTot; lookRefPitch = pitchTot
+        }
+        if (quietSecLook > quietLimit && settle < 0.5f && blink.closed < 0.1f && recenterLeft <= 0f) {
+            val side = if (rng.nextBoolean()) 1f else -1f
+            val gx = side * (0.4f + rng.nextFloat() * 0.35f)
+            val gy = (rng.nextFloat() * 2f - 1f) * 0.3f
+            gaze.focus(gx, gy, 0.5f + rng.nextFloat() * 0.35f, priority = 4)
+            microTx = gx * 0.85f; microTy = gy * 0.85f; microIn = 0.5f
+            // Apply the glance THIS frame so the rolling window sees it immediately.
+            hx += microTx; hy += microTy
+            // Recompute composed look with the glance applied this frame.
+            val y2 = bodyOut.yaw + 22f * hx + 60f * lx
+            val p2 = bodyOut.pitch + 16f * hy + 60f * ly
+            prevYawTot = y2; prevPitchTot = p2
+            if (rng.nextFloat() < 0.5f) blink.request(minGap = 0.35f)
+            quietSecLook = 0f
+            quietLimit = 0.55f + rng.nextFloat() * 0.35f
+            travelWin = 10f; travelAge = 0f; travelQ.clear(); travelPitch.clear()
+        }
+        val yawNow = bodyOut.yaw + 22f * hx + 60f * lx
+        val pitchNow = bodyOut.pitch + 16f * hy + 60f * ly
+        // Hold cap: gaze may go anywhere, but no off-centre direction is held for long.
+        // After ~1.6 s in one off-centre spot (~1.0 s when up-right) the look returns near
+        // centre with a quick eased pull (body turn included), then life goes on.
+        // Absolute time spent off-centre / up-right (not reset by micro glances).
+        val away = kotlin.math.hypot(yawNow / 20f, pitchNow / 14f)
+        val upRightNow = yawNow > 3f && pitchNow < -2f
+        if (away > 0.35f) holdT += dt else holdT = (holdT - dt * 1.5f).coerceAtLeast(0f)
+        if (upRightNow) upRightT += dt else upRightT = (upRightT - dt * 2f).coerceAtLeast(0f)
+        val overHold = holdT > 1.5f || upRightT > 0.85f
+        if (overHold && recenterLeft <= 0f && settle < 0.5f) {
+            recenterLeft = 1.0f + rng.nextFloat() * 0.5f
+            holdT = 0f; upRightT = 0f
+            // Always return near centre (never another off-centre target).
+            gaze.focus((rng.nextFloat() - 0.5f) * 0.1f, (rng.nextFloat() - 0.2f) * 0.08f, recenterLeft + 0.5f, priority = 5)
+            microTx = 0f; microTy = 0.02f; microIn = 0.6f
+        }
+        recenterLeft -= dt
+        recenterK += ((if (recenterLeft > 0f) 1f else 0f) - recenterK) * (1f - exp(-dt / 0.11f))
+        val rs = 1f - 0.85f * recenterK
+        hx *= rs; hy *= rs; lx *= rs; ly *= rs
+        val bodyRc = if (recenterK > 1e-3f) bodyOut.copy(yaw = bodyOut.yaw * rs, pitch = bodyOut.pitch * rs, roll = bodyOut.roll * rs) else bodyOut
+        val pitchOut = bodyRc.pitch
         frame = MotionFrame(
-            body = if (pitchOut == bodyOut.pitch) bodyOut else bodyOut.copy(pitch = pitchOut),
+            body = bodyRc,
             headLookX = hx,
             headLookY = hy,
             leadX = lx,
@@ -723,9 +762,22 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
     private var breathPh = 0f
     private var driftPh = 0f
+    private var holdRefYaw = 0f
+    private var holdRefPitch = 0f
+    private var holdT = 0f
+    private var upRightT = 0f
+    private var recenterLeft = 0f
+    private var recenterK = 0f
+    private var lifeT = 0f
+    private var prevYawTot = 0f
+    private var prevPitchTot = 0f
+    private var travelWin = 0f
+    private var travelAge = 0f
+    private val travelQ = ArrayDeque<Pair<Float, Float>>()
+    private val travelPitch = ArrayDeque<Float>()
     private var upRightHeld = 0f
     private var quietSecLook = 0f
-    private var quietLimit = 1.6f
+    private var quietLimit = 0.7f
     private var lookRefYaw = 0f
     private var lookRefPitch = 0f
     private var microIn = 0.8f

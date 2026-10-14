@@ -182,8 +182,8 @@ internal val CALM_FRAME = MotionFrame()
 internal const val GROK_SLIT = 0.12f
 
 /** Clear margin kept between the eyes and the silhouette edge (fraction of mark radius). */
-internal const val GROK_EDGE_MARGIN = 0.12f
-internal const val GEN_EDGE_MARGIN = 0.11f
+internal const val GROK_EDGE_MARGIN = 0.20f
+internal const val GEN_EDGE_MARGIN = 0.17f
 
 /** Harness: a raw clip pose as a frame (expression from the clip, eyes open). */
 private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
@@ -311,6 +311,21 @@ internal fun DrawScope.drawMark(
             }
         }
         if (ok(left) && ok(right)) {
+            val (k, c) = EyeSafeRegion.shrink(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
+            if (k < 1f) {
+                // Shrinking about the pair centre narrows the gap a little, so the gap
+                // constraint runs again afterwards.
+                left = EyeSafeRegion.scalePath(left, k, c)
+                right = EyeSafeRegion.scalePath(right, k, c)
+                val (dl, dr) = GrokEyeGap.separation(left, right, he)
+                if (dl != androidx.compose.ui.geometry.Offset.Zero) {
+                    left = Path().apply { addPath(left, dl) }
+                    right = Path().apply { addPath(right, dr) }
+                }
+            }
+        }
+        // Shrink first (keeps the pair centre, so gaze motion survives), then slide in.
+        if (ok(left) && ok(right)) {
             val n = EyeSafeRegion.nudge(safeBody, listOf(left, right), he * GROK_EDGE_MARGIN)
             if (n != androidx.compose.ui.geometry.Offset.Zero) {
                 left = Path().apply { addPath(left, n) }
@@ -319,8 +334,9 @@ internal fun DrawScope.drawMark(
         }
         if (AvatarDebugMetrics.enabled && ok(left) && ok(right)) {
             val a = GrokEyeGap.outline(left); val b = GrokEyeGap.outline(right)
-            AvatarDebugMetrics.rows += Triple("${AvatarDebugMetrics.label}|grok|${shape.id}",
-                GrokEyeGap.clearance(a, b) / he, EyeSafeRegion.inset(safeBody, listOf(left, right), he * 0.5f) / he)
+            val c = AvatarDebugMetrics.centroid(listOf(left, right)) - safeBody.center
+            AvatarDebugMetrics.rows += "${AvatarDebugMetrics.label},grok,${shape.id},${f.exprFrom},${f.exprTo},${f.exprT}," +
+                "${GrokEyeGap.clearance(a, b) / he},${EyeSafeRegion.inset(safeBody, listOf(left, right), he * 0.5f) / he},${c.x / he},${c.y / he}"
         }
         Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
             if (ok(left)) drawPath(left, eye)
@@ -355,6 +371,12 @@ internal fun DrawScope.drawMark(
     var (le, re) = if (bodyKind == "sphere" || calm) seatGen(1f)
         else EyeSafeRegion.fit(genBody, he * GEN_EDGE_MARGIN, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
     if (!calm) {
+        val (k, c) = EyeSafeRegion.shrink(genBody, listOfNotNull(le?.path, re?.path), he * GEN_EDGE_MARGIN)
+        if (k < 1f) {
+            fun sc(o: Offset) = c + (o - c) * k
+            fun sh(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(EyeSafeRegion.scalePath(it.path, k, c), sc(it.gradStart), sc(it.gradEnd)) }
+            le = sh(le); re = sh(re)
+        }
         val n = EyeSafeRegion.nudge(genBody, listOfNotNull(le?.path, re?.path), he * GEN_EDGE_MARGIN)
         if (n != androidx.compose.ui.geometry.Offset.Zero) {
             fun mv(e: GenericalSeat.SeatedEye?) = e?.let { GenericalSeat.SeatedEye(Path().apply { addPath(it.path, n) }, it.gradStart + n, it.gradEnd + n) }
@@ -363,8 +385,9 @@ internal fun DrawScope.drawMark(
     }
     if (AvatarDebugMetrics.enabled) {
         val ps = listOfNotNull(le?.path, re?.path)
-        AvatarDebugMetrics.rows += Triple("${AvatarDebugMetrics.label}|generical|${shape.id}", Float.NaN,
-            EyeSafeRegion.inset(genBody, ps, he * 0.5f) / he)
+        val c = AvatarDebugMetrics.centroid(ps) - genBody.center
+        AvatarDebugMetrics.rows += "${AvatarDebugMetrics.label},generical,${shape.id},${f.exprFrom},${f.exprTo},${f.exprT}," +
+            "NaN,${EyeSafeRegion.inset(genBody, ps, he * 0.5f) / he},${c.x / he},${c.y / he}"
     }
     val drawEyes: DrawScope.() -> Unit = {
         le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }

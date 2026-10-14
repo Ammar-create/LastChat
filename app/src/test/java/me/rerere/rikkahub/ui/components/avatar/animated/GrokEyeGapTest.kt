@@ -147,7 +147,7 @@ class GrokEyeGapTest {
                 val bmp = capture(shape, chunk.map { it.second })
                 val c = bmp.height
                 // Mark radius in px ≈ half the mark box; required clear gap ~5 % of it
-                // (MIN_GAP is 24 %; the rest is anti-aliasing slack). Required clear gap ≈ 12 %.
+                // (MIN_GAP is 40 %; the rest is anti-aliasing slack). Required clear gap ≈ 12 %.
                 val he = c * markFrac / 2f
                 val r = kotlin.math.max(1, (he * 0.06f).toInt())
                 for ((i, pair) in chunk.withIndex()) {
