@@ -97,3 +97,18 @@ The editor exposes no sliders. Per-character defaults are in `Personality.resolv
 ### Grok eye gap
 `GrokEyeGap` keeps the two Grok eye paths at least 0.085 × the mark radius apart in every
 expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 445 frames per shape.
+
+## engine3 update (motion review fixes)
+- Expression changes are a 0.45–0.68 s sine-eased morph (13–20 frames at 30 fps). The masking
+  blink on expression change is gone.
+- A closed Grok eye is drawn as a thin slit (`GROK_SLIT`, 12 % of open height). The eyes never vanish.
+- A final up-right guard runs on the composed look (body pitch + head gaze + eye lead), so no
+  layer can produce the up-right stare.
+- The motion filter is calmer: ω14, ζ0.74, anticipation 1.8. Busy turns go to 10–20°. Look-around
+  makes 2–3 stops, each ≤ 16° and at most ~14° from the previous one (no head shake).
+- Nods use `nodCurve`: the eyes dip first, then the head makes one eased down-and-up arc with a
+  soft ~12 % settle. There is no ringing.
+- `GrokEyeGap.MIN_GAP` = 13 % of mark radius. `GrokEyeGapTest` requires a ~9 % clear gap on the
+  rendered pixels and fails when an eye vanishes. It covers blink and lid states, squash, and frames
+  taken from a live simulation.
+- `AvatarMotionVideoTest` renders at 30 fps (120 Hz simulation) with 120 dp cells.

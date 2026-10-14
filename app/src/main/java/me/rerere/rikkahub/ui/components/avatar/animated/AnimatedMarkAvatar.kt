@@ -178,6 +178,9 @@ fun AnimatedMarkAvatar(
 
 internal val CALM_FRAME = MotionFrame()
 
+/** Thinnest a Grok eye gets when the lids are shut (fraction of the open height). */
+internal const val GROK_SLIT = 0.12f
+
 /** Harness: a raw clip pose as a frame (expression from the clip, eyes open). */
 private fun frameFromClip(c: ClipSample): MotionFrame = MotionFrame(
     body = BodyPose(
@@ -253,7 +256,10 @@ internal fun DrawScope.drawMark(
 
     val lid = f.lid.coerceIn(0f, 1f)
     if (isGrok) {
-        val lidForPair = if (bodyKind == "sphere") lid * f.eyeScale.coerceIn(0.5f, 1.2f) else lid
+        // A closed Grok eye is a thin slit, never nothing: the eyes must not vanish
+        // (and pop back) during blinks or blink-masked expression changes.
+        val lidG = lid.coerceAtLeast(GROK_SLIT)
+        val lidForPair = if (bodyKind == "sphere") lidG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidG
         val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair)
             .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, f.face.eye(i)) }
         var (left, right) = WhEyeSeat.buildSeatedGrokEyes(
@@ -262,7 +268,7 @@ internal fun DrawScope.drawMark(
             he = he,
             gazeX = 0f,
             gazeY = 0f,
-            lid = lid,
+            lid = lidG,
             eyeGap = f.eyeGap * 0.92f,
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
@@ -295,11 +301,9 @@ internal fun DrawScope.drawMark(
                 right = Path().apply { addPath(right, dr) }
             }
         }
-        if (lid >= 0.07f) {
-            Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
-                if (ok(left)) drawPath(left, eye)
-                if (ok(right)) drawPath(right, eye)
-            }
+        Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
+            if (ok(left)) drawPath(left, eye)
+            if (ok(right)) drawPath(right, eye)
         }
         return
     }

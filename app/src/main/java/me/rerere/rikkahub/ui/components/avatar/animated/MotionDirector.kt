@@ -264,11 +264,12 @@ class MotionDirector(
                 } else null
             }
             Gesture.Nod -> {
-                // Snappy nod: tiny lift (anticipation), quick dip, small rebound, settle.
-                val d = range(0.5f, 0.68f)
-                val deep = range(6f, 9.5f)
-                Layer(ProceduralSource("nod", d) { u -> BodyPose(pitch = deep * snapCurve(u, 0.16f, 0.22f)) },
-                    0f, d, 1f, 0.12f, "nod", gesture = true)
+                // Natural nod: eyes dip first, head follows in one eased arc, soft settle.
+                val d = range(0.62f, 0.8f)
+                val deep = range(6f, 9f)
+                gazeCue = GazeCue(0f, 0.28f, d * 0.55f, "nod")
+                Layer(ProceduralSource("nod", d) { u -> BodyPose(pitch = deep * nodCurve(u), posY = 0.006f * nodCurve(u)) },
+                    0f, d, 1f, 0.15f, "nod", gesture = true)
             }
             Gesture.Recoil -> {
                 // Jolt back fast, wobble once, settle (no anticipation: it's a surprise).
@@ -569,18 +570,23 @@ class MotionDirector(
         val layer = when (kind) {
             "turn" -> {
                 // A real turn: ease to an angle, settle there a moment.
-                val yaw = side * range(12f, 30f)
+                val yaw = side * range(10f, 20f)
                 val p = BodyPose(pitch = range(-1f, 4f), yaw = yaw, roll = -side * range(0f, 4f))
                 gazeCue = GazeCue(side * range(0.3f, 0.7f), range(-0.05f, 0.25f), range(0.5f, 1.2f), "turn")
                 hold("turn", p, logRange(0.6f, 1.8f), range(0.55f, 1.1f), kind = "turn")
             }
             "lookAround" -> keyframed("lookAround", fade) {
                 // 2–4 stops at irregular places and irregular times.
-                val stops = 2 + rng.nextInt(3)
-                var s = side
-                List(stops) {
-                    s = if (rng.nextFloat() < 0.7f) -s else s
-                    BodyPose(pitch = range(-1f, 6f), yaw = s * range(6f, 24f), roll = gauss(2.5f)) to logRange(0.35f, 1.0f)
+                // 2–3 stops; consecutive stops never more than ~16° apart (no head shake).
+                val stops = 2 + rng.nextInt(2)
+                var y = side * range(6f, 14f)
+                List(stops) { k ->
+                    if (k > 0) {
+                        val step = range(7f, 14f)
+                        y = if (rng.nextFloat() < 0.55f) y - kotlin.math.sign(y) * step else y + kotlin.math.sign(y) * step * 0.5f
+                        y = y.coerceIn(-16f, 16f)
+                    }
+                    BodyPose(pitch = range(0f, 5f), yaw = y, roll = gauss(2f)) to logRange(0.55f, 1.2f)
                 }
             }
             "ponder" -> {
@@ -610,16 +616,17 @@ class MotionDirector(
                 }
             }
             "nod" -> {
-                // Nodding along: one or two snappy nods (the second smaller).
-                val d = range(0.45f, 0.62f)
-                val deep = range(4f, 7.5f)
+                // Nodding along: one or two smooth nods (the second smaller), eyes leading.
+                val d = range(0.6f, 0.78f)
+                val deep = range(4f, 7f)
                 val twice = rng.nextFloat() < 0.35f
-                val total = d * if (twice) 1.8f else 1f
+                val total = d * if (twice) 1.85f else 1f
+                gazeCue = GazeCue(0f, 0.25f, total * 0.5f, "nod")
                 Layer(ProceduralSource("nodB", total) { u ->
-                    val k = if (!twice) snapCurve(u, 0.14f, 0.2f)
-                    else if (u < 0.5f) snapCurve(u * 2f, 0.14f, 0.2f) else 0.65f * snapCurve(u * 2f - 1f, 0f, 0.2f)
-                    BodyPose(pitch = deep * k, yaw = side * 2f * kotlin.math.abs(k))
-                }, 0f, total, 1f, 0.12f, "nod")
+                    val k = if (!twice) nodCurve(u)
+                    else if (u < 0.5f) nodCurve(u * 2f, 0.04f) else 0.6f * nodCurve(u * 2f - 1f)
+                    BodyPose(pitch = deep * k, yaw = side * 1.5f * kotlin.math.abs(k))
+                }, 0f, total, 1f, 0.15f, "nod")
             }
             "bob" -> {
                 // A small "got it" bounce (squash, not a size change).
@@ -802,15 +809,15 @@ class MotionDirector(
 
     companion object {
         /** Spring stiffness for the output filter (rad/s): ~60 ms settle, no lag you can see. */
-        const val OMEGA = 19f
+        const val OMEGA = 14f
         const val OMEGA_DROWSY = 9f
         /** Damping ratio for turns: < 1 gives a small, quick overshoot. */
-        const val ZETA_TURN = 0.62f
+        const val ZETA_TURN = 0.74f
         const val ZETA_BOUNCE = 0.6f
         /** Awake beat crossfades are this fraction of their authored length. */
         const val FADE_SNAP = 0.3f
         /** Counter-move velocity per degree of upcoming turn (deg/s per deg). */
-        const val ANTICIPATION = 4.5f
+        const val ANTICIPATION = 1.8f
         /** Fastest the body may turn (deg/s) — a full spin still takes ≥ 0.5 s. */
         const val MAX_TURN_DEG_S = 700f
         /** A busy phase lasts at least this long, even if the reply came back instantly. */
@@ -838,10 +845,26 @@ class MotionDirector(
             return kotlin.math.exp(-k * x) * kotlin.math.cos(1.5f * PI.toFloat() * x)
         }
 
+        /**
+         * Natural nod on u ∈ 0…1 (0 → 1 → 0): ease-in-out down, ease-in-out back up
+         * a touch past rest (−[settle]), then a soft settle. One smooth arc, no ringing.
+         */
+        fun nodCurve(u: Float, settle: Float = 0.12f): Float {
+            val x = u.coerceIn(0f, 1f)
+            fun ease(v: Float) = 0.5f - 0.5f * kotlin.math.cos(PI.toFloat() * v.coerceIn(0f, 1f))
+            return when {
+                x < 0.4f -> ease(x / 0.4f)
+                x < 0.75f -> 1f - (1f + settle) * ease((x - 0.4f) / 0.35f)
+                else -> -settle * (1f - ease((x - 0.75f) / 0.25f))
+            }
+        }
+
         fun smootherstep(x: Float): Float {
             val t = x.coerceIn(0f, 1f)
             return t * t * t * (t * (t * 6f - 15f) + 10f)
         }
+
+        fun easeInOutSine(x: Float): Float = (0.5f - 0.5f * kotlin.math.cos(Math.PI.toFloat() * x.coerceIn(0f, 1f)))
 
         fun easeInOutCubic(x: Float): Float {
             val t = x.coerceIn(0f, 1f)

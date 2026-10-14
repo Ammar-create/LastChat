@@ -238,7 +238,7 @@ internal class ExpressionDirector(private val rng: Random) {
     private var dwell = 10f
     private var pending: String? = null
     private var blinkAt = -1f
-    val eased: Float get() = MotionDirector.easeInOutCubic(t)
+    val eased: Float get() = MotionDirector.easeInOutSine(t)
     val morphing: Boolean get() = t < 1f
 
     fun want(raw: String) {
@@ -259,8 +259,10 @@ internal class ExpressionDirector(private val rng: Random) {
         to = target
         t = 0f
         val big = group(from) != group(to)
-        dur = (0.3f + rng.nextFloat() * 0.12f) * if (big) 1.25f else 1f
-        blinkAt = if (big && rng.nextFloat() < 0.5f) dur * 0.3f else -1f
+        // Long enough to read as a morph at 30 fps (13-20 frames), never a cut.
+        dur = (0.45f + rng.nextFloat() * 0.12f) * if (big) 1.2f else 1f
+        // No masking blink: it made the eyes vanish mid-change and read as a hard cut.
+        blinkAt = -1f
         pending = null
     }
 
@@ -644,12 +646,28 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // Blend toward the static rest pose (weight eased so it starts and lands softly).
         val w = MotionDirector.easeInOutCubic(settle)
         val keep = 1f - w
+        // Final up-right guard on the composed look (body + head gaze + eye lead): the
+        // "up-right stare" must never appear, whichever layer asked for it.
+        val bodyOut = body.lerpTo(BodyPose.REST, w)
+        var hx = gaze.headX * keep
+        var hy = gaze.headY * keep
+        val lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
+        var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
+        val yawTot = bodyOut.yaw + 22f * hx + 60f * lx
+        val g = MotionDirector.smootherstep((yawTot / 10f).coerceIn(0f, 1f))
+        var pitchOut = bodyOut.pitch
+        if (g > 0f) {
+            val keepUp = 1f - g
+            if (hy < 0f) hy *= keepUp
+            if (ly < 0f) ly *= keepUp
+            if (pitchOut < 0f) pitchOut *= keepUp
+        }
         frame = MotionFrame(
-            body = body.lerpTo(BodyPose.REST, w),
-            headLookX = gaze.headX * keep,
-            headLookY = gaze.headY * keep,
-            leadX = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep,
-            leadY = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep,
+            body = if (pitchOut == bodyOut.pitch) bodyOut else bodyOut.copy(pitch = pitchOut),
+            headLookX = hx,
+            headLookY = hy,
+            leadX = lx,
+            leadY = ly,
             lid = lid + (1f - lid) * w,
             exprFrom = expr.from,
             exprTo = expr.to,

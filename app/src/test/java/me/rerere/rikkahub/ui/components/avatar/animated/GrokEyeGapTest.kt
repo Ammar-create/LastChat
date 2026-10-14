@@ -55,6 +55,21 @@ class GrokEyeGapTest {
             out += "$a>$b@$t" to MotionFrame(exprFrom = a, exprTo = b, exprT = t)
         for (e in exprs) for (yaw in listOf(-24f, 24f))
             out += "$e yaw$yaw" to MotionFrame(exprFrom = e, exprTo = e, exprT = 1f, body = BodyPose(yaw = yaw, pitch = 6f, roll = yaw / 4f))
+        // Blinks / closed slits mid-morph, and squash-and-stretch.
+        for (e in exprs) for (lid in listOf(0f, 0.3f, 0.6f))
+            out += "$e lid$lid" to MotionFrame(exprFrom = "Neutral", exprTo = e, exprT = 0.5f, lid = lid)
+        for (e in exprs) out += "$e squash" to MotionFrame(exprFrom = e, exprTo = e, exprT = 1f,
+            body = BodyPose(squashX = 1.07f, squashY = 0.93f, pitch = -6f, yaw = -10f))
+        // Frames from a live simulation (as rendered in the motion videos).
+        val sim = AvatarMotionState(Random(3))
+        val seq = listOf("Happy", "Sad", "Worried", "Bored", "hurt or cute", "confused", "Surprised")
+        var t = 0f
+        while (t < 14f) {
+            if (t % 2f < 1f / 120f) sim.debugReact(seq[((t / 2f).toInt()) % seq.size], 1.4f)
+            sim.tick(1f / 120f, AvatarMotionHints(isGenerating = t > 7f), 1_700_000_000_000L + (t * 1000).toLong())
+            if (((t * 120f).toInt()) % 12 == 0) out += "sim@%.2f".format(t) to sim.frame
+            t += 1f / 120f
+        }
         val rig = FaceRig(Random(1))
         for (a in FaceAccent.entries) if (a != FaceAccent.None) for (e in listOf("Neutral", "Sad", "Happy"))
             out += "$e+$a" to MotionFrame(exprFrom = e, exprTo = e, exprT = 1f, face = rig.staticFace(a, 0.3f))
@@ -128,9 +143,9 @@ class GrokEyeGapTest {
                 val bmp = capture(shape, chunk.map { it.second })
                 val c = bmp.height
                 // Mark radius in px ≈ half the mark box; required clear gap ~5 % of it
-                // (MIN_GAP is 8.5 %; the rest is anti-aliasing slack).
+                // (MIN_GAP is 13 %; the rest is anti-aliasing slack). Required clear gap ≈ 9 %.
                 val he = c * markFrac / 2f
-                val r = kotlin.math.max(1, (he * 0.025f).toInt())
+                val r = kotlin.math.max(1, (he * 0.045f).toInt())
                 for ((i, pair) in chunk.withIndex()) {
                     val mask = Array(c) { y -> BooleanArray(c) { x ->
                         val px = bmp.getPixel(i * c + x, y)
@@ -138,7 +153,8 @@ class GrokEyeGapTest {
                         rr + gg + bb < 200
                     } }
                     val raw = components(mask, 0)
-                    if (raw == 0) continue // eyes fully shut (lid < draw threshold)
+                    // Eyes must never vanish (closed = thin slit), and never merge.
+                    if (raw < 2) { failures += "$shape ${pair.first} raw=$raw (eyes vanished or merged)"; continue }
                     val grown = components(mask, r)
                     if (grown < 2) failures += "$shape ${pair.first} raw=$raw grown=$grown"
                 }

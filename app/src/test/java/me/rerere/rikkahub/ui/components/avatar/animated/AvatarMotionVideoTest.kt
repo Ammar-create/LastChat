@@ -33,7 +33,7 @@ import kotlin.random.Random
 
 /**
  * Motion review: simulates the live motion state over time for a few scenarios and
- * writes numbered frames (24 fps) per scenario / mode / shape, plus a CSV of the
+ * writes numbered frames (30 fps) per scenario / mode / shape, plus a CSV of the
  * motion channels. A script turns the frames into MP4s.
  *   -Dlastchat.videoDir=/path  [-Dlastchat.videoOnly=busy,idle]
  */
@@ -43,9 +43,9 @@ import kotlin.random.Random
 class AvatarMotionVideoTest {
     private val outDir: File? = System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() }?.let { File(it).apply { mkdirs() } }
     private val only = System.getProperty("lastchat.videoOnly")?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
-    private val fps = 24
-    private val cellDp = 64
-    private val perStrip = 24
+    private val fps = 30
+    private val cellDp = 120
+    private val perStrip = 15
 
     private class Script(val name: String, val seconds: Float, val preRoll: Float = 0f, val at: (AvatarMotionState, AvatarStage, Float, Long) -> AvatarMotionHints)
 
