@@ -68,7 +68,7 @@ class AvatarMotionVideoTest {
             AvatarMotionHints(isTyping = t > 1.5f && t < 4f)
         },
         Script("expr", 14f) { s, _, t, _ ->
-            val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "hurt or cute", "Worried")
+            val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "angered or concentrated", "Worried")
             val i = (t / 2f).toInt()
             if (t % 2f < 1f / 24f && i < seq.size) s.debugReact(seq[i], 1.4f)
             AvatarMotionHints()

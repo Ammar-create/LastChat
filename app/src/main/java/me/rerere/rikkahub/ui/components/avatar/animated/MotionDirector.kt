@@ -816,10 +816,10 @@ class MotionDirector(
 
     companion object {
         /** Spring stiffness for the output filter (rad/s): ~60 ms settle, no lag you can see. */
-        const val OMEGA = 14f
+        const val OMEGA = 17f
         const val OMEGA_DROWSY = 9f
         /** Damping ratio for turns: < 1 gives a small, quick overshoot. */
-        const val ZETA_TURN = 0.74f
+        const val ZETA_TURN = 0.7f
         const val ZETA_BOUNCE = 0.6f
         /** Awake beat crossfades are this fraction of their authored length. */
         const val FADE_SNAP = 0.3f

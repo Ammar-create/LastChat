@@ -658,12 +658,23 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         breathPh += dt * 2f * PI.toFloat() / 3.4f
         val br = sin(breathPh) * keep * awakeLife
         microIn -= dt
-        if (microIn <= 0f) {
-            microIn = 0.5f + rng.nextFloat() * 1.1f
-            microTx = (rng.nextFloat() * 2f - 1f) * 0.07f
-            microTy = (rng.nextFloat() * 2f - 1f) * 0.04f
+        quietSecLook += dt
+        if (blink.closed > 0.5f) quietSecLook = 0f
+        if (quietSecLook > quietLimit && settle < 0.5f) {
+            // Nothing visible happened for a while: a quick small glance (visible at 36dp:
+            // ≥ ~4° of eye travel), mostly sideways or down, never up-right.
+            val side = if (rng.nextBoolean()) 1f else -1f
+            microTx = side * (0.32f + rng.nextFloat() * 0.16f)
+            microTy = -0.02f + rng.nextFloat() * 0.2f
+            microIn = 0.4f + rng.nextFloat() * 0.6f
+            quietSecLook = 0f
+            quietLimit = 1.0f + rng.nextFloat() * 0.8f
+        } else if (microIn <= 0f) {
+            microIn = 0.45f + rng.nextFloat() * 1.0f
+            microTx = (rng.nextFloat() * 2f - 1f) * 0.09f
+            microTy = (rng.nextFloat() * 2f - 1f) * 0.05f
         }
-        val mk = 1f - exp(-dt / 0.035f)
+        val mk = 1f - exp(-dt / 0.03f)
         microX += (microTx - microX) * mk
         microY += (microTy - microY) * mk
         val bodyBase = body.lerpTo(BodyPose.REST, w)
@@ -677,7 +688,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val lx = ((gaze.eyeX - gaze.headX) * 0.07f + gaze.eyeX * 0.03f) * keep
         var ly = ((gaze.eyeY - gaze.headY) * 0.06f + gaze.eyeY * 0.025f) * keep
         val yawTot = bodyOut.yaw + 22f * hx + 60f * lx
-        val g = MotionDirector.smootherstep((yawTot / 10f).coerceIn(0f, 1f))
+        val pitchTot = bodyOut.pitch + 16f * hy + 60f * ly
+        // Visible-motion tracker (≥ 8° of combined turn since the last reference).
+        if (kotlin.math.abs(yawTot - lookRefYaw) + kotlin.math.abs(pitchTot - lookRefPitch) > 8f) {
+            lookRefYaw = yawTot; lookRefPitch = pitchTot; quietSecLook = 0f
+        }
+        val g = MotionDirector.smootherstep(((yawTot + 1f) / 6f).coerceIn(0f, 1f))
         var pitchOut = bodyOut.pitch
         if (g > 0f) {
             val keepUp = 1f - g
@@ -704,6 +720,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     }
 
     private var breathPh = 0f
+    private var quietSecLook = 0f
+    private var quietLimit = 1.6f
+    private var lookRefYaw = 0f
+    private var lookRefPitch = 0f
     private var microIn = 0.8f
     private var microTx = 0f
     private var microTy = 0f
@@ -1147,7 +1167,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
             pokeCount == 2 -> {
                 director.gesture(MotionDirector.Gesture.Recoil)
-                setReaction("hurt or cute", 1.0f)
+                setReaction("Surprised", 0.9f)
                 blink.request(minGap = 0.2f)
             }
             else -> {

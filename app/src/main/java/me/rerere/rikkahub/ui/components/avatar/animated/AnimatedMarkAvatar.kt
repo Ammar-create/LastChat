@@ -262,7 +262,10 @@ internal fun DrawScope.drawMark(
         val lidForPair = if (bodyKind == "sphere") lidG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidG
         val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair)
             .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, f.face.eye(i)) }
-        var (left, right) = WhEyeSeat.buildSeatedGrokEyes(
+        val safeBody = EyeSafeRegion.Body(projected)
+        // The turn applied to the eyes is scaled down only as far as needed to keep
+        // them inside the silhouette (body turn itself is untouched).
+        fun seatGrok(k: Float) = WhEyeSeat.buildSeatedGrokEyes(
             pickerId = shapeId,
             solidKind = bodyKind,
             he = he,
@@ -273,16 +276,18 @@ internal fun DrawScope.drawMark(
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
             awake = if (calm) 0f else 1f,
-            yawDeg = yaw,
-            pitchDeg = pitch,
+            yawDeg = yaw * k,
+            pitchDeg = pitch * k,
             rollDeg = roll,
             shape = shape,
             bodyPath = bodyCentered,
             expressionId = WhSphereEyes.grokNameFor(f.exprTo),
             eyesOverride = pair,
-            leadX = f.leadX,
-            leadY = f.leadY,
+            leadX = f.leadX * k,
+            leadY = f.leadY * k,
         )
+        var (left, right) = if (bodyKind == "sphere") seatGrok(1f)
+            else EyeSafeRegion.fit(safeBody, he * 0.07f, ::seatGrok) { listOf(it.first, it.second) }
         // Reject only empty / degenerate seating, never valid capsules.
         fun ok(p: Path): Boolean {
             if (p.isEmpty) return false
@@ -316,7 +321,7 @@ internal fun DrawScope.drawMark(
     FaceRig.shapeOutline(ro.x, ro.y, 1, f.face.right)
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)
     val fit = WhEyeSeat.genericalFitScale(shapeId)
-    val (le, re) = GenericalSeat.seat(
+    fun seatGen(k: Float) = GenericalSeat.seat(
         shape = shape,
         he = he,
         bodyPath = bodyCentered,
@@ -324,12 +329,14 @@ internal fun DrawScope.drawMark(
         right = ro,
         gap = gap,
         fit = fit,
-        leadX = f.leadX,
-        leadY = f.leadY,
-        pitchDeg = pitch,
-        yawDeg = yaw,
+        leadX = f.leadX * k,
+        leadY = f.leadY * k,
+        pitchDeg = pitch * k,
+        yawDeg = yaw * k,
         rollDeg = roll,
     )
+    val (le, re) = if (bodyKind == "sphere" || calm) seatGen(1f)
+        else EyeSafeRegion.fit(EyeSafeRegion.Body(projected), he * 0.06f, ::seatGen) { listOfNotNull(it.first?.path, it.second?.path) }
     val drawEyes: DrawScope.() -> Unit = {
         le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }
         re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }

@@ -24,6 +24,9 @@ object WhSphereEyes {
     const val UR = 0.26f
     /** Desktop `Iu` — default half-width for expression strokes. */
     const val IU = 0.1305f
+    /** Stroke half-widths for arc eyes (happy ^, closed ‿). */
+    const val HAPPY_W = 0.085f
+    const val CLOSED_W = 0.07f
 
     data class Vec3(val x: Float, val y: Float, val z: Float) {
         operator fun times(s: Float) = Vec3(x * s, y * s, z * s)
@@ -142,9 +145,11 @@ object WhSphereEyes {
     fun expressionPair(name: String, lid: Float): List<EyeState> {
         val lidY = lid.coerceIn(0.02f, 1.25f)
         val base = when (name.lowercase()) {
+            // Clean ^ ^ arcs: a gentle upward-curved stroke whose bend radius stays
+            // well above the stroke half-width, so the outline never folds into a bean.
             "happy" -> {
-                val e = pr(0.03f, 0.03f, 0f, IU,
-                    floatArrayOf(0.16f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.16f, -0.04f))
+                val e = pr(0.03f, 0.04f, 0f, HAPPY_W,
+                    floatArrayOf(0.2f, -0.05f), floatArrayOf(0f, 0.13f), floatArrayOf(-0.2f, -0.05f))
                 listOf(e, e)
             }
             "surprised" -> {
@@ -156,8 +161,8 @@ object WhSphereEyes {
                 listOf(e, e)
             }
             "sleepy", "sleeping" -> {
-                val e = pr(0.01f, 0f, 0f, UR / 2f,
-                    floatArrayOf(-0.11f, 0.025f), floatArrayOf(0f, -0.05f), floatArrayOf(0.11f, 0.025f))
+                val e = pr(0.01f, 0f, 0f, CLOSED_W,
+                    floatArrayOf(-0.16f, 0.03f), floatArrayOf(0f, -0.06f), floatArrayOf(0.16f, 0.03f))
                 listOf(e, e)
             }
             "squinted", "bored", "calm" -> {
@@ -178,8 +183,8 @@ object WhSphereEyes {
             }
             // Playful wink: one soft closed arc, one open eye.
             "wink" -> listOf(
-                pr(0.01f, 0f, 0f, UR / 2f,
-                    floatArrayOf(-0.11f, 0.025f), floatArrayOf(0f, -0.05f), floatArrayOf(0.11f, 0.025f)),
+                pr(0.01f, 0f, 0f, CLOSED_W,
+                    floatArrayOf(-0.16f, 0.03f), floatArrayOf(0f, -0.06f), floatArrayOf(0.16f, 0.03f)),
                 en(UR, 0.57f, 0f, 0f),
             )
             // Grok brand stare — never used in LastChat. Soften to neutral.
@@ -251,7 +256,53 @@ object WhSphereEyes {
         val a = expressionPair(grokNameFor(from), 1f)
         val b = expressionPair(grokNameFor(to), 1f)
         val l = lid.coerceIn(0.02f, 1.25f)
-        return blendPairs(a, b, t).map { it.copy(lidY = it.lidY * l) }
+        val u = t.coerceIn(0f, 1f)
+        return a.indices.map { i ->
+            val e0 = a[i]; val e1 = b.getOrElse(i) { b.last() }
+            val e = cleanBlend(e0, e1, u)
+            // Arc eyes (^ ‿) are already "closed-looking": a blink only thins them a
+            // little instead of flattening the arcs into one long line.
+            val arc = (if (curved(e0)) 1f - u else 0f) + (if (curved(e1)) u else 0f)
+            val le = l + (1f - l).coerceAtLeast(0f) * arc * 0.8f
+            e.copy(lidY = e.lidY * le)
+        }
+    }
+
+    /** Spine bends (an arc eye) rather than running straight (a pill). */
+    private fun curved(e: EyeState): Boolean {
+        val p = e.pts; if (p.size < 3) return false
+        val a = p.first(); val b = p.last()
+        val dx = b[0] - a[0]; val dy = b[1] - a[1]
+        val len = hypot(dx, dy).coerceAtLeast(1e-4f)
+        return p.maxOf { kotlin.math.abs((it[0] - a[0]) * dy - (it[1] - a[1]) * dx) / len } > 0.02f
+    }
+
+    /** Same eye with its spine pulled straight between its end points. */
+    private fun straight(e: EyeState): EyeState {
+        val p = e.pts; val a = p.first(); val b = p.last(); val n = p.size
+        return e.copy(pts = List(n) { k ->
+            val f = k / (n - 1f)
+            floatArrayOf(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+        })
+    }
+
+    /**
+     * Arc ↔ pill morph that stays a clean capsule at every t: an arc first
+     * straightens, the straight bars morph, then the target bends into its arc.
+     * (A direct point blend bends a fat stroke too tightly and reads as a bean.)
+     */
+    private fun cleanBlend(e0: EyeState, e1: EyeState, u: Float): EyeState {
+        val c0 = curved(e0); val c1 = curved(e1)
+        if (!c0 && !c1) return blendPairs(listOf(e0), listOf(e1), u)[0]
+        val s0 = if (c0) straight(e0) else e0
+        val s1 = if (c1) straight(e1) else e1
+        val phases = 1 + (if (c0) 1 else 0) + (if (c1) 1 else 0)
+        val w = 1f / phases
+        var x = u
+        if (c0) { if (x < w) return blendPairs(listOf(e0), listOf(s0), x / w)[0]; x -= w }
+        if (x < w || !c1) return blendPairs(listOf(s0), listOf(s1), (x / w).coerceAtMost(1f))[0]
+        x -= w
+        return blendPairs(listOf(s1), listOf(e1), (x / w).coerceAtMost(1f))[0]
     }
 
     // --- spine helpers (desktop Mk / eh, linear branch) ---

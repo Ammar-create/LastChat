@@ -335,7 +335,6 @@ internal class AlivenessEngine(private val rng: Random) {
             "glance" to 0.12f * (0.5f + p.curiosity) * cool("glance", 8f),
             "drowsy" to 0.05f * boredom * (1.2f - arousal) * cool("drowsy", 60f),
             "tilt" to 0.03f * (0.5f + p.curiosity) * cool("tiltI", 40f),
-            "wink" to 0.01f * p.mischief * p.playfulness * 4f * cool("wink", 120f),
             "shyLook" to 0.03f * p.shyness * cool("shyLook", 50f),
             "hop" to 0.012f * p.playfulness * p.energy * 4f * (1f - boredom) * cool("hop", 90f),
             "worried" to (if (emo == Emotion.Concern) 0.08f * emotionLevel else 0f),

@@ -122,3 +122,15 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
 - Continuous micro life: breathing (squash plus bob, 3.4 s period) and micro-saccades every 0.5–1.6 s.
   No idle hold is fully still for more than ~1.4 s.
 - The up-right guard runs on the final composed look, so it also covers reaction and startle gaze.
+
+## engine5 update
+- Grok Happy is drawn as clean ^ ^ arcs (stroke half-width 0.085, with a bend radius well above
+  the stroke width). Closed arcs are 0.07 wide.
+- Arc ↔ pill morphs go through a straight bar (`cleanBlend`): first straighten, then morph, then
+  bend. The eye stays a clean capsule at every t. A blink on an arc eye only thins it.
+- `EyeSafeRegion` scales the turn applied to the eyes (not the body) down only as far as needed to
+  keep every eye outline point, plus a margin, inside the projected silhouette (heart, etc.).
+- "hurt or cute" is out of all automatic rotation (busy, idle wink, poke reaction).
+- Visible-life guarantee: if the combined head and gaze turn changes less than 8° for 1.0–1.8 s
+  with no blink, the eyes make a quick glance (sideways or down). No 2.5 s window has less than
+  8° of travel. Filter ω17, ζ0.7. The up-right guard starts at a combined yaw of −1°.
