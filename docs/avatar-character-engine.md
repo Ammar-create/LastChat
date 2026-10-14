@@ -185,3 +185,7 @@ expression, shape, accent and transition. `GrokEyeGapTest` asserts this across 4
 - **Breathing** squash/bob roughly 2× (visible), plus a small bounce every 3.5–6.5 s with landing squash.
 - **Startle**: life targets snap to front during the startle window and resume 0.3 s after, so the clip keeps living to the end.
 - **Check**: `contact_check.py` samples every 0.5 s, measures eye centre from pixels; FAIL if 5 consecutive samples move < 6 px and turn < 8°. engine9: 0 windows.
+
+## engine10
+- **Visual turn cap** (drawMark): total body + head yaw/pitch soft-capped with tanh per shape — sphere 22°/15°, heart 13°/10° (its 3D projection lumps past ~14°), other shapes 17°/12°. Life turns toned down to 6–11° body, 0.45–0.75 eye range. Non-sphere eye in-face shift raised (px 0.07→0.10) so the heart still reads its look direction.
+- **Black-eye blends**: blendPairs matches spine direction (opposite spines crossed mid-blend → dot) and floors blend length at 60% of the shorter endpoint; barBlend stub keeps ≥65% of the longer bar.

@@ -221,8 +221,12 @@ internal fun DrawScope.drawMark(
     // Head look (gaze) is an euler add-on on body + eyes (desktop setGaze → Ou).
     // Screen y (+down) → pitch (+down).
     val look = WhSphereEyes.ou(bodyKind, f.headLookX, -f.headLookY)
-    val pitch = f.body.pitch + look.pitchDeg
-    val yaw = f.body.yaw + look.yawDeg
+    // Visual turn cap (engine10): total body + head turn is soft-limited per shape so the
+    // silhouette stays recognisable (the heart's 3D projection lumps past ~14°) and the
+    // eyes keep their inset. tanh keeps it springy instead of a hard stop.
+    val (yawCap, pitchCap) = turnCapFor(shape.id, bodyKind)
+    val pitch = softCap(f.body.pitch + look.pitchDeg, pitchCap)
+    val yaw = softCap(f.body.yaw + look.yawDeg, yawCap)
     val roll = f.body.roll
     val clip = ClipSample(
         clipName = "live",
@@ -400,3 +404,13 @@ internal fun DrawScope.drawMark(
         Soft3DMark.withBodyClip(this, clip, projected, sizePx, he, morph, false, drawEyes)
     }
 }
+
+
+/** Max visual (yaw, pitch) in degrees per shape. */
+internal fun turnCapFor(shapeId: String, bodyKind: String): Pair<Float, Float> = when {
+    shapeId.contains("heart", ignoreCase = true) -> 13f to 10f
+    bodyKind == "sphere" -> 22f to 15f
+    else -> 17f to 12f
+}
+
+internal fun softCap(v: Float, cap: Float): Float = cap * kotlin.math.tanh(v / cap)

@@ -74,8 +74,8 @@ object WhSphereEyes {
         return GazeDelta(
             pitchDeg = -(if (nonSphere) 19f else 14f) * s * gy,
             yawDeg = (if (nonSphere) 26f else 18f) * s * gx,
-            px = (if (nonSphere) 0.07f else 0.03f) * gx,
-            py = (if (nonSphere) 0.055f else 0.024f) * gy,
+            px = (if (nonSphere) 0.1f else 0.04f) * gx,
+            py = (if (nonSphere) 0.075f else 0.03f) * gy,
         )
     }
 
@@ -241,15 +241,31 @@ object WhSphereEyes {
         fun mix(x: Float, y: Float) = x + (y - x) * u
         return a.indices.map { i ->
             val e0 = a[i]
-            val e1 = b.getOrElse(i) { b.last() }
-            val n = min(e0.pts.size, e1.pts.size)
+            val e1r = b.getOrElse(i) { b.last() }
+            val n = min(e0.pts.size, e1r.pts.size)
+            // Spines drawn in opposite directions would cross mid-blend and collapse to a
+            // dot: match the direction first.
+            fun d(p: FloatArray, q: FloatArray) = kotlin.math.hypot(p[0] - q[0], p[1] - q[1])
+            val e1 = if (n >= 2 && d(e0.pts[0], e1r.pts[n - 1]) + d(e0.pts[n - 1], e1r.pts[0]) <
+                d(e0.pts[0], e1r.pts[0]) + d(e0.pts[n - 1], e1r.pts[n - 1])) e1r.copy(pts = e1r.pts.take(n).reversed()) else e1r
+            var pts = List(n) { k -> floatArrayOf(mix(e0.pts[k][0], e1.pts[k][0]), mix(e0.pts[k][1], e1.pts[k][1])) }
+            // Length floor: a blend frame is never shorter than 60% of the shorter endpoint.
+            fun span(p: List<FloatArray>): Float = if (p.size < 2) 0f else
+                kotlin.math.hypot(p.maxOf { it[0] } - p.minOf { it[0] }, p.maxOf { it[1] } - p.minOf { it[1] })
+            val floor = 0.6f * minOf(span(e0.pts.take(n)), span(e1.pts))
+            val sp = span(pts)
+            if (sp > 1e-5f && sp < floor) {
+                val cx = pts.sumOf { it[0].toDouble() }.toFloat() / n; val cy = pts.sumOf { it[1].toDouble() }.toFloat() / n
+                val k = floor / sp
+                pts = pts.map { floatArrayOf(cx + (it[0] - cx) * k, cy + (it[1] - cy) * k) }
+            }
             EyeState(
                 offX = mix(e0.offX, e1.offX),
                 offY = mix(e0.offY, e1.offY),
                 tilt = mix(e0.tilt, e1.tilt),
                 wid = mix(e0.wid, e1.wid),
                 lidY = mix(e0.lidY, e1.lidY),
-                pts = List(n) { k -> floatArrayOf(mix(e0.pts[k][0], e1.pts[k][0]), mix(e0.pts[k][1], e1.pts[k][1])) },
+                pts = pts,
             )
         }
     }
@@ -301,8 +317,16 @@ object WhSphereEyes {
             return e.copy(pts = e.pts.map { floatArrayOf(mx + (it[0] - c[0]) * k, my + (it[1] - c[1]) * k) })
         }
         val m = blendPairs(listOf(s0), listOf(s1), u)[0]
-        val e = if (u < 0.5f) blendPairs(listOf(s0), listOf(stub(s0, 0.08f)), u / 0.5f)[0]
-            else blendPairs(listOf(stub(s1, 0.08f)), listOf(s1), (u - 0.5f) / 0.5f)[0]
+        // Stub keeps a real length (≥ 65% of the longer bar) so no blend frame is a dot.
+        fun span(e: EyeState): Float {
+            val xs = e.pts.map { it[0] }; val ys = e.pts.map { it[1] }
+            return kotlin.math.hypot(xs.max() - xs.min(), ys.max() - ys.min()).coerceAtLeast(1e-4f)
+        }
+        val target = 0.65f * maxOf(span(s0), span(s1))
+        val k0 = (target / span(s0)).coerceIn(0.5f, 1f)
+        val k1 = (target / span(s1)).coerceIn(0.5f, 1f)
+        val e = if (u < 0.5f) blendPairs(listOf(s0), listOf(stub(s0, k0)), u / 0.5f)[0]
+            else blendPairs(listOf(stub(s1, k1)), listOf(s1), (u - 0.5f) / 0.5f)[0]
         // Spine shape from the stub path; position, width and tilt glide continuously.
         return e.copy(offX = m.offX, offY = m.offY, wid = m.wid, tilt = m.tilt)
     }

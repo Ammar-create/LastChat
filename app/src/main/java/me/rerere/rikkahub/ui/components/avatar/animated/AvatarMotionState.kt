@@ -852,10 +852,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             rng.nextFloat() < 0.5f -> -kotlin.math.sign(chainFrom).let { if (it == 0f) 1f else it }
             else -> kotlin.math.sign(chainFrom).let { if (it == 0f) 1f else it }
         }
-        val mag = 0.5f + rng.nextFloat() * 0.3f
+        val mag = 0.45f + rng.nextFloat() * 0.3f
         lifeHxT = side * mag
         lifeHyT = (rng.nextFloat() * 2f - 1f) * 0.45f
-        lifeTurnTx = side * (10f + (mag - 0.5f) / 0.3f * 8f)
+        lifeTurnTx = side * (6f + (mag - 0.45f) / 0.3f * 5f)
         lifeTiltTx = lifeHyT * 12f
         lifeRollTx = if (rng.nextFloat() < 0.4f) side * (3f + rng.nextFloat() * 5f) else 0f
     }
