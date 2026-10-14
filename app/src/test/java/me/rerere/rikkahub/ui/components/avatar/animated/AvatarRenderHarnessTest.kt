@@ -174,7 +174,7 @@ class AvatarRenderHarnessTest {
     fun renderExpressionSheets() {
         assumeTrue(outDir != null)
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
-        val names = listOf("Neutral", "Happy", "Surprised", "Sad", "Sleeping", "Bored", "confused", "skeptical", "hurt or cute")
+        val names = listOf("Neutral", "Happy", "Surprised", "Sad", "Worried", "Sleeping", "Bored", "angered or concentrated", "pouty", "hurt or cute", "confused", "skeptical")
         for (mode in listOf("grok", "generical")) for (shape in MarkShapes.SHAPES) {
             stripCapture("exprsheet_${mode}_$shape", shape, mode,
                 names.map { MotionFrame(exprFrom = it, exprTo = it, exprT = 1f) }, cellDp = 90)
@@ -601,10 +601,10 @@ class AvatarRenderHarnessTest {
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val gen = me.rerere.rikkahub.data.model.Avatar.Animated.defaultGenerical()
         @Composable
-        fun pill(w: Int) {
+        fun pill(w: Int, expanded: Boolean = false) {
             Box(
-                Modifier.size(width = w.dp, height = 30.dp)
-                    .background(Color(0xFF2E3644), androidx.compose.foundation.shape.RoundedCornerShape(15.dp))
+                Modifier.size(width = w.dp, height = if (expanded) 150.dp else 36.dp)
+                    .background(Color(0xFF2E3644), androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
             )
         }
         @Composable
@@ -617,7 +617,7 @@ class AvatarRenderHarnessTest {
             }
         }
         for (bubble in listOf(true, false)) {
-            capture("chat_header_${if (bubble) "bubble" else "plain"}", 360, 520) {
+            capture("chat_header_${if (bubble) "bubble" else "plain"}", 360, 760) {
                 androidx.compose.foundation.layout.Column(
                     Modifier.fillMaxSize().background(Color(0xFF14171C)).padding(12.dp),
                 ) {
@@ -638,6 +638,14 @@ class AvatarRenderHarnessTest {
                         body(bubble)
                         Box(Modifier.size(1.dp, 18.dp))
                     }
+                    // newest turn with the pill expanded into its panel: avatar stays on row 1
+                    me.rerere.rikkahub.ui.components.chat.AssistantTurnHeader(
+                        showIcon = true, avatarVisible = true, avatarName = "Generical", avatarValue = gen,
+                        loading = false, showModelName = true, nameAlpha = 1f,
+                        pill = { pill(230, expanded = true) },
+                    )
+                    body(bubble)
+                    Box(Modifier.size(1.dp, 18.dp))
                     // transition frames of the slot (0 → 1)
                     Row {
                         for (p in listOf(0f, 0.25f, 0.5f, 0.75f, 1f)) {

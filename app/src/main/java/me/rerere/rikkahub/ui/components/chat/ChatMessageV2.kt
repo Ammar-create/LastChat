@@ -2042,7 +2042,10 @@ internal fun AssistantTurnHeader(
     if (pill != null) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (showModelName) name()
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Top-anchored: the collapsed pill is as tall as the avatar (36dp), so they
+            // line up, and when the pill expands into its panel the avatar stays put
+            // on that first row instead of re-centring on the tall panel.
+            Row(verticalAlignment = Alignment.Top) {
                 avatar()
                 pill()
             }
@@ -2056,7 +2059,7 @@ internal fun AssistantTurnHeader(
 }
 
 private val AssistantAvatarSize = 36.dp
-private val AssistantAvatarGap = 8.dp
+private val AssistantAvatarGap = 4.dp
 
 /**
  * Avatar that fades and scales away while its layout space (width + height) eases

@@ -52,20 +52,19 @@ object GenericalFace {
         faces[exprId]?.let { return it }
         if (!AvatarPackData.isLoaded()) return null
         if (exprId == "confused" || exprId == "skeptical") {
+            // Built only from the hand-made eyes, so corners and outline match.
             val n = face("Neutral") ?: return null
             val built = if (exprId == "confused") {
-                // Left eye slightly raised and taller; right eye with a lid tilted
-                // down toward the nose.
-                Face(
-                    scaleY(n.left, 1.05f, -6f),
-                    lidCut(n.right, topAtInner = 0.36f, topAtOuter = 0.14f),
-                )
+                // Left: the Neutral eye, raised a touch. Right: the Sad eye flipped
+                // upside down (its slope now on the lower lid), seated where the
+                // Neutral eye's bottom was.
+                val sad = face("Sad") ?: return null
+                val r = flipV(sad.right)
+                Face(translate(n.left, 0f, -8f), place(r, bboxCx(n.right), n.right.y.max() - 6f))
             } else {
-                // 🤨: one eye open and a touch raised, the other flat-lidded.
-                Face(
-                    scaleY(n.left, 1.04f, -8f),
-                    lidCut(n.right, topAtInner = 0.42f, topAtOuter = 0.40f),
-                )
+                // 🤨: Neutral eye raised; the other is the hand-made Bored (squint) eye.
+                val b = face("Bored") ?: return null
+                Face(translate(n.left, 0f, -10f), place(b.right, bboxCx(n.right), n.right.y.max()))
             }
             return built.also { faces[exprId] = it }
         }
@@ -89,28 +88,30 @@ object GenericalFace {
         return Face(l, r).also { faces[exprId] = it }
     }
 
-    private fun scaleY(o: Outline, k: Float, dy: Float): Outline {
-        val cy = bboxCy(o)
-        return Outline(o.x.copyOf(), FloatArray(N) { cy + (o.y[it] - cy) * k + dy })
+    /** Upside down about its own box centre (point order kept clockwise). */
+    private fun flipV(o: Outline): Outline {
+        val c = bboxCy(o)
+        val ys = FloatArray(N) { 2f * c - o.y[it] }
+        val xs = o.x.copyOf()
+        xs.reverse(); ys.reverse()
+        return reStart(Outline(xs, ys))
     }
 
-    /**
-     * Pushes the top of an eye down to a straight, possibly tilted lid line. The
-     * fractions are how far down the eye (0 = top, 1 = bottom) the lid sits at the
-     * inner (toward the face centre) and outer edges. Point count is unchanged so
-     * morphs stay smooth.
-     */
-    private fun lidCut(o: Outline, topAtInner: Float, topAtOuter: Float): Outline {
-        val x0 = o.x.min(); val x1 = o.x.max()
-        val y0 = o.y.min(); val y1 = o.y.max()
-        val h = y1 - y0
-        val innerIsLeft = (x0 + x1) / 2f > 250f
-        return Outline(o.x.copyOf(), FloatArray(N) {
-            val u = ((o.x[it] - x0) / (x1 - x0)).coerceIn(0f, 1f)
-            val fromInner = if (innerIsLeft) u else 1f - u
-            val lid = y0 + h * (topAtInner + (topAtOuter - topAtInner) * fromInner)
-            maxOf(o.y[it], lid)
-        })
+    /** Move so the box is centred on [cx] with its bottom at [bottom]. */
+    private fun place(o: Outline, cx: Float, bottom: Float) =
+        translate(o, cx - bboxCx(o), bottom - o.y.max())
+
+    /** Rotate point order to start straight above the centre (as [sample] does). */
+    private fun reStart(o: Outline): Outline {
+        val cx = o.cx; val cy = o.cy
+        var best = 0; var bestD = Float.MAX_VALUE
+        for (i in 0 until N) {
+            var d = atan2(o.y[i] - cy, o.x[i] - cx) + (PI / 2).toFloat()
+            while (d > PI) d -= (2 * PI).toFloat()
+            while (d < -PI) d += (2 * PI).toFloat()
+            if (abs(d) < bestD) { bestD = abs(d); best = i }
+        }
+        return Outline(FloatArray(N) { o.x[(it + best) % N] }, FloatArray(N) { o.y[(it + best) % N] })
     }
 
     private fun bboxCx(o: Outline) = (o.x.min() + o.x.max()) / 2f

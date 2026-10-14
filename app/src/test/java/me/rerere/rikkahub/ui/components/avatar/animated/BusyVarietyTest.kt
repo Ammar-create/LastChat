@@ -37,7 +37,7 @@ class BusyVarietyTest {
 
     @Test
     fun generatingIsVariedSmoothAndSwayFree() {
-        val outDir = System.getProperty("lastchat.renderDir")?.let { File(it).apply { mkdirs() } }
+        val outDir = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let { File(it).apply { mkdirs() } }
         for (seed in 1..6) {
             val d = MotionDirector(Random(seed)) { AvatarPackData.clips[it] }
             val csv = StringBuilder("t,life,beat,pitch,yaw,roll,scale\n")

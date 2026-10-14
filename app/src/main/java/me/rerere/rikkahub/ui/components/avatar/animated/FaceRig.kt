@@ -252,11 +252,15 @@ class FaceRig(private val rng: Random) {
                 var x0 = xs[i] - cx
                 var y0 = ys[i] - cy
                 val xn = (x0 / hw).coerceIn(-1f, 1f) * inward // +1 = inner corner
+                // Lids close by sliding the top/bottom edge in, not by squashing, so the
+                // hand-made corner radii stay the same (straight sides shorten instead).
+                val hh = max(1f, (maxY - minY) / 2f)
                 if (y0 < 0f) {
                     val f = (p.upper - p.slant * xn).coerceIn(0.05f, 1.2f)
-                    y0 *= f
+                    y0 = if (f >= 1f) y0 * f else min(0f, y0 + (1f - f) * hh)
                 } else {
-                    y0 *= p.lower.coerceIn(0.05f, 1.2f)
+                    val f = p.lower.coerceIn(0.05f, 1.2f)
+                    y0 = if (f >= 1f) y0 * f else max(0f, y0 - (1f - f) * hh)
                 }
                 x0 *= p.sx; y0 *= p.sy
                 val rx = x0 * cr - y0 * sr
