@@ -102,7 +102,10 @@ object MarkColors {
         return if (eyeType.equals("grok", true)) {
             grokEyeFill(canonicalBody(colorHex, colorPreset, eyeType).second, colorHex.orEmpty())
         } else {
-            hexToColor(DEFAULT_GENERICAL_EYE_HEX)
+            // Engine16: the default white eye would vanish on a near-white body; use ink there.
+            val b = bodyColor(colorHex, colorPreset, eyeType)
+            val lum = 0.2126f * b.red + 0.7152f * b.green + 0.0722f * b.blue
+            if (lum > 0.82f) Color(0xFF1C1C1E) else hexToColor(DEFAULT_GENERICAL_EYE_HEX)
         }
     }
 

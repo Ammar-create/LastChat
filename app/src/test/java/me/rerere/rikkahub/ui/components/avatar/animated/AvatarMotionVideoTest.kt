@@ -114,7 +114,53 @@ class AvatarMotionVideoTest {
             if (t % 2f < 1f / 24f && i < seq.size) s.debugReact(seq[i], 1.4f)
             AvatarMotionHints()
         },
+        // ---------------- engine16 previews
+        Script("idle180", 180f, preRoll = 20f, seed = 5) { _, _, _, _ -> AvatarMotionHints() },
+        Script("ep_attention", 40f, preRoll = 10f, seed = 31) { s, _, t, _ ->
+            ep(s, t, 1f to Episode.CuriousLR, 6f to Episode.CheckOnYou, 11f to Episode.TiltChain, 17f to Episode.FollowSomething,
+                23f to Episode.LookAround360, 30f to Episode.Scan); AvatarMotionHints()
+        },
+        Script("ep_character", 54f, preRoll = 10f, seed = 33) { s, _, t, _ ->
+            ep(s, t, 1f to Episode.SkepticalLR, 7.5f to Episode.HmmLean, 13f to Episode.DoubleTake, 18.5f to Episode.Peek,
+                23.5f to Episode.LookUpRemember, 29f to Episode.ContentSlowBlink, 33f to Episode.WorriedGlance, 39f to Episode.Smug,
+                43f to Episode.Sneeze, 47f to Episode.ComeToSenses); AvatarMotionHints()
+        },
+        Script("ep_tired", 34f, preRoll = 10f, seed = 35) { s, _, t, _ ->
+            ep(s, t, 1f to Episode.Yawn, 7f to Episode.Stretch, 13f to Episode.SleepyDrift, 20f to Episode.Yawn, 26f to Episode.ComeToSenses); AvatarMotionHints()
+        },
+        Script("skeptical", 18f, preRoll = 10f, seed = 37) { s, _, t, _ ->
+            ep(s, t, 1f to Episode.SkepticalLR, 7f to Episode.SkepticalLR, 13f to Episode.SkepticalLR); AvatarMotionHints()
+        },
+        Script("curious_lr", 16f, preRoll = 10f, seed = 39) { s, _, t, _ ->
+            ep(s, t, 1f to Episode.CuriousLR, 6f to Episode.CuriousLR, 11f to Episode.CuriousLR); AvatarMotionHints()
+        },
+        Script("yawn", 22f, preRoll = 10f, seed = 41) { s, _, t, _ ->
+            ep(s, t, 1f to Episode.Yawn, 8f to Episode.Yawn, 15f to Episode.Yawn); AvatarMotionHints()
+        },
+        Script("rest_eyes", 40f, preRoll = 10f, seed = 43) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugRest(doze = false)
+            if (t >= 12f && fired.add(12f)) s.debugRest(doze = true)
+            if (t >= 33f && fired.add(33f)) s.poke() // activity returns: gentle wake
+            AvatarMotionHints()
+        },
+        // Spins only happen in lively contexts: here while answering (generating/streaming).
+        Script("spin_paths", 34f, preRoll = 6f, seed = 45) { s, _, t, _ ->
+            val ps = SpinPath.entries
+            ps.forEachIndexed { i, p -> val at = 1f + i * 5.3f; if (t >= at && fired.add(at)) s.debugSpin(null, null, p) }
+            AvatarMotionHints(isGenerating = true, hasStreamedTokens = t > 3f)
+        },
+        Script("busy_think", 40f, preRoll = 5f, seed = 47) { _, _, t, _ ->
+            if (t < 1f) AvatarMotionHints() else if (t < 26f) AvatarMotionHints(isGenerating = true) else if (t < 37f) AvatarMotionHints(isGenerating = true, hasStreamedTokens = true) else AvatarMotionHints()
+        },
+        Script("pokes", 16f, preRoll = 10f, seed = 49) { s, _, t, _ ->
+            for (p in listOf(1f, 4f, 5f, 5.6f, 6.2f, 6.8f, 7.4f)) if (t >= p && fired.add(p)) s.poke()
+            AvatarMotionHints()
+        },
     )
+
+    private fun ep(s: AvatarMotionState, t: Float, vararg at: Pair<Float, Episode>) {
+        for ((a, e) in at) if (t >= a && fired.add(a)) s.debugEpisode(e)
+    }
 
     private val MORPH_SEQ: List<String> = run {
         val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
@@ -199,6 +245,60 @@ class AvatarMotionVideoTest {
         }
     }
 
+    /** Engine16: Generical eye colours x shade on/off on a few bodies (outline must equal the eye colour). */
+    @Test
+    fun renderEyeColorSheet() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "eyecolors" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val eyes = listOf<String?>(null, "#FFFFFF", "#FFD60A", "#FF453A", "#30D158", "#BF5AF2", "#1C1C1E", "#0A84FF")
+        val bodies = listOf("#2A92FE", "#FF9F0A", "#1C1C1E", "#F2F2F7")
+        val frames = listOf(MotionFrame(), MotionFrame(exprFrom = "Happy", exprTo = "Happy"))
+        for (body in bodies) for (shade in listOf(true, false)) {
+            val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+            val activity = controller.get()
+            activity.setContent {
+                MaterialTheme(colorScheme = darkColorScheme()) {
+                    Box(Modifier.requiredSize((cellDp * eyes.size).dp, (cellDp * 2).dp)) {
+                        androidx.compose.foundation.layout.Column(Modifier.background(Color(0xFF14171C))) {
+                            for ((fi, f) in frames.withIndex()) Row {
+                                for (e in eyes) Box(Modifier.size(cellDp.dp), contentAlignment = Alignment.Center) {
+                                    AnimatedMarkAvatar(if (fi == 0) "blob" else "heart", "generical", body, false, eyeColorHex = e, eyeShade = shade,
+                                        modifier = Modifier.size((cellDp * 0.72f).dp), debugFrame = f)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            repeat(3) { shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(500)) }
+            val d = activity.resources.displayMetrics.density
+            val w = (cellDp * eyes.size * d).toInt(); val h = (cellDp * 2 * d).toInt()
+            val view: View = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
+            view.layout(0, 0, w, h)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(50))
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bmp))
+            File(out, "eyecolors_${body.drop(1)}_shade${if (shade) "On" else "Off"}.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            controller.pause().stop().destroy()
+        }
+    }
+
+    /** Engine16: non-horizontal spin paths, 0…355° (10° steps). */
+    @Test
+    fun renderAxisSweep() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "axissweep" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val paths = SpinPath.values()
+        for (pth in paths) {
+            val frames = (0 until 36).map { i -> val (y, p, r) = pth.angles(i * 10f / 360f + 0.0001f, 1f); MotionFrame(spinYaw = y, spinPitch = p, spinRoll = r) }
+            for (mode in listOf("grok", "generical")) for (shape in listOf("heart", "blob"))
+                captureStrip(File(out, "axis_${pth.name}_${mode}_$shape.png"), shape, mode, frames)
+        }
+    }
+
     /** Every expression id, static, both modes (mapping sheet) + gaze-shape poses. */
     @Test
     fun renderExprSheet() {
@@ -271,19 +371,29 @@ class AvatarMotionVideoTest {
         val out = File(System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() } ?: "build/audit").apply { mkdirs() }
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         AvatarDebugMetrics.enabled = true
-        val sb = StringBuilder("seed,spins,faceChanges,uncaused,lowToBright,gazeChanges,storiesNotice,storiesAck\n")
+        val sb = StringBuilder("seed,spins,faceChanges,uncaused,lowToBright,gazeChanges,storiesNotice,storiesAck,episodes,distinctEpisodes\n")
         val base = scripts.first { it.name == "idle150" }
         for (seed in listOf(3, 11, 19, 27, 35)) {
             simulate(Script("audit$seed", 600f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() }, seed)
             val log = lastLog
             File(out, "audit_seed$seed.log").writeText(log.joinToString("\n"))
-            val spins = log.count { it.contains(",moment Spin") }
+            val spins = log.count { it.contains(",moment Spin") || it.contains(",spin cause=") }
             val faces = log.filter { it.contains(",expr ") || it.contains(",face ") }
             val unc = faces.count { it.contains("cause=unspecified") }
             val lb = faces.count { l -> Regex("(Bored|Sleeping|Sad|Eyes closed|Worried)→(Happy|Group 3|playful)").containsMatchIn(l) }
-            sb.append("$seed,$spins,${faces.size},$unc,$lb,${log.count { it.contains(",gaze ") }},${log.count { it.contains("story notice") }},${log.count { it.contains("story acknowledge") }}\n")
+            sb.append("$seed,$spins,${faces.size},$unc,$lb,${log.count { it.contains(",gaze ") }},${log.count { it.contains("story notice") }},${log.count { it.contains("story acknowledge") }},${log.count { it.contains(",episode ") }},${log.filter { it.contains(",episode ") }.map { it.substringAfter(",episode ").substringBefore(" ") }.toSet().size}\n")
+            org.junit.Assert.assertEquals("idle must never spin (seed $seed)", 0, spins)
+            org.junit.Assert.assertEquals("uncaused face change (seed $seed)", 0, unc)
+            org.junit.Assert.assertEquals("low→bright cut (seed $seed)", 0, lb)
         }
         File(out, "audit_summary.csv").writeText(sb.toString())
+        // One long untouched hour: catalogue distribution (how rare the rare ones are).
+        simulate(Script("hour", 3600f, preRoll = 0f) { _, _, _, _ -> AvatarMotionHints() }, 77)
+        val eps = lastLog.filter { it.contains(",episode ") }.groupingBy { it.substringAfter(",episode ").substringBefore(" ") }.eachCount()
+        File(out, "audit_hour_episodes.csv").writeText("episode,count\n" + eps.entries.sortedByDescending { it.value }.joinToString("\n") { "${it.key},${it.value}" } +
+            "\nspins," + lastLog.count { it.contains(",spin cause=") || it.contains(",moment Spin") } +
+            "\nuncaused," + lastLog.count { (it.contains(",expr ") || it.contains(",face ")) && it.contains("cause=unspecified") } + "\n")
+        File(out, "audit_hour.log").writeText(lastLog.joinToString("\n"))
         AvatarDebugMetrics.enabled = false
         println(sb)
         @Suppress("UNUSED_VARIABLE") val unused = base

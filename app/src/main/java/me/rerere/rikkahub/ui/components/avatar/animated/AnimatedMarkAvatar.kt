@@ -249,10 +249,10 @@ private fun DrawScope.drawMarkInner(
     // silhouette stays recognisable (the heart's 3D projection lumps past ~14°) and the
     // eyes keep their inset. tanh keeps it springy instead of a hard stop.
     val (yawCap, pitchCap) = turnCapFor(shape.id, bodyKind)
-    val pitch = softCap(f.body.pitch + look.pitchDeg, pitchCap)
-    val spinning = kotlin.math.abs(f.spinYaw) >= 0.5f
+    val pitch = softCap(f.body.pitch + look.pitchDeg, pitchCap) + f.spinPitch
+    val spinning = kotlin.math.abs(f.spinYaw) >= 0.5f || kotlin.math.abs(f.spinPitch) >= 0.5f || kotlin.math.abs(f.spinRoll) >= 0.5f
     val yaw = softCap(f.body.yaw + look.yawDeg, yawCap) + f.spinYaw
-    val roll = f.body.roll
+    val roll = f.body.roll + f.spinRoll
     val clip = ClipSample(
         clipName = "live",
         time = 0f,

@@ -530,3 +530,97 @@ Own cadence: every 45–90 s of calm (×0.65 when lively), only when nothing els
 twirl beat) uses the engine14.1 weighty spin with run-up / eye drift / shake variants and
 the recover pause; the old plain-tween gesture spin is no longer used. Audit (600 s idle,
 5 seeds): 7–10 spins ⇒ one every ~60–85 s.
+
+## Engine16: the full character (episodes, spin axes, rest, eye colour, editor)
+
+Goal: a quiet little character that is alive *for a reason*. Stillness is the default; the
+catalogue is large but sparse, so a user keeps discovering beats for hours. Every idea was
+filtered through "would a small character on a phone do this, with a beat of thought?" —
+anything showy or busy-for-its-own-sake was cut or made very rare.
+
+### Idle episode planner (`IdleEpisodes.kt`)
+One planner owns every *self-started* idle beat (it replaces the engine12 spontaneous
+`MomentPlanner` roll; that class now only serves event moments like Wiggle / SmugNod).
+
+- Checks every 3.5–8.5 s, only when **free** (idle lifecycle, no reaction / train / social /
+  focus / spin / recovery / rest, ≥ 3 s after any outside stimulus).
+- Global spacing 30 s calm … 14 s lively (×1.3 when drowsy). "Nothing" is always the
+  heaviest single option; choosing stillness backs off half a spacing.
+- Weight = tier × reason(context) × cooldown² × history (last pick ×0.15, recent ×0.5).
+  Reason 0 = cannot happen (e.g. RestEyes needs drowsy + 90 s untouched; Smug needs a nice
+  moment in the last 2 min; ContentSlowBlink needs good mood).
+- Tiers: Common 1 · Uncommon 0.38 · Rare 0.1 · VeryRare 0.03.
+
+| Episode | Tier | Reason / what it looks like |
+|---|---|---|
+| CuriousLR | Common | look left, then right, back to rest (sometimes a curious brow), maybe a blink |
+| CheckOnYou | Common | looks at the person (front, slightly down); soft smile if mood is good, else a blink |
+| TiltChain | Common | eyes to a point, soft head tilt one way, then the other, straighten |
+| Scan | Common | slow pan across a few related points |
+| SkepticalLR | Uncommon | look left with the left brow raised (`confused left`), then right with the right brow (`confused`), back to rest, blink |
+| HmmLean | Uncommon | small lean + puzzled eyes toward something low; sometimes a "got it" nod |
+| DoubleTake | Uncommon | glance, start back, snap back (sometimes surprised) |
+| Peek | Uncommon | leans to peek to one side |
+| FollowSomething | Uncommon | eyes track something drifting across (smooth pursuit), lose it, blink, maybe tilt |
+| LookUpRemember | Uncommon | looks up-**left** (never up-right), puzzled … "ah" nod |
+| ContentSlowBlink | Uncommon | cat-like slow blink with a soft smile (good mood only) |
+| NoticePill | Uncommon | looks at the activity pill (when present) |
+| Stretch | Rare | stiff after stillness: stretch up, eyes shut, exhale |
+| Yawn | Rare | rises, head back, eyes squeezed (`Eyes closed`) ~1.5 s; 50 % a little head shake + blink-blink + squint to wake up, else a slow blink |
+| SleepyDrift | Rare | head sinks … catches itself |
+| RestEyes | Rare | after a long untouched spell: lids close slowly (head dips a touch), 5–10 s; may doze (`Sleeping`, 35–80 s) then wake on its own (sometimes with a yawn) |
+| WorriedGlance | Rare | glance down-side, worried, blink, back, sometimes a reassured nod |
+| ComeToSenses | Rare | zoned out → blink-blink, small head shake, squint, back to the present (no spin) |
+| Smug | VeryRare | remembers a nice exchange: small smug nod |
+| LookAround360 | VeryRare | long survey far-left → far-right with a tilt |
+| Sneeze | VeryRare | scrunch, tiny recoil, blink-blink |
+
+Every episode is logged (`episode X (tier) why=…`) and played as a `tell()` train, so each
+step is logged too; any face change inside carries its cause (e.g. `skeptical: sizing
+something up on the left`, `yawn (tired)`, `dozed off while resting eyes`).
+
+### Resting eyes / dozing / waking
+`restPhase` 1 = resting eyes (lid → 0.06, head dips ~5°, slower breath look), 2 = dozing
+(`Sleeping` face, lid 0). Any outside activity (poke, typing, events) wakes **gently**:
+lids open over ~0.5 s, WakeSquint + double blink, 35 % a small wake shake. Its own face
+accents no longer count as activity (they used to reset the quiet timer, so drowsiness
+never set in during a long idle).
+
+### Spins: only when lively, and not always horizontal
+- **Idle never spins.** The engine15 45–90 s idle cadence is gone, the aliveness "twirl"
+  is disabled, and an aliveness spin beat is only honoured when not idle (or right after a
+  nice moment / pokes). Audit asserts 0 idle spins.
+- Spin triggers (`trySpin(cause)`, ≥ 20 s apart): poked a lot (6), reply finished in a good
+  mood (14 %, ≥ 50 s since last), a really nice message in a playful mood (30 % instead of
+  the wiggle), rarely while streaming in a great mood (15 % per 20–40 s check, ≥ 90 s).
+- `SpinPath` varies the axis (history-aware, never the same twice in a row):
+  Turn 0.28 (vertical) · Top 0.2 (turn leaning into it like a top) · Cartwheel 0.18 (in-plane
+  roll) · Flip 0.16 (forward/back somersault) · Tumble 0.1 (diagonal yaw+pitch) · Barrel 0.08
+  (roll with a quarter-yaw twist). All share the same weighty timeline (run-up, half-cosine
+  rise, momentum, friction glide, follow-through — vertical for a flip — optional shake-off),
+  and all end exactly at rest. Flips / tumbles / barrels are ~5 % slower (more mass).
+- Recovery varies: after a non-Turn path 30 % brief Dizzy; else blink-blink, a pleased look
+  (good mood), a small nod, or simply still. A shake-off already counts as recovery.
+
+### Busy faces
+Thinking rotation gains `Eyes closed` (concentrating), `pouty` (effort), `confused left`,
+and a little `Worried`; still history-aware with holds, never stuck on one face; never
+low → Happy directly.
+
+### Generical eye colour
+The eye outline is now **exactly the eye colour** (it was contrast-nudged against the shade
+colour, so with shade off — fade == eye — it was always pushed toward white/black, and some
+custom colours got a different rim). Fill gradient top = eye colour, bottom = mix toward the
+surface (unchanged, `EYE_SHADE_MIX`), shade toggle unchanged. The *default* Generical eye on
+a near-white body is ink (#1C1C1E) instead of invisible white.
+
+### Avatar editor
+Stage card with the live avatar on a soft spotlight of its own colour and a "Eyes · Shape"
+caption; sections as rounded cards (Shape → Colour → Eyes); shape tiles 54 dp with a
+body-colour ring when selected; swatches with a selection ring (no check glyph over the
+colour); a colour-wheel "custom" swatch that fills with the chosen colour; a segmented
+Generical/Grok control with tiny live previews; full-width Save with a pinned bar.
+
+### Audit (AvatarMotionVideoTest.behaviourAudit)
+5 seeds × 10 min untouched idle + one untouched hour. Asserts: spins = 0, uncaused face
+changes = 0, low → bright cuts = 0. Writes `audit_summary.csv`, `audit_hour_episodes.csv`.

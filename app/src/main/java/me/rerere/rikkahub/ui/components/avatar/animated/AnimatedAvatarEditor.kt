@@ -181,15 +181,33 @@ internal fun AnimatedAvatarEditorContent(
     scrollState: androidx.compose.foundation.ScrollState = rememberScrollState(),
 ) {
     val density = LocalDensity.current
-    var barHeight by remember { mutableStateOf(72.dp) }
+    var barHeight by remember { mutableStateOf(80.dp) }
+    val cs = MaterialTheme.colorScheme
+    val bodyColor = MarkColors.hexToColor(colorHex)
+    val isGenerical = eyeType.equals("generical", ignoreCase = true)
     Box(modifier = modifier) {
-            Column(
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(scrollState)
+                .padding(horizontal = 20.dp)
+                .padding(top = 4.dp, bottom = barHeight + 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // ---- Stage: the live avatar on a soft spotlight of its own colour.
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp)
-                    .padding(top = 8.dp, bottom = barHeight + 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .height(232.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(cs.surfaceContainerHigh)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.radialGradient(
+                            listOf(bodyColor.copy(alpha = 0.22f), Color.Transparent),
+                        )
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
                 AnimatedMarkAvatar(
                     shapeId = shape,
@@ -201,185 +219,37 @@ internal fun AnimatedAvatarEditorContent(
                     personality = Personality.resolve(eyeType, traits),
                     isLoading = false,
                     calmPreview = true,
-                    modifier = Modifier.size(168.dp),
+                    modifier = Modifier.size(164.dp),
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(stringResource(R.string.avatar_animated_eyes), style = MaterialTheme.typography.labelLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    FilterChip(
-                        selected = eyeType.equals("generical", ignoreCase = true),
-                        onClick = { onEyeType("generical") },
-                        label = { Text(stringResource(R.string.avatar_animated_eye_generical)) },
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    FilterChip(
-                        selected = eyeType.equals("grok", ignoreCase = true),
-                        onClick = { onEyeType("grok") },
-                        label = { Text(stringResource(R.string.avatar_animated_eye_grok)) },
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(stringResource(R.string.avatar_animated_eye_color), style = MaterialTheme.typography.labelLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
+                Text(
+                    text = (if (isGenerical) stringResource(R.string.avatar_animated_eye_generical) else stringResource(R.string.avatar_animated_eye_grok)) +
+                        "  ·  " + shape.replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = cs.onSurfaceVariant,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val def = defaultEyeHex(eyeType)
-                    val current = (eyeColorHex?.takeIf { it.isNotBlank() } ?: def)
-                        .let { MarkColors.normalizeHex(it) }
-                    eyeSwatches(eyeType).forEach { hex ->
-                        val color = MarkColors.hexToColor(hex)
-                        val selected = current.equals(hex, ignoreCase = true)
-                        val isDefault = hex.equals(def, ignoreCase = true)
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .then(
-                                    when {
-                                        color.luminance() < 0.08f -> Modifier.border(1.dp, Color(0x33FFFFFF), CircleShape)
-                                        color.luminance() > 0.9f -> Modifier.border(1.dp, Color(0x33000000), CircleShape)
-                                        else -> Modifier
-                                    }
-                                )
-                                // Picking the mode default stores null so it tracks the mode.
-                                .clickable { onEyeColor(if (isDefault) null else hex) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (selected) {
-                                Icon(
-                                    Icons.Rounded.Check,
-                                    contentDescription = if (isDefault) {
-                                        stringResource(R.string.avatar_animated_eye_color_default)
-                                    } else null,
-                                    tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(
-                                eyeColorHex?.let { MarkColors.hexToColor(it) }
-                                    ?: MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .clickable { onPickEyeColor() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Edit,
-                            contentDescription = stringResource(R.string.avatar_animated_eye_color),
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
+                        .clip(CircleShape)
+                        .background(cs.surfaceContainerHighest.copy(alpha = 0.7f))
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+            }
 
-                if (eyeType.equals("generical", ignoreCase = true)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onEyeShade(!eyeShade) }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(R.string.avatar_animated_eye_shade),
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        androidx.compose.material3.Switch(
-                            checked = eyeShade,
-                            onCheckedChange = onEyeShade,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(stringResource(R.string.avatar_animated_color), style = MaterialTheme.typography.labelLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    MarkColors.PRESETS.forEach { (name, hex) ->
-                        val color = MarkColors.hexToColor(hex)
-                        val selected = colorPreset == name
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .clickable { onColor(hex, name) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (selected && colorPreset != null) {
-                                Icon(
-                                    Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MarkColors.hexToColor(colorHex))
-                            .clickable { onPickColor() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Edit,
-                            contentDescription = stringResource(R.string.avatar_animated_color),
-                            tint = if (MarkColors.hexToColor(colorHex).luminance() > 0.5f) Color.Black else Color.White,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(stringResource(R.string.avatar_animated_shape), style = MaterialTheme.typography.labelLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-                // FlowRow scrolls with parent — no nested LazyVerticalGrid pushing Save off-screen.
+            // ---- Shape
+            EditorSection(stringResource(R.string.avatar_animated_shape)) {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     MarkShapes.SHAPES.forEach { s ->
+                        val sel = shape == s
                         Box(
                             modifier = Modifier
-                                .padding(4.dp)
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    if (shape == s) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surfaceVariant,
-                                )
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (sel) bodyColor.copy(alpha = 0.16f) else cs.surfaceContainerHighest)
+                                .then(if (sel) Modifier.border(2.dp, bodyColor, RoundedCornerShape(16.dp)) else Modifier)
                                 .clickable { onShape(s) },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -392,34 +262,212 @@ internal fun AnimatedAvatarEditorContent(
                                 eyeShade = eyeShade,
                                 isLoading = false,
                                 calmPreview = true,
-                                modifier = Modifier.size(34.dp),
+                                modifier = Modifier.size(36.dp),
                             )
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Pinned Save/Cancel overlays the bottom; scroll content is padded by its
-            // measured height so the last shape row is always reachable.
+            // ---- Body colour
+            EditorSection(stringResource(R.string.avatar_animated_color)) {
+                SwatchRow {
+                    MarkColors.PRESETS.forEach { (name, hex) ->
+                        Swatch(MarkColors.hexToColor(hex), selected = colorPreset == name) { onColor(hex, name) }
+                    }
+                    CustomSwatch(current = if (colorPreset == null) bodyColor else null, contentDescription = stringResource(R.string.avatar_animated_color), onClick = onPickColor)
+                }
+            }
+
+            // ---- Eyes: style, colour, shade
+            EditorSection(stringResource(R.string.avatar_animated_eyes)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(cs.surfaceContainerHighest)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    for ((id, label) in listOf("generical" to R.string.avatar_animated_eye_generical, "grok" to R.string.avatar_animated_eye_grok)) {
+                        val sel = eyeType.equals(id, ignoreCase = true)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (sel) cs.surfaceContainerLow else Color.Transparent)
+                                .clickable { onEyeType(id) }
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AnimatedMarkAvatar(
+                                shapeId = "blob", eyeType = id, colorHex = colorHex, colorPreset = colorPreset,
+                                isLoading = false, calmPreview = true, modifier = Modifier.size(26.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                stringResource(label),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (sel) cs.onSurface else cs.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(stringResource(R.string.avatar_animated_eye_color), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                val def = defaultEyeHex(eyeType)
+                val current = MarkColors.normalizeHex(eyeColorHex?.takeIf { it.isNotBlank() } ?: def)
+                val swatches = eyeSwatches(eyeType)
+                SwatchRow {
+                    swatches.forEach { hex ->
+                        val isDefault = hex.equals(def, ignoreCase = true)
+                        // Picking the mode default stores null so it tracks the mode.
+                        Swatch(MarkColors.hexToColor(hex), selected = current.equals(hex, ignoreCase = true),
+                            contentDescription = if (isDefault) stringResource(R.string.avatar_animated_eye_color_default) else null,
+                        ) { onEyeColor(if (isDefault) null else hex) }
+                    }
+                    val custom = eyeColorHex?.takeIf { h -> swatches.none { it.equals(MarkColors.normalizeHex(h), ignoreCase = true) } }
+                    CustomSwatch(current = custom?.let { MarkColors.hexToColor(it) }, contentDescription = stringResource(R.string.avatar_animated_eye_color), onClick = onPickEyeColor)
+                }
+                if (isGenerical) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onEyeShade(!eyeShade) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.avatar_animated_eye_shade),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = cs.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        androidx.compose.material3.Switch(checked = eyeShade, onCheckedChange = onEyeShade)
+                    }
+                }
+            }
+        }
+
+        // Pinned actions; scroll content is padded by their measured height.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(cs.surfaceContainerLow)
+                .onSizeChanged { barHeight = with(density) { it.height.toDp() } },
+        ) {
+            androidx.compose.material3.HorizontalDivider(color = cs.outlineVariant.copy(alpha = 0.4f))
             Row(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                    .onSizeChanged { barHeight = with(density) { it.height.toDp() } }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.End,
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onDismiss) {
+                TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) {
                     Text(stringResource(R.string.avatar_cancel))
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = onSave) {
-                    Text(stringResource(R.string.avatar_animated_save))
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(
+                    onClick = onSave,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                ) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.avatar_animated_save), style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
     }
+}
 
+@Composable
+private fun EditorSection(title: String, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(12.dp))
+        content()
+    }
+}
+
+@Composable
+private fun SwatchRow(content: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) { content() }
+}
+
+/** Colour dot; selection is a ring with a gap (no check glyph over the colour). */
+@Composable
+private fun Swatch(color: Color, selected: Boolean, contentDescription: String? = null, onClick: () -> Unit) {
+    val ring = MaterialTheme.colorScheme.onSurface
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .then(if (selected) Modifier.border(2.dp, ring, CircleShape) else Modifier)
+            .clickable(onClickLabel = contentDescription) { onClick() }
+            .padding(if (selected) 5.dp else 3.dp)
+            .clip(CircleShape)
+            .background(color)
+            .then(
+                when {
+                    color.luminance() < 0.08f -> Modifier.border(1.dp, Color(0x33FFFFFF), CircleShape)
+                    color.luminance() > 0.9f -> Modifier.border(1.dp, Color(0x22000000), CircleShape)
+                    else -> Modifier
+                }
+            ),
+    )
+}
+
+/** "Custom…" swatch: a colour-wheel ring; filled with the custom colour once one is chosen. */
+@Composable
+private fun CustomSwatch(current: Color?, contentDescription: String, onClick: () -> Unit) {
+    val wheel = androidx.compose.ui.graphics.Brush.sweepGradient(
+        listOf(Color(0xFFFF453A), Color(0xFFFFD60A), Color(0xFF30D158), Color(0xFF64D2FF), Color(0xFF0A84FF), Color(0xFFBF5AF2), Color(0xFFFF453A))
+    )
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .border(if (current != null) 2.5.dp else 2.dp, wheel, CircleShape)
+            .clickable { onClick() }
+            .padding(5.dp)
+            .clip(CircleShape)
+            .background(current ?: MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Rounded.Edit,
+            contentDescription = contentDescription,
+            tint = when {
+                current == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                current.luminance() > 0.5f -> Color.Black
+                else -> Color.White
+            },
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}

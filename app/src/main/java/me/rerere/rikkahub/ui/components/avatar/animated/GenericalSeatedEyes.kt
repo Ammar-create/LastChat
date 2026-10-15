@@ -387,9 +387,11 @@ object GenericalSeat {
         )
         scope.drawPath(eye.path, brush)
         // Julian's Figma: outline 8 on the 500 viewBox, scaled with the eye size.
+        // Engine16: the outline is exactly the eye colour (same as the fill and the top of the
+        // shade) for every colour and with the shade on or off — never contrast-shifted.
         scope.drawPath(
             eye.path,
-            color = MarkColors.outlineOn(eyeColor, fade),
+            color = eyeColor,
             style = Stroke(width = 8f * fit * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
     }

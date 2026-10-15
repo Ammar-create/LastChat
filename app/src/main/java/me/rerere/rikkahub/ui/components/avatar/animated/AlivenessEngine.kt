@@ -274,7 +274,11 @@ internal class AlivenessEngine(private val rng: Random) {
                 (if (emo == Emotion.Joy || emo == Emotion.Amusement) 1f + 2f * el else 1f),
             "confused" to (if (thinking) 0.05f else 0.015f) * show * (if (emo == Emotion.Confusion) 1f + 3f * el else 1f),
             "Surprised" to 0.025f * (0.5f + arousal) * show * (if (emo == Emotion.Surprise) 1f + 3f * el else 1f),
-            "Worried" to (if (emo == Emotion.Concern) 0.08f * el else 0f),
+            "Worried" to (if (emo == Emotion.Concern) 0.08f * el else if (thinking) 0.012f else 0f),
+            // Engine16 thinking variety: eyes shut to concentrate, a pout of effort, a small "hmm".
+            "Eyes closed" to (if (thinking) 0.03f else 0f) * (0.6f + p.calmness),
+            "pouty" to (if (thinking) 0.018f else 0.006f) * show,
+            "confused left" to (if (thinking) 0.03f else 0.01f) * show,
         )
         val opts = base.mapNotNull { (k, w) ->
             if (k == busyFace) return@mapNotNull null
@@ -285,7 +289,7 @@ internal class AlivenessEngine(private val rng: Random) {
         }.ifEmpty { listOf("Neutral" to 1f) }
         var k = weighted(opts)
         // Engine15: no cut from a low face straight to a bright one; pass through neutral.
-        if (busyFace in setOf("Bored", "Sad", "Worried") && k == "Happy") k = "Neutral"
+        if (busyFace in setOf("Bored", "Sad", "Worried", "Eyes closed") && k == "Happy") k = "Neutral"
         lastUsed["face:$k"] = clock
         recentFaces.addLast(k)
         while (recentFaces.size > 4) recentFaces.removeFirst()
@@ -298,6 +302,8 @@ internal class AlivenessEngine(private val rng: Random) {
             "Happy" -> logRange(0.7f, 1.8f)
             "Surprised" -> logRange(0.45f, 0.9f)
             "hurt or cute" -> logRange(0.5f, 1.0f)
+            "Eyes closed" -> logRange(0.6f, 1.2f)
+            "pouty" -> logRange(0.6f, 1.3f)
             else -> logRange(0.8f, 2.2f)
         }
     }
@@ -357,9 +363,10 @@ internal class AlivenessEngine(private val rng: Random) {
             "hum" to 0.03f * (0.2f + boredom) * (0.4f + p.playfulness) * (0.5f + valence.coerceAtLeast(0f)) * cool("hum", 90f),
             "peekaboo" to 0.012f * p.shyness * p.playfulness * 4f * cool("peekaboo", 180f),
             // Easter eggs: rare.
-            "sneeze" to 0.004f * cool("sneeze", 600f),
-            "yawn" to 0.04f * fatigue() * cool("yawn", 240f),
-            "twirl" to 0.003f * p.playfulness * p.energy * 4f * (0.5f + valence.coerceAtLeast(0f)) * cool("twirl", 900f),
+            // Engine16: sneeze / yawn moved to the episode planner; idle never spins.
+            "sneeze" to 0f,
+            "yawn" to 0f,
+            "twirl" to 0f * 0.003f * p.playfulness * p.energy * 4f * (0.5f + valence.coerceAtLeast(0f)) * cool("twirl", 900f),
         ).map { (k, w) -> k to w * fresh(k) * (if (k in NO_CAUSE_IDLE && !(k == "curious" && emo == Emotion.Interest) &&
             !(k == "smile" && (emo == Emotion.Pride || emo == Emotion.Joy))) 0f else 1f) }.filter { it.second > 0f }
         val k = weighted(opts)
