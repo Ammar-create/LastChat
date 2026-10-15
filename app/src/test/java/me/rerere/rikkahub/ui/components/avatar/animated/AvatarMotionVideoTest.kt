@@ -48,7 +48,7 @@ class AvatarMotionVideoTest {
     private val cellDp = 120
     private val perStrip = 15
 
-    private class Script(val name: String, val seconds: Float, val preRoll: Float = 0f, val at: (AvatarMotionState, AvatarStage, Float, Long) -> AvatarMotionHints)
+    private class Script(val name: String, val seconds: Float, val preRoll: Float = 0f, val seed: Int = 7, val at: (AvatarMotionState, AvatarStage, Float, Long) -> AvatarMotionHints)
 
     private val scripts = listOf(
         Script("busy", 30f) { _, _, t, _ ->
@@ -59,7 +59,7 @@ class AvatarMotionVideoTest {
                 else -> AvatarMotionHints()
             }
         },
-        Script("idle", 60f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() },
+        Script("idle", 90f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() },
         // Same stimulus six times (variation, latency, sometimes nothing), then one
         // off-gaze / out-of-view event that has to be noticed late.
         Script("reactions", 38f, preRoll = 10f) { s, _, t, _ ->
@@ -72,10 +72,16 @@ class AvatarMotionVideoTest {
             if (t >= 1.5f && fired.add(1.5f)) s.debugPerform(Response.Startle)
             AvatarMotionHints()
         },
-        Script("spin", 16f, preRoll = 10f) { s, _, t, _ ->
-            if (t >= 1f && fired.add(1f)) s.debugMoment(Moment.Spin)
-            if (t >= 6f && fired.add(6f)) s.debugMoment(Moment.PartialSpin)
-            if (t >= 11f && fired.add(11f)) s.debugMoment(Moment.Spin)
+        Script("spin", 24f, preRoll = 10f) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugSpin(runUp = false, shake = false)
+            if (t >= 5.5f && fired.add(5.5f)) s.debugSpin(runUp = true, shake = false)
+            if (t >= 10f && fired.add(10f)) s.debugSpin(runUp = false, shake = true)
+            if (t >= 14.5f && fired.add(14.5f)) s.debugSpin(runUp = true, shake = true)
+            if (t >= 19.5f && fired.add(19.5f)) s.debugSpin(runUp = null, shake = null)
+            AvatarMotionHints()
+        },
+        Script("spin2", 24f, preRoll = 10f, seed = 21) { s, _, t, _ ->
+            for (p in listOf(1f, 5.5f, 10f, 14.5f, 19.5f)) if (t >= p && fired.add(p)) s.debugSpin(runUp = null, shake = null)
             AvatarMotionHints()
         },
         Script("moments", 30f, preRoll = 10f) { s, _, t, _ ->
@@ -87,6 +93,13 @@ class AvatarMotionVideoTest {
             if (t >= 26.5f && fired.add(26.5f)) s.debugMoment(Moment.SmugNod)
             AvatarMotionHints()
         },
+        // Every unordered pair of Julian's 13 frames exactly once (13 is prime: steps 1..6
+        // around the ring are Hamiltonian cycles), 1.1 s per face incl. path<->rect morphs.
+        Script("morphs", 86f) { s, _, t, _ ->
+            val i = (t / 1.1f).toInt()
+            if (i < MORPH_SEQ.size && fired.add(i.toFloat())) s.debugReact(MORPH_SEQ[i], 3f)
+            AvatarMotionHints()
+        },
         Script("expr", 14f) { s, _, t, _ ->
             val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "angered or concentrated", "Worried")
             val i = (t / 2f).toInt()
@@ -94,6 +107,12 @@ class AvatarMotionVideoTest {
             AvatarMotionHints()
         },
     )
+
+    private val MORPH_SEQ: List<String> = run {
+        val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping")
+        (1..6).flatMap { k -> (0 until 13).map { ids[(it * k) % 13] } } + ids[0]
+    }
 
     private var lastLog: List<String> = emptyList()
     private val fired = HashSet<Float>()
@@ -172,6 +191,22 @@ class AvatarMotionVideoTest {
         }
     }
 
+    /** Every expression id, static, both modes (mapping sheet) + gaze-shape poses. */
+    @Test
+    fun renderExprSheet() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "exprsheet" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3")
+        for (mode in listOf("generical", "grok")) {
+            captureStrip(File(out, "exprsheet_$mode.png"), "blob", mode, ids.map { MotionFrame(exprFrom = it, exprTo = it) })
+            captureStrip(File(out, "gazeshape_$mode.png"), "blob", mode,
+                listOf(-0.95f, -0.6f, -0.3f, 0f, 0.3f, 0.6f, 0.95f).map { MotionFrame(headLookX = it) })
+        }
+        File(out, "exprsheet_ids.txt").writeText(ids.joinToString("\n"))
+    }
+
     /** Draw cost per frame: rest vs spin, through the real drawMark (software canvas). */
     @Test
     fun spinDrawCost() {
@@ -215,7 +250,7 @@ class AvatarMotionVideoTest {
         for (sc in scripts) {
             AvatarDebugMetrics.label = sc.name
             if (only != null && sc.name !in only) continue
-            val frames = simulate(sc, 7)
+            val frames = simulate(sc, sc.seed)
             File(out, "${sc.name}_behavior.csv").writeText("t,event\n" + lastLog.joinToString("\n") + "\n")
             if (sc.name == "startle") {
                 // The startle must visibly play: a quick stretch pop right after typing starts.
@@ -223,11 +258,11 @@ class AvatarMotionVideoTest {
                 val pop = win.maxOf { it.body.squashY }
                 org.junit.Assert.assertTrue("startle pop missing (max squashY $pop)", pop > 1.09f)
             }
-            File(out, "${sc.name}.csv").writeText("t,pitch,yaw,roll,posY,sqX,sqY,lookX,lookY,lid,exprFrom,exprTo,exprT,spin\n" +
+            File(out, "${sc.name}.csv").writeText("t,pitch,yaw,roll,posY,sqX,sqY,lookX,lookY,lid,exprFrom,exprTo,exprT,spin,leadX\n" +
                 frames.withIndex().joinToString("\n") { (i, f) ->
-                    "%.3f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%s,%s,%.3f,%.2f".format(
+                    "%.3f,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%s,%s,%.3f,%.2f,%.4f".format(
                         i.toFloat() / fps, f.body.pitch, f.body.yaw, f.body.roll, f.body.posY, f.body.squashX, f.body.squashY,
-                        f.headLookX, f.headLookY, f.lid, f.exprFrom, f.exprTo, f.exprT, f.spinYaw)
+                        f.headLookX, f.headLookY, f.lid, f.exprFrom, f.exprTo, f.exprT, f.spinYaw, f.leadX)
                 })
             for (mode in listOf("generical", "grok")) for (shape in videoShapes) {
                 val dir = File(out, "${sc.name}_${mode}_$shape").apply { mkdirs() }

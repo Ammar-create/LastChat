@@ -345,3 +345,63 @@ flower 0.87, hex 0.88, sparkle 0.90) so separation relative to the face matches 
 - The spin curve is one ease-in-out sweep to just past the stop, then one small ease back.
   Velocity is unimodal, and the only sign change is the end overshoot. Nothing re-targets it.
 - Heart loft depth is 0.30, down from 0.62, so edge-on the heart is a slim lens instead of a lump.
+
+## Engine13: motion craft per behaviour
+
+General principles: anticipation only where a real body would wind up. The eyes lead deliberate
+looks and lag inertial moves. Endings decelerate to rest; bounce is reserved for genuinely bouncy
+emotions (startle, playful hop). Every moment varies its size, timing and side, and avoids
+repeating its last variant. Restraint wins: when a moment could read as canned, it was cut or
+made smaller.
+
+| Behaviour | Anticipation | Main curve | Eyes vs body | Ending | Variety / restraint |
+|---|---|---|---|---|---|
+| **Spin** | Optional run-up (≈45–60 %, history-aware): 3–7° counter-turn plus 1.5–3.5 % crouch over 0.2–0.34 s (ease-in-out), released as the turn starts. | Velocity rises from rest on a half-cosine to a peak at 24–36 % of the turn, then falls on a longer half-cosine to exactly zero. Friction-like, unimodal, no body overshoot. 0.95–1.2 s (playful) or 1.25–1.6 s. | Rigid on the surface during the turn (face, gaze and rotation layers held). At the stop the face keeps sliding 0.05–0.1 face units in the spin direction (ease-out, 0.14–0.22 s), then glides back (ease-in-out, 0.38–0.6 s). | Dead stop. Optional shake-off (more likely when tired or playful, less likely if it happened last time): 2–3 decaying 4–5 Hz head shakes of 3.5–6.5°, eyes lagging slightly, 50 % with a blink. | Direction is random but never three times the same way. If the run-up/shake combination would repeat, one part flips. |
+| Half turn "look behind" | — | — | — | — | **Removed** (read as canned). |
+| **Scan** (look-around) | A blink rides the first big shift ~30 % of the time. | Saccades (fast, no bounce); the head follows bigger shifts ~100 ms later, critically damped. | Eyes lead, head follows. | Final fixation near centre with a 1.5–3 s rest. | 2–4 points with 0.7–1.5 s holds, sometimes doubling back. |
+| **Peek** | The eyes go first. | The lean and tilt start 120–220 ms later, critically damped. | Eyes lead. | Critically damped return, no bounce. | 5–8° tilt (was 7–11°), 50 % Curious face. |
+| **Stretch** | A small crouch (first 12 %). | Ease-in-out rise and elongation, eyes shut, hold. | Lids close after the rise begins. | Ease-in-out settle, a blink, 50 % a relaxed exhale (sigh). | Only after > 40 s quiet when bored or tired; 180 s cooldown. |
+| **Sleepy drift** | — | The head sinks slowly (ease-in-out, 3.5–5 s), lids heavy. | Lids lag the head. | Perk up with a quick ease-out lift, a squint, a blink (double only 35 %). | Only at low energy or high boredom. |
+| **Pill glance** | — | A saccade to the real pill. | Eyes land first; a head tilt follows 250–450 ms later (45 %). | Gaze returns by the normal planner. | 35 % small smile. |
+| **Wiggle** (nice message) | — | 1.5 decaying roll cycles of 3–5° (was 2.5 cycles of 5–8°). | Eyes counter-lag slightly. | Decays to rest. | Only for clearly positive tone (valence > 0.5), 25–50 %, 40 s cooldown. Toned down (was cringe-prone). |
+| **Smug nod** | — | A nod (springy only when playful). | Smug accent first. | — | ~25 % of finished replies, 50 s cooldown. |
+| **Reactions** | — | Perception latency 150–600 ms; the response comes from the repertoire (including no visible reaction); intensity scales with mood and salience. | Eyes orient first. | Per motion vocabulary. | History-aware; nothing behind the avatar is noticed before it is perceived. |
+| **Idle** | — | Human fixation timing (log-normal 2–8 s), slow drifts, micro-shifts. | — | — | Low motion budget. Up-right never rests (> 0.75 s eases back). |
+
+### Generical expressions: Julian's Figma set (engine13)
+
+`assets/avatar/generical-eyes.json` is generated from Julian's per-frame SVG export
+("Generical expressions" Figma, 500×500 frames). Rect and path data, corner radii and gradients
+are copied unchanged (`port.py`). The outline is drawn at the house width of 5.
+
+| Julian frame | Engine id |
+|---|---|
+| Neutral | Neutral |
+| Bored | Bored |
+| Sad | Sad |
+| Happy | Happy |
+| Eyes closed | Eyes closed |
+| Sad/hurt/confused | confused (replaces the synthesised mirrored-sad version) |
+| Surprised | Surprised |
+| Worried | Worried |
+| Suspicious/angered | angered or concentrated |
+| Angry | Angry |
+| Angry/pouty | pouty |
+| hurt/cute | hurt or cute |
+| Sleeping | Sleeping |
+| Looking to the right | gaze-shape reference; "Looking to the left" is its mirror about x = 250 |
+| Looking up | same eye shape as Neutral; the gaze system does the look |
+
+Only "Group 3" (playful) is kept from the old set, because no frame of his matches it.
+
+All frames are resampled to the same 96-point outline (top-start, clockwise), so morphs between
+any two frames, path or rect, are a single point-to-point blend.
+
+**Gaze shape.** While the face is Neutral, a sideways head look past about 0.3 leans the outlines
+up to 85 % toward his look-right pose (or its mirror): the far eye grows taller and the near eye
+gets a slanted top. Position still comes from the unrestricted gaze system.
+
+**Angry tone-down.** The Annoyed accent slant went from 0.32 to 0.14 and the upper lid from 0.60
+to 0.74, per Julian's note that our angry was too angry.
+
+**Grok** keeps its capsule set. His shapes don't map naturally onto Grok's black capsule eyes.

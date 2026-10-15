@@ -44,22 +44,17 @@ object GenericalFace {
     private val shifts = HashMap<String, Int>()
 
     /**
-     * "confused" is built from the Neutral and Sad eyes so it keeps the
-     * same size and style as every other face (the old reference confused face was
-     * much smaller).
+     * Every face is Julian's hand-made design from generical-eyes.json (engine13: his Figma
+     * "Generical expressions" set; "confused" is his Sad/hurt/confused frame, no longer
+     * synthesised). "Looking to the left" is his look-right frame mirrored.
      */
     fun face(exprId: String): Face? {
         faces[exprId]?.let { return it }
         if (!AvatarPackData.isLoaded()) return null
-        if (exprId == "confused") {
-            // Built only from the hand-made eyes, so corners and outline match:
-            // the Neutral eye and the Sad eye mirrored left-right, both resting on
-            // the same bottom line as the Neutral pair.
-            val n = face("Neutral") ?: return null
-            val sad = face("Sad") ?: return null
-            val bottom = n.right.y.max()
-            val built = Face(n.left, place(flipH(sad.right), bboxCx(n.right), bottom))
-            return built.also { faces[exprId] = it }
+        // "Looking to the left" = Julian's "Looking to the right" mirrored about the face centre.
+        if (exprId == LOOK_LEFT) {
+            val r = face(LOOK_RIGHT) ?: return null
+            return Face(mirror500(r.right), mirror500(r.left)).also { faces[exprId] = it }
         }
         val key = exprId
         val expr = AvatarPackData.generical.expressions[key]
@@ -79,6 +74,17 @@ object GenericalFace {
             r = translate(r, dx, dy)
         }
         return Face(l, r).also { faces[exprId] = it }
+    }
+
+    const val LOOK_RIGHT = "Looking to the right"
+    const val LOOK_LEFT = "Looking to the left"
+
+    /** Mirrored about the face centre x = 250 (point order kept clockwise). */
+    private fun mirror500(o: Outline): Outline {
+        val xs = FloatArray(N) { 500f - o.x[it] }
+        val ys = o.y.copyOf()
+        xs.reverse(); ys.reverse()
+        return reStart(Outline(xs, ys))
     }
 
     /** Mirrored left-right about its own box centre (point order kept clockwise). */
@@ -106,6 +112,8 @@ object GenericalFace {
         }
         return Outline(FloatArray(N) { o.x[(it + best) % N] }, FloatArray(N) { o.y[(it + best) % N] })
     }
+
+    private fun smooth01(x: Float): Float { val u = x.coerceIn(0f, 1f); return u * u * (3f - 2f * u) }
 
     private fun bboxCx(o: Outline) = (o.x.min() + o.x.max()) / 2f
     private fun bboxCy(o: Outline) = (o.y.min() + o.y.max()) / 2f
@@ -206,7 +214,12 @@ object GenericalFace {
      * Morphed eye outline in the 500 reference viewBox (y down).
      * [closure] 0 = as designed, 1 = fully closed bar (blink).
      */
-    fun outline(side: Int, from: String, to: String, t: Float, closure: Float): Outline? {
+    /**
+     * [gazeX] −1…1 (head look). While the face is Neutral, a strong sideways look leans the
+     * eye shapes toward Julian's "Looking to the right" (or its mirror): the far eye taller, the
+     * near eye smaller with a slanted top. The position still comes from the gaze system.
+     */
+    fun outline(side: Int, from: String, to: String, t: Float, closure: Float, gazeX: Float = 0f): Outline? {
         val fa = face(from) ?: return null
         val fb = face(to) ?: return null
         val a = if (side == 0) fa.left else fa.right
@@ -220,6 +233,20 @@ object GenericalFace {
             System.arraycopy(a.x, 0, xs, 0, N); System.arraycopy(a.y, 0, ys, 0, N)
         } else {
             lerpInto(xs, ys, a, b, shiftFor(from, to, side, a, b), tt)
+        }
+        val neutralW = (if (to == "Neutral") t.coerceIn(0f, 1f) else 0f) + (if (from == "Neutral") 1f - t.coerceIn(0f, 1f) else 0f)
+        val gk = smooth01((kotlin.math.abs(gazeX) - 0.3f) / 0.55f) * 0.85f * neutralW
+        if (gk > 0.01f) {
+            val pose = face(if (gazeX > 0f) LOOK_RIGHT else LOOK_LEFT)
+            val n = face("Neutral")
+            if (pose != null && n != null) {
+                val pe = if (side == 0) pose.left else pose.right
+                val ne = if (side == 0) n.left else n.right
+                // Shape only: keep the current eye's centre, borrow the pose's outline offsets.
+                val cur = Outline(xs.copyOf(), ys.copyOf())
+                val shaped = translate(pe, ne.cx - pe.cx, ne.cy - pe.cy)
+                lerpInto(xs, ys, cur, shaped, shiftFor("Neutral", if (gazeX > 0f) LOOK_RIGHT else LOOK_LEFT, side, ne, pe), gk)
+            }
         }
         val c = closure.coerceIn(0f, 1f)
         if (c > 0.001f) {

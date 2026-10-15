@@ -368,8 +368,6 @@ internal class IdlePlanner(private val rng: Random) {
 internal enum class Moment {
     /** Playful or happy: a full spin that overshoots and settles. Bored: a lazy one. */
     Spin,
-    /** Curious / bored: turns to look "behind", holds, turns back. */
-    PartialSpin,
     /** Curious: deliberate scan of 2–4 points with purposeful holds (checking out the room). */
     Scan,
     /** Curious: leans and tilts to peek at something to one side. */
@@ -418,7 +416,6 @@ internal class MomentPlanner(private val rng: Random) {
         val playful = t.playful(p) || (t.valence > 0.25f && p.playfulness > 0.55f)
         val opts = listOf(
             Moment.Spin to (if (playful) 0.45f else 0.03f + 0.25f * (t.boredom - 0.45f).coerceAtLeast(0f)) * (0.4f + p.playfulness) * cool(Moment.Spin, 100f),
-            Moment.PartialSpin to (0.12f * t.curiosity + 0.18f * t.boredom) * cool(Moment.PartialSpin, 60f),
             Moment.Scan to (0.4f * t.curiosity + 0.25f * t.boredom) * cool(Moment.Scan, 25f),
             Moment.Peek to 0.3f * t.curiosity * (0.5f + p.playfulness) * cool(Moment.Peek, 30f),
             Moment.Stretch to (if (quietSec > 40f && (t.boredom > 0.3f || t.energy < 0.35f)) 0.6f else 0f) * cool(Moment.Stretch, 180f),

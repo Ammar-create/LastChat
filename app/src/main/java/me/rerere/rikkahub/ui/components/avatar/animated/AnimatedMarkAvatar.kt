@@ -399,8 +399,8 @@ private fun DrawScope.drawMarkInner(
 
     // Generical: morph → seat on the surface → eye-colour fill fading into the surface tint.
     val closure = (1f - lid).coerceIn(0f, 1f)
-    val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
-    val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
+    val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure, f.headLookX) ?: return
+    val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure, f.headLookX) ?: return
     FaceRig.shapeOutline(lo.x, lo.y, 0, f.face.left)
     FaceRig.shapeOutline(ro.x, ro.y, 1, f.face.right)
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)

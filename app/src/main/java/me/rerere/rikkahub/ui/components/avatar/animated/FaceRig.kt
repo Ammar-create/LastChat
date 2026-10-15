@@ -204,7 +204,7 @@ class FaceRig(private val rng: Random) {
             // One eye a little bigger, the other narrowed, head-tilt feel.
             FaceAccent.Curious -> if (lead > 0f) EyeShape(sx = 1.06f, sy = 1.14f, dy = -0.01f, rot = 4f * s)
             else EyeShape(sx = 0.98f, sy = 0.9f, upper = 0.86f, rot = 4f * s)
-            FaceAccent.Annoyed -> EyeShape(upper = 0.6f, slant = 0.32f, sy = 0.96f)
+            FaceAccent.Annoyed -> EyeShape(upper = 0.74f, slant = 0.14f, sy = 0.97f) // engine13: was 0.32 slant, read too angry
             FaceAccent.Shy -> EyeShape(lower = 0.68f, sy = 0.94f, dy = 0.02f)
             FaceAccent.Startled -> EyeShape(sx = 1.2f, sy = 1.4f, dy = -0.016f)
             FaceAccent.Dizzy -> {
