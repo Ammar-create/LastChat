@@ -42,7 +42,7 @@ object EyeStyle {
             return "Neutral"
         }
         if (exprs.containsKey(raw) && raw != "Looking to the right") return raw
-        if (raw == "skeptical left" && exprs.containsKey("skeptical")) return raw
+        if (raw == "confused left" && exprs.containsKey("confused")) return raw
         val mapped = when (low) {
             "neutral", "rest" -> "Neutral"
             "happy", "happysquint" -> "Happy"

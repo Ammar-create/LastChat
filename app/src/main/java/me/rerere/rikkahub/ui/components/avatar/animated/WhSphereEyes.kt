@@ -244,7 +244,7 @@ object WhSphereEyes {
         "hurt or cute" -> "wink"
         "Angry" -> "angry"
         "Group 3" -> "playful"
-        "skeptical", "skeptical left" -> "confused"
+        "confused left" -> "confused"
         else -> "neutral"
     }
 

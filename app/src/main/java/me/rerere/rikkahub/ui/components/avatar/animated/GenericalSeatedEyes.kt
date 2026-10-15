@@ -45,13 +45,13 @@ object GenericalFace {
 
     /**
      * Every face is Julian's hand-made design from generical-eyes.json (engine13: his Figma
-     * "Generical expressions" set; "confused" is his Sad/hurt/confused frame, no longer
+     * "Generical expressions" set; "confused" is his raised-eyebrow frame (his Sad/hurt/confused frame is unused), no longer
      * synthesised).
      */
     fun face(exprId: String): Face? {
         faces[exprId]?.let { return it }
         if (!AvatarPackData.isLoaded()) return null
-        // "skeptical left" = Julian's skeptical frame mirrored about the face centre.
+        // "confused left" = the confused frame mirrored about the face centre.
         if (exprId == SIDE_EYE_LEFT) {
             val r = face(SIDE_EYE) ?: return null
             return Face(mirror500(r.right), mirror500(r.left)).also { faces[exprId] = it }
@@ -76,8 +76,8 @@ object GenericalFace {
         return Face(l, r).also { faces[exprId] = it }
     }
 
-    const val SIDE_EYE = "skeptical"
-    const val SIDE_EYE_LEFT = "skeptical left"
+    const val SIDE_EYE = "confused"
+    const val SIDE_EYE_LEFT = "confused left"
 
     /** Mirrored about the face centre x = 250 (point order kept clockwise). */
     private fun mirror500(o: Outline): Outline {

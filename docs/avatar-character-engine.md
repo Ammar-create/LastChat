@@ -381,7 +381,7 @@ are copied unchanged (`port.py`). The outline is drawn at the house width of 5.
 | Sad | Sad |
 | Happy | Happy |
 | Eyes closed | Eyes closed |
-| Sad/hurt/confused | confused (replaces the synthesised mirrored-sad version) |
+| Sad/hurt/confused | **not used** (Julian disliked it) |
 | Surprised | Surprised |
 | Worried | Worried |
 | Suspicious/angered | angered or concentrated |
@@ -389,7 +389,7 @@ are copied unchanged (`port.py`). The outline is drawn at the house width of 5.
 | Angry/pouty | pouty |
 | hurt/cute | hurt or cute |
 | Sleeping | Sleeping |
-| Looking to the right | **skeptical** (raised-eyebrow, slightly confused "hm, really?"), plus "skeptical left" mirrored about x = 250. A normal expression, never tied to gaze or head turn |
+| Looking to the right | **confused** (raised eyebrow, "hm, really?"), plus "confused left" mirrored about x = 250. A normal expression, never tied to gaze or head turn |
 | Looking up | not used (gaze is the 3D turn only) |
 
 Only "Group 3" (playful) is kept from the old set, because no frame of his matches it.
@@ -397,12 +397,19 @@ Only "Group 3" (playful) is kept from the old set, because no frame of his match
 All frames are resampled to the same 96-point outline (top-start, clockwise), so morphs between
 any two frames, path or rect, are a single point-to-point blend.
 
-**"skeptical" triggers** (sparing, brief 0.8–1.4 s holds, through normal expression transitions):
-- 30 % of Confusion tone (doubtful or odd claims), instead of confused.
-- 20 % of Surprise tone, as a brief "really?" after the startled first take.
-- 12 % of curious-tilt responses to something odd.
+**Confused** (engine13.3): Julian's raised-eyebrow frame is the only confused face, and every
+confused trigger uses it:
+- confused tone,
+- thinking variety,
+- the 🤨 skeptic in mutual glances,
+- 8 % of curious-tilt responses to something odd.
 
-Grok shows its confused capsules for it.
+The variant is chosen in `setReaction`: the raised brow goes on the side it is looking toward
+(head look beyond ±0.12). Looking ahead, it alternates sides with a 35 % chance of repeating.
+
+The extra skeptical triggers from engine13.2 (for example on surprised tone) are removed, so
+confused appears no more often than in engine13.1. Grok keeps its confused capsules for both
+variants.
 
 **No gaze-shape swaps** (engine13.2, Julian): the look-right/look-up frames are not used. Eyes
 keep their expression shape while looking around. The look comes only from the real 3D turn,

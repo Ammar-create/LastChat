@@ -100,10 +100,10 @@ class AvatarMotionVideoTest {
             if (i < MORPH_SEQ.size && fired.add(i.toFloat())) s.debugReact(MORPH_SEQ[i], 3f)
             AvatarMotionHints()
         },
-        Script("skeptical", 10f) { s, _, t, _ ->
-            if (t >= 1f && fired.add(1f)) s.debugSkeptical(false)
-            if (t >= 4.5f && fired.add(4.5f)) s.debugSkeptical(true)
-            if (t >= 7.5f && fired.add(7.5f)) s.debugSkeptical(false)
+        Script("confused", 10f) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugConfused()
+            if (t >= 4.5f && fired.add(4.5f)) s.debugConfused()
+            if (t >= 7.5f && fired.add(7.5f)) s.debugConfused()
             AvatarMotionHints()
         },
         Script("expr", 14f) { s, _, t, _ ->
@@ -204,7 +204,7 @@ class AvatarMotionVideoTest {
         assumeTrue(out != null && (only == null || "exprsheet" in only))
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
-            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3", "skeptical", "skeptical left")
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3", "confused left")
         for (mode in listOf("generical", "grok")) {
             captureStrip(File(out, "exprsheet_$mode.png"), "blob", mode, ids.map { MotionFrame(exprFrom = it, exprTo = it) })
             // Look-around: Neutral eye shapes, gaze only via the 3D turn / surface projection.

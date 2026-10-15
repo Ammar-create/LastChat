@@ -465,7 +465,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         set(v) { aliveness.personality = v }
 
     /** Harness hooks. */
-    internal fun debugSkeptical(left: Boolean) = setReaction(if (left) "skeptical left" else "skeptical", 1.1f)
+    internal fun debugConfused() = setReaction("confused", 1.1f)
     internal fun debugReact(expr: String, sec: Float) = setReaction(expr, sec)
     internal fun debugBoredom(v: Float) = aliveness.debugBoredom(v)
 
@@ -1196,9 +1196,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             Response.CuriousTilt -> {
                 gaze.focus(st.dirX, st.dirY, hold(1.4f, 2.4f), priority = 2)
                 director.gesture(MotionDirector.Gesture.Tilt)
-                // Something odd caught its attention: now and then a brief skeptical look.
+                // Something odd caught its attention: now and then a brief confused look.
                 val r = rng.nextFloat()
-                if (r < 0.12f && reaction == null) setReaction(if (rng.nextBoolean()) "skeptical" else "skeptical left", hold(0.8f, 1.2f))
+                if (r < 0.08f && reaction == null) setReaction("confused", hold(0.8f, 1.2f))
                 else if (r < 0.6f) accent(FaceAccent.Curious, hold(1f, 1.6f))
             }
             Response.Startle -> {
@@ -1290,7 +1290,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
     }
 
-    private fun setReaction(e: String, sec: Float, style: ExpressionDirector.Style? = null) {
+    private fun setReaction(e0: String, sec: Float, style: ExpressionDirector.Style? = null) {
+        // Confused has a left/right variant: the raised brow goes on the side it is looking
+        // toward; when looking ahead, either side (not the same one every time).
+        val e = if (e0 != "confused") e0 else {
+            val hx = frame.headLookX
+            val left = when { hx < -0.12f -> true; hx > 0.12f -> false; else -> !lastConfusedLeft || rng.nextFloat() < 0.35f }
+            lastConfusedLeft = left
+            if (left) "confused left" else "confused"
+        }
         reaction = e
         reactionLeft = sec
         reactionStyle = style ?: when (e) {
@@ -1300,6 +1308,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
     }
     private var reactionStyle: ExpressionDirector.Style? = null
+    private var lastConfusedLeft = false
 
     private fun aliveUpdate(dt: Float, nowMs: Long) {
         lastSpinAgo += dt
