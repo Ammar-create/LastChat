@@ -145,7 +145,7 @@ object MarkColors {
 
     @Suppress("UNUSED_PARAMETER")
     fun genericalEyeFade(body: Color, eye: Color, strength: Float = 1f): Color {
-        // 80% of the way from the eye colour to the surface colour at full strength.
+        // Engine14: matches Julian's Figma (white → #87D2E9 on #009FE0 ≈ 50% toward the surface).
         val t = (EYE_SHADE_MIX * strength).coerceIn(0f, 1f)
         return Color(
             red = eye.red + (body.red - eye.red) * t,
@@ -155,7 +155,7 @@ object MarkColors {
         )
     }
 
-    const val EYE_SHADE_MIX = 0.8f
+    const val EYE_SHADE_MIX = 0.5f
 
     fun presetHexOrNull(name: String?): String? =
         name?.lowercase()?.let { PRESETS[it] }

@@ -16,6 +16,9 @@ import kotlin.math.max
 object GrokEyeGap {
     /** Minimum clear gap between the eyes, as a fraction of the mark radius. */
     const val MIN_GAP = 0.40f
+    /** Never-touch guard for expressions (engine14): only this much clearance is enforced on
+     *  top of the neutral spacing, so expressions never spread the eyes wider than needed. */
+    const val TOUCH_GAP = 0.13f
     private const val SAMPLES = 72
 
     fun outline(p: Path): Array<FloatArray> {
@@ -67,11 +70,11 @@ object GrokEyeGap {
      * [faceScale] < 1 for shapes whose face is smaller than the circle's (heart, star, …):
      * the gap is the circle's 0.40 relative to *that face*, so the spacing reads the same.
      */
-    fun separation(left: Path, right: Path, he: Float, faceScale: Float = 1f): Pair<Offset, Offset> {
+    fun separation(left: Path, right: Path, he: Float, faceScale: Float = 1f, minGap: Float = MIN_GAP): Pair<Offset, Offset> {
         if (left.isEmpty || right.isEmpty) return Offset.Zero to Offset.Zero
         val a = outline(left); val b = outline(right)
         if (a[0].isEmpty() || b[0].isEmpty()) return Offset.Zero to Offset.Zero
-        val need = MIN_GAP * faceScale * he
+        val need = minGap * faceScale * he
         if (clearance(a, b) >= need) return Offset.Zero to Offset.Zero
         // Direction: from the left eye's centre to the right eye's.
         var ux = b[0].average().toFloat() - a[0].average().toFloat()
@@ -88,5 +91,29 @@ object GrokEyeGap {
         }
         val h = hi / 2f
         return Offset(-ux * h, -uy * h) to Offset(ux * h, uy * h)
+    }
+
+    /**
+     * Engine14: before any sliding apart, wide expressions (flat bars, happy arcs) that would
+     * come within [minGap] of each other at the neutral spacing are made a little smaller, each
+     * about its own centre (down to [minK]). The spacing stays the neutral one; only what
+     * remains after that is solved by [separation].
+     */
+    fun shrinkInPlace(left: Path, right: Path, he: Float, faceScale: Float, minGap: Float, minK: Float = 0.72f): Pair<Path, Path> {
+        if (left.isEmpty || right.isEmpty) return left to right
+        val need = minGap * faceScale * he
+        val a = outline(left); val b = outline(right)
+        if (a[0].isEmpty() || b[0].isEmpty() || clearance(a, b) >= need) return left to right
+        val ca = Offset(a[0].average().toFloat(), a[1].average().toFloat())
+        val cb = Offset(b[0].average().toFloat(), b[1].average().toFloat())
+        fun sc(o: Array<FloatArray>, c: Offset, k: Float) = arrayOf(
+            FloatArray(o[0].size) { c.x + (o[0][it] - c.x) * k }, FloatArray(o[1].size) { c.y + (o[1][it] - c.y) * k })
+        var lo = minK; var hi = 1f
+        if (clearance(sc(a, ca, minK), sc(b, cb, minK)) < need) hi = minK else repeat(10) {
+            val mid = (lo + hi) / 2f
+            if (clearance(sc(a, ca, mid), sc(b, cb, mid)) >= need) lo = mid else hi = mid
+        }
+        val k = if (hi == minK) minK else lo
+        return EyeSafeRegion.scalePath(left, k, ca) to EyeSafeRegion.scalePath(right, k, cb)
     }
 }

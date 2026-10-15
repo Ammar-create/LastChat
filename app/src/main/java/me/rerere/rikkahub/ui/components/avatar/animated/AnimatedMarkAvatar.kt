@@ -179,7 +179,7 @@ fun AnimatedMarkAvatar(
 
 internal val CALM_FRAME = MotionFrame()
 
-private val SPIN_GAP_CACHE = HashMap<String, Float>()
+private val NEUTRAL_GAP_CACHE = HashMap<String, Float>()
 
 /** Thinnest a Grok eye gets when the lids are shut (fraction of the open height). */
 internal const val GROK_SLIT = 0.12f
@@ -298,7 +298,22 @@ private fun DrawScope.drawMarkInner(
         val safeBody = EyeSafeRegion.Body(projected)
         // The turn applied to the eyes is scaled down only as far as needed to keep
         // them inside the silhouette (body turn itself is untouched).
-        fun seatGrok(k: Float, yawOverride: Float? = null, extra: Float = 0f) = WhEyeSeat.buildSeatedGrokEyes(
+        // Engine14: one spacing per shape. The neutral face at rest gets the circle-relative 0.40
+        // gap; that centre spacing is baked in for every expression and pose, and expressions
+        // only get the tiny never-touch guard below (no widening by tilts or wide arcs).
+        val neutralExtra = NEUTRAL_GAP_CACHE.getOrPut("$shapeId|$bodyKind|$he|${f.eyeGap}|${f.eyeScale}") {
+            val np = WhSphereEyes.morphPair("Neutral", "Neutral", 1f, 1f).mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, f.face.eye(i)) }
+            val (l0, r0) = WhEyeSeat.buildSeatedGrokEyes(
+                pickerId = shapeId, solidKind = bodyKind, he = he, gazeX = 0f, gazeY = 0f, lid = 1f,
+                eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId), eyeScale = f.eyeScale,
+                timeSec = 0f, awake = 0f, yawDeg = 0f, pitchDeg = 0f, rollDeg = 0f, shape = shape,
+                bodyPath = bodyCentered, expressionId = "neutral", eyesOverride = np, leadX = 0f, leadY = 0f,
+            )
+            if (NEUTRAL_GAP_CACHE.size > 64) NEUTRAL_GAP_CACHE.clear()
+            val (dl, dr) = GrokEyeGap.separation(l0, r0, he, WhEyeSeat.grokGapFix(shapeId))
+            ((dr.x - dl.x) / 2f / he).coerceAtLeast(0f)
+        }
+        fun seatGrok(k: Float, yawOverride: Float? = null, extra: Float = neutralExtra) = WhEyeSeat.buildSeatedGrokEyes(
             pickerId = shapeId,
             solidKind = bodyKind,
             he = he,
@@ -315,7 +330,8 @@ private fun DrawScope.drawMarkInner(
             shape = shape,
             bodyPath = bodyCentered,
             expressionId = WhSphereEyes.grokNameFor(f.exprTo),
-            eyesOverride = pair,
+            // The sphere path seats from the eye states (no half-gap), so the spacing rides offX.
+            eyesOverride = if (bodyKind == "sphere" && extra != 0f) pair.map { it.copy(offX = it.offX + extra) } else pair,
             leadX = f.leadX * k,
             leadY = f.leadY * k,
             extraHalfGap = extra,
@@ -325,16 +341,7 @@ private fun DrawScope.drawMarkInner(
         fun seatSpin(): Pair<Path, Path> {
             if (bodyKind == "sphere") return seatGrok(1f)
             // The face is frozen during a spin, so the baked spacing is computed once per spin.
-            val key = "$shapeId|${f.exprFrom}|${f.exprTo}|${f.exprT}|$lidG|${f.eyeGap}|${f.eyeScale}|$pitch|$roll|${yaw - f.spinYaw}|$he"
-            val extra = SPIN_GAP_CACHE[key] ?: run {
-                val (l0, r0) = seatGrok(1f, yawOverride = yaw - f.spinYaw)
-                val (dl, dr) = GrokEyeGap.separation(l0, r0, he, WhEyeSeat.grokGapFix(shapeId))
-                ((dr.x - dl.x) / 2f / he).coerceAtLeast(0f).also {
-                    if (SPIN_GAP_CACHE.size > 32) SPIN_GAP_CACHE.clear()
-                    SPIN_GAP_CACHE[key] = it
-                }
-            }
-            return seatGrok(1f, extra = extra)
+            return seatGrok(1f)
         }
         var (left, right) = if (spinning) seatSpin() else if (bodyKind == "sphere") seatGrok(1f)
             else EyeSafeRegion.fit(safeBody, he * GROK_EDGE_MARGIN, ::seatGrok) { listOf(it.first, it.second) }
@@ -352,7 +359,8 @@ private fun DrawScope.drawMarkInner(
         // A spin is a rigid rotation of the face: the projected gap narrows with the surface, so
         // the gap pass (which would push the eyes off their surface points) is skipped then.
         if (ok(left) && ok(right) && !spinning) {
-            val (dl, dr) = GrokEyeGap.separation(left, right, he, WhEyeSeat.grokGapFix(shapeId))
+            GrokEyeGap.shrinkInPlace(left, right, he, 1f, GrokEyeGap.TOUCH_GAP).let { left = it.first; right = it.second }
+            val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP)
             if (dl != androidx.compose.ui.geometry.Offset.Zero) {
                 left = Path().apply { addPath(left, dl) }
                 right = Path().apply { addPath(right, dr) }
@@ -365,7 +373,7 @@ private fun DrawScope.drawMarkInner(
                 // constraint runs again afterwards.
                 left = EyeSafeRegion.scalePath(left, k, c)
                 right = EyeSafeRegion.scalePath(right, k, c)
-                val (dl, dr) = GrokEyeGap.separation(left, right, he, WhEyeSeat.grokGapFix(shapeId))
+                val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP)
                 if (dl != androidx.compose.ui.geometry.Offset.Zero) {
                     left = Path().apply { addPath(left, dl) }
                     right = Path().apply { addPath(right, dr) }
@@ -442,8 +450,8 @@ private fun DrawScope.drawMarkInner(
             "NaN,${EyeSafeRegion.inset(genBody, ps, he * 0.5f) / he},${c.x / he},${c.y / he}"
     }
     val drawEyes: DrawScope.() -> Unit = {
-        le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }
-        re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he) }
+        le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit) }
+        re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit) }
     }
     if (calm) {
         Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false, drawEyes)

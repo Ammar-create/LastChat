@@ -148,27 +148,27 @@ object WhSphereEyes {
             // Clean ^ ^ arcs: a gentle upward-curved stroke whose bend radius stays
             // well above the stroke half-width, so the outline never folds into a bean.
             "happy" -> {
-                val e = pr(0.03f, 0.04f, 0f, HAPPY_W,
+                val e = pr(0f, 0.04f, 0f, HAPPY_W,
                     floatArrayOf(0.2f, -0.05f), floatArrayOf(0f, 0.13f), floatArrayOf(-0.2f, -0.05f))
                 listOf(e, e)
             }
             "surprised" -> {
-                val e = en(0.42f, 0.86f, 0f, 0.03f)
+                val e = en(0.42f, 0.86f, 0f, 0f)
                 listOf(e, e)
             }
             "sad" -> {
                 // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
                 // the / \ pair read clearly apart at a glance.
-                val e = en(UR, 0.5f, -19f, 0.015f)
+                val e = en(UR, 0.5f, -19f, 0f)
                 listOf(e, e)
             }
             "sleepy", "sleeping" -> {
-                val e = pr(0.01f, 0f, 0f, CLOSED_W,
+                val e = pr(0f, 0f, 0f, CLOSED_W,
                     floatArrayOf(-0.16f, 0.03f), floatArrayOf(0f, -0.06f), floatArrayOf(0.16f, 0.03f))
                 listOf(e, e)
             }
             "squinted", "bored", "calm" -> {
-                val e = en(UR, 0.5f, 90f, 0.01f)
+                val e = en(UR, 0.5f, 90f, 0f)
                 listOf(e, e)
             }
             // Confused: same eyes as every other face, one lid tilted, both on one level.
@@ -180,7 +180,7 @@ object WhSphereEyes {
             // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
             // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
             "angry" -> {
-                val e = en(UR, 0.5f, 11f, 0.012f)
+                val e = en(UR, 0.5f, 11f, 0f)
                 listOf(e, e)
             }
             // Playful (Group 3): one eye a hair shorter and tipped, the other open.
@@ -196,7 +196,7 @@ object WhSphereEyes {
             }
             // Playful wink: one soft closed arc, one open eye.
             "wink" -> listOf(
-                pr(0.01f, 0f, 0f, CLOSED_W,
+                pr(0f, 0f, 0f, CLOSED_W,
                     floatArrayOf(-0.16f, 0.03f), floatArrayOf(0f, -0.06f), floatArrayOf(0.16f, 0.03f)),
                 en(UR, 0.57f, 0f, 0f),
             )
@@ -208,7 +208,9 @@ object WhSphereEyes {
         // Wider set only where the contours reach toward each other (closed arcs,
         // the >< chevrons, flat squints): at the neutral spacing those read as one
         // joined shape. Morphs blend offX, so the spacing glides with the expression.
-        val spread = spreadFor(name.lowercase())
+        // Engine14: no per-expression spread (spacing is the neutral one; the gap guard only
+        // prevents touching).
+        val spread = NO_SPREAD
         return base.mapIndexed { i, e ->
             e.copy(offX = e.offX + spread.getOrElse(i) { 0f }, lidY = e.lidY * lidY)
         }

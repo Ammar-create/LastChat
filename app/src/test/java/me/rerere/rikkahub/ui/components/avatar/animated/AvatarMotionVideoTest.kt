@@ -44,6 +44,7 @@ class AvatarMotionVideoTest {
     private val outDir: File? = System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() }?.let { File(it).apply { mkdirs() } }
     private val videoShapes = System.getProperty("lastchat.videoShapes")?.takeIf { it.isNotBlank() }?.split(",") ?: listOf("blob", "heart")
     private val only = System.getProperty("lastchat.videoOnly")?.takeIf { it.isNotBlank() }?.split(",")?.toSet()
+    private val markColor = System.getProperty("lastchat.markColor")?.takeIf { it.isNotBlank() } ?: "#2A92FE"
     private val fps = 30
     private val cellDp = 120
     private val perStrip = 15
@@ -153,7 +154,7 @@ class AvatarMotionVideoTest {
                 Box(Modifier.requiredSize((cellDp * frames.size).dp, cellDp.dp)) {
                     Row(Modifier.background(Color(0xFF14171C))) {
                         for (f in frames) Box(Modifier.size(cellDp.dp), contentAlignment = Alignment.Center) {
-                            AnimatedMarkAvatar(shape, mode, "#2A92FE", false, colorPreset = "blue",
+                            AnimatedMarkAvatar(shape, mode, markColor, false, colorPreset = if (markColor == "#2A92FE") "blue" else null,
                                 modifier = Modifier.size((cellDp * 0.72f).dp), debugFrame = f)
                         }
                     }
@@ -214,6 +215,21 @@ class AvatarMotionVideoTest {
                         .map { (x, y) -> MotionFrame(headLookX = x, headLookY = y) })
         }
         File(out, "exprsheet_ids.txt").writeText(ids.joinToString("\n"))
+    }
+
+    /** Every picker shape x expression, static (spacing table + Generical 1:1 checks). */
+    @Test
+    fun renderShapeExprGrid() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "shapegrid" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3", "confused left")
+        val shapes = listOf("blob", "cloud", "square", "sparkle", "clover", "heart", "flower", "teardrop", "tablet", "wedge", "house", "star", "hex")
+        val modes = (System.getProperty("lastchat.gridModes")?.takeIf { it.isNotBlank() }?.split(",")) ?: listOf("grok", "generical")
+        for (mode in modes) for (sh in shapes)
+            captureStrip(File(out, "grid_${mode}_$sh.png"), sh, mode, ids.map { MotionFrame(exprFrom = it, exprTo = it) })
+        File(out, "grid_ids.txt").writeText(ids.joinToString("\n"))
     }
 
     /** Draw cost per frame: rest vs spin, through the real drawMark (software canvas). */

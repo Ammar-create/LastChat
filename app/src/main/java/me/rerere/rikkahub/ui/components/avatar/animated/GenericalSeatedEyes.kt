@@ -62,17 +62,7 @@ object GenericalFace {
             ?: return null
         var l = sample(expr.left) ?: return null
         var r = sample(expr.right) ?: return null
-        // A couple of reference faces are drawn looking off to one side (whole pair
-        // shifted right / up). Eyes now live on the body, so re-centre the pair; the
-        // body's gaze does the looking.
-        val pairCx = (bboxCx(l) + bboxCx(r)) / 2f
-        val pairCy = (bboxCy(l) + bboxCy(r)) / 2f
-        val dx = 250f - pairCx
-        val dy = if (abs(pairCy - 250f) > 40f) 250f - pairCy else 0f
-        if (abs(dx) > 4f || dy != 0f) {
-            l = translate(l, dx, dy)
-            r = translate(r, dx, dy)
-        }
+        // Engine14: no re-centring; every frame sits exactly where Julian drew it.
         return Face(l, r).also { faces[exprId] = it }
     }
 
@@ -348,6 +338,8 @@ object GenericalSeat {
                 lo = min(lo, d); hi = max(hi, d)
             }
             if (hi - lo < 1e-3f) hi = lo + 1f
+            // His gradients run from 4 above to 4 below the eye box (the outline's half width).
+            val ext = 4f * fit * he / 250f; lo -= ext; hi += ext
             return SeatedEye(path, Offset(mx + dx * lo, my + dy * lo), Offset(mx + dx * hi, my + dy * hi))
         }
         return build(0) to build(1)
@@ -368,11 +360,12 @@ object GenericalSeat {
     private fun sphereMap(loop: List<WhMesh.V2>, r: FloatArray, he: Float, keepAll: Boolean = false): List<WhMesh.V2>? {
         val out = ArrayList<WhMesh.V2>(loop.size)
         for (p in loop) {
+            // Engine14: orthographic lift, so at rest the decal projects back exactly onto
+            // Julian's flat frame (1:1). Turning still rides the sphere.
             val d = hypot(p.x, p.y)
-            val s = if (d > 1e-6f) sin(d) / d else 1f
-            val x = p.x * s
-            val y = p.y * s
-            val z = cos(d)
+            val x: Float; val y: Float; val z: Float
+            if (d < 0.999f) { x = p.x; y = p.y; z = sqrt(1f - d * d) }
+            else { x = p.x / d * 0.999f; y = p.y / d * 0.999f; z = 0.0447f }
             val rx = r[0] * x + r[1] * y + r[2] * z
             val ry = r[3] * x + r[4] * y + r[5] * z
             val rz = r[6] * x + r[7] * y + r[8] * z
@@ -386,18 +379,18 @@ object GenericalSeat {
      * eye's own "down" on the surface is [fade] — the eye colour tinted by the body
      * surface ([MarkColors.genericalEyeFade]).
      */
-    fun draw(scope: DrawScope, eye: SeatedEye, eyeColor: Color, fade: Color, he: Float) {
+    fun draw(scope: DrawScope, eye: SeatedEye, eyeColor: Color, fade: Color, he: Float, fit: Float = 1f) {
         val brush = Brush.linearGradient(
             colors = listOf(eyeColor, fade),
             start = eye.gradStart,
             end = eye.gradEnd,
         )
         scope.drawPath(eye.path, brush)
-        // Reference stroke 5 on the 500 viewBox, nudged to ~5.9 (still under 7).
+        // Julian's Figma: outline 8 on the 500 viewBox, scaled with the eye size.
         scope.drawPath(
             eye.path,
             color = MarkColors.outlineOn(eyeColor, fade),
-            style = Stroke(width = 5.9f * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            style = Stroke(width = 8f * fit * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
     }
 

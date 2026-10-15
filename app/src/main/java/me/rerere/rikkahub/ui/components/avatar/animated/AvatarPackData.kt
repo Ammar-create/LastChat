@@ -282,8 +282,9 @@ object AvatarPackData {
 
     private fun parseGenericalEye(obj: JsonObject): GenericalEye {
         val kind = obj.string("kind")
-        // Designer craft: stroke 5 on 500×500; never ≥7 (rejected thick outlines)
-        val strokeWidth = obj.floatOr("strokeWidth", 5f).coerceIn(3.5f, 5.5f)
+        // Engine14: Julian's Figma frames are the reference, outline 8 on 500×500 (the old
+        // "never ≥ 7" rule predates his designs).
+        val strokeWidth = obj.floatOr("strokeWidth", 8f).coerceIn(3.5f, 8f)
         var from = Color.White
         var to = Color(0xFF87D2E9)
         var gx1 = 0f; var gy1 = 0f; var gx2 = 0f; var gy2 = 100f

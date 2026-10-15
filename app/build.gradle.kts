@@ -195,6 +195,8 @@ android {
                 it.systemProperty("lastchat.videoDir", System.getProperty("lastchat.videoDir") ?: "")
                 it.systemProperty("lastchat.videoOnly", System.getProperty("lastchat.videoOnly") ?: "")
                 it.systemProperty("lastchat.videoShapes", System.getProperty("lastchat.videoShapes") ?: "")
+                it.systemProperty("lastchat.gridModes", System.getProperty("lastchat.gridModes") ?: "")
+                it.systemProperty("lastchat.markColor", System.getProperty("lastchat.markColor") ?: "")
                 it.maxHeapSize = "2g"
             }
         }

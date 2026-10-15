@@ -72,8 +72,8 @@ class MarkColorsAndRestTest {
             val body = MarkColors.hexToColor(bodyHex)
             for (eye in listOf(Color.White, MarkColors.hexToColor("#FFD27A"), MarkColors.hexToColor("#1A1A1A"))) {
                 val f = MarkColors.genericalEyeFade(body, eye)
-                assertEquals(eye.red + (body.red - eye.red) * 0.8f, f.red, 0.002f)
-                assertEquals(eye.blue + (body.blue - eye.blue) * 0.8f, f.blue, 0.002f)
+                assertEquals(eye.red + (body.red - eye.red) * MarkColors.EYE_SHADE_MIX, f.red, 0.002f)
+                assertEquals(eye.blue + (body.blue - eye.blue) * MarkColors.EYE_SHADE_MIX, f.blue, 0.002f)
                 // Shade off: plain eye colour.
                 assertEquals(hex(eye), hex(MarkColors.genericalEyeFade(body, eye, 0f)))
             }
@@ -94,13 +94,13 @@ class MarkColorsAndRestTest {
     }
 
     @Test
-    fun convergingGrokExpressionsSitWiderNeutralUntouched() {
+    fun grokExpressionsKeepNeutralSpacing() {
+        // Engine14: no expression spreads the eyes; the never-touch guard does the minimum.
         val neutral = WhSphereEyes.expressionPair("neutral", 1f)
         assertEquals(WhSphereEyes.neutralPair().map { it.offX }, neutral.map { it.offX })
-        for (e in listOf("sleepy", "dizzy", "squinted", "happy")) {
+        for (e in listOf("sleepy", "dizzy", "squinted", "happy", "sad", "surprised", "angry")) {
             val pair = WhSphereEyes.expressionPair(e, 1f)
-            val bare = pair.map { it.offX }
-            assertTrue("$e spreads", bare.all { it > -0.1f + 0.04f })
+            assertTrue("$e spreads", pair.all { it.offX <= neutral[0].offX + 1e-4f })
         }
         // Spacing glides during a morph (offX is blended, never jumps).
         val mid = WhSphereEyes.morphPair("Neutral", "Sleeping", 0.5f, 1f)[0].offX

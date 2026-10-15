@@ -436,3 +436,40 @@ to 0.74, per Julian's note that our angry was too angry.
   tipped −10°. Both are small lid/tilt cues in the existing capsule style.
 - **Angry stays rare.** Classifier tone "angry" maps to Concern, which shows the Worried
   accent. The Annoyed accent appears only after 3+ rapid pokes, and is milder since engine13.
+
+## Engine14: spacing and Figma 1:1
+
+### Grok spacing
+- **One spacing per shape.** The neutral face at rest gets the circle's 0.40 gap, scaled per
+  shape (`GROK_GAP_FIX`). That centre distance is baked into every expression and pose.
+- **Calibration.** `GROK_GAP_FIX` is calibrated so that neutral centre distance / inscribed face
+  diameter = 0.322 on every picker shape (the circle's value; the circle itself is unchanged).
+  Inscribed diameter is used because it is the solid "face" of spiky and lobed shapes (cloud,
+  sparkle, clover, star), where the bounding box overstates the face.
+- **No expression widens the spacing.** The per-expression `offX` spreads and `spreadFor` are
+  gone. Wide expressions that would come too close (flat bars, happy arcs on small faces) first
+  shrink about their own centres (down to 72 %). Only the remainder is solved by the tiny
+  never-touch guard (`TOUCH_GAP` 0.13 × radius).
+- **Sphere.** The sphere path carries the baked spacing in `offX`.
+
+Measured table: `lastchat-renders/engine14/grok_spacing_table.csv`. The only rows above
+neutral + 3 % are guard-bound (gap = the never-touch minimum).
+
+### Generical = Julian's Figma, 1:1
+- **Circle at fit 1.** On the circle the eyes are exactly his 500×500 frames: same eye size,
+  spacing and vertical placement, with no re-centring of any frame.
+- **Decal mapping.** The sphere decal uses an orthographic lift instead of the arc-length map,
+  so at rest it projects back exactly onto the flat design.
+- **Outline.** His outline is 8 on 500, scaled with eye size. This replaces our 5.9; the
+  earlier "thick outline" rejection predates his designs.
+- **Shade.** The gradient runs 4 above to 4 below the eye box, like his. The shade mix is 50 %
+  toward the surface (his white → #87D2E9 on #009FE0), replacing the old 80 %. The toggle is kept.
+- **Pixel diff.** The diff against his PNGs, rendered with his body colour, gives IoU 0.988–0.999
+  and boxes within 1 px. The remaining error is anti-aliasing only
+  (`engine14/generical_figma_diff.{png,txt}`).
+- **Other shapes.** Eye size scales by the shape's face tune relative to the circle, and spacing
+  scales with it (gap = fit). His clear-space-to-eye-width ratio of about 0.41 therefore holds
+  on every shape.
+
+### Engine14: message actions collapse
+The actions row and toolbar under chat messages now use `ExpandableContent` (one 240ms tween of height+alpha to exactly 0) inside `CollapseSpacingColumn`, so the spacedBy gap shrinks with the row instead of snapping at the end — same fix as the settings menus.

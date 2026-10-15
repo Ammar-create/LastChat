@@ -1334,15 +1334,7 @@ private fun UserMessageTurn(
         }
         
         // Toolbar - appears on tap
-        AnimatedVisibility(
-            visible = showToolbar,
-            enter = expandVertically(
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
-            ) + fadeIn(),
-            exit = shrinkVertically(
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
-            ) + fadeOut()
-        ) {
+        me.rerere.rikkahub.ui.motion.ExpandableContent(visible = showToolbar) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1552,7 +1544,7 @@ private fun AssistantMessageTurn(
     val elementSpacing = 4.dp
     
     val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
-    Column(
+    me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn(
         modifier = modifier
             .fillMaxWidth()
             .then(
@@ -1578,9 +1570,7 @@ private fun AssistantMessageTurn(
                     Modifier
                 }
             ),
-        verticalArrangement = Arrangement.spacedBy(
-            if (showAssistantBubbles) elementSpacing else 3.dp
-        )
+        spacing = if (showAssistantBubbles) elementSpacing else 3.dp,
     ) {
         if (showAssistantBubbles) {
             AssistantTurnHeader(
@@ -1662,15 +1652,9 @@ private fun AssistantMessageTurn(
         // Action buttons
         val showActions = !loading && (isLastTurn || actionsExpanded)
         
-        AnimatedVisibility(
-            visible = showActions,
-            enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) +
-                    slideInVertically(spring(dampingRatio = 0.6f, stiffness = 300f)) { -it } +
-                    fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)),
-            exit = shrinkVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) +
-                   slideOutVertically(spring(dampingRatio = 0.8f, stiffness = 500f)) { -it } +
-                   fadeOut()
-        ) {
+        // Same motion as the fixed settings sections: one tween for height + alpha that
+        // reaches exactly zero, and the column takes its gap down with it (no end snap).
+        me.rerere.rikkahub.ui.motion.ExpandableContent(visible = showActions) {
             ChatMessageActionButtons(
                 message = group.lastNode.currentMessage,
                 onRegenerate = onRegenerate,
