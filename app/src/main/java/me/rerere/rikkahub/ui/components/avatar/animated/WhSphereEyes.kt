@@ -177,6 +177,17 @@ object WhSphereEyes {
                 en(UR, 0.6f, 0f, 0f),
                 en(UR, 0.58f, -18f, 0f),
             )
+            // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
+            // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
+            "angry" -> {
+                val e = en(UR, 0.5f, 11f, 0.012f)
+                listOf(e, e)
+            }
+            // Playful (Group 3): one eye a hair shorter and tipped, the other open.
+            "playful" -> listOf(
+                en(UR, 0.6f, 0f, 0f),
+                en(UR, 0.5f, -10f, 0f),
+            )
             // >< squeeze (dizzy).
             "dizzy" -> {
                 val e = pr(-0.1f, 0f, 0f, IU,
@@ -216,6 +227,7 @@ object WhSphereEyes {
         "squinted", "bored", "calm" -> floatArrayOf(0.024f, 0.024f)
         "dizzy" -> floatArrayOf(0.085f, 0.085f)
         "sad" -> floatArrayOf(0.03f, 0.03f)
+        "angry" -> floatArrayOf(0.02f, 0.02f)
         else -> NO_SPREAD
     }
 
@@ -230,6 +242,8 @@ object WhSphereEyes {
         "Bored", "pouty", "angered or concentrated" -> "squinted"
         "confused" -> "confused"
         "hurt or cute" -> "wink"
+        "Angry" -> "angry"
+        "Group 3" -> "playful"
         else -> "neutral"
     }
 

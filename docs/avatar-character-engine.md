@@ -405,3 +405,20 @@ gets a slanted top. Position still comes from the unrestricted gaze system.
 to 0.74, per Julian's note that our angry was too angry.
 
 **Grok** keeps its capsule set. His shapes don't map naturally onto Grok's black capsule eyes.
+
+### engine13.1 polish
+
+- **Recovering pause after a spin.** When a spin (and any shake-off) ends, the eyes rest near
+  centre for a random 0.8–2.5 s with only micro-saccades. Idle glances and moments wait; real
+  stimuli still get through.
+- **No self-noticing.** The avatar no longer "perceives" its own accent events. They used to
+  trigger a second look right after its own reaction (a double movement).
+- **No moment on top of a reaction.** Self-started moments wait at least 3 s after any
+  perceived stimulus.
+- **Spin direction history fix.** The never-three-in-a-row rule now also works for leftward
+  runs.
+- **Grok cues for Angry and Group 3.** Angry is a mild 11° opposite tilt of the normal pills
+  with a touch of spread; it never touches. Playful (Group 3) has one eye a hair shorter and
+  tipped −10°. Both are small lid/tilt cues in the existing capsule style.
+- **Angry stays rare.** Classifier tone "angry" maps to Concern, which shows the Worried
+  accent. The Annoyed accent appears only after 3+ rapid pokes, and is milder since engine13.

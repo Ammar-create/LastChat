@@ -612,7 +612,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (director.clipBlink) blink.request()
         director.takeGazeCue()?.let { c ->
             // A busy beat asked to look somewhere (turn, the pill, the text, away in thought).
-            if (live && social == null && followLeft <= 0f && !gaze.focused) {
+            if (live && social == null && followLeft <= 0f && !gaze.focused && recoverT <= 0f) {
                 // Look at the real thing when it is on screen.
                 val real = when (c.kind) {
                     "pill" -> targetCenter(AvatarStage.Target.ActivityPill)
@@ -842,6 +842,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      *  shake-off (optional, mood-dependent): a few small decaying head shakes, eyes lagging.
      * Variants (run-up, shake, direction, speed, sizes) are randomised and history-aware.
      */
+    /** After a spin (and any shake-off): a short "recovering" pause. No new glances or
+     *  moments, eyes rest near centre with only micro-saccades; real stimuli still win. */
+    private var recoverT = 0f
+    /** Seconds since the last perceived outside event: no self-started moment right on top of a reaction. */
+    private var sinceStimulus = 99f
+    private fun beginRecover() {
+        recoverT = 0.8f + rng.nextFloat() * 1.7f
+        gaze.focus((rng.nextFloat() - 0.5f) * 0.08f, (rng.nextFloat() - 0.5f) * 0.06f, recoverT, priority = 3)
+    }
     private var spT = -1f; private var spDir = 1f
     private var spRun = 0f; private var spRunDeg = 0f; private var spCrouch = 0f
     private var spMain = 1.2f
@@ -860,7 +869,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
         // Direction: random, but never three the same way in a row.
         var dir = if (rng.nextBoolean()) 1f else -1f
-        if (spDirRun >= 2 && kotlin.math.sign(dir) == kotlin.math.sign(spDirRun.toFloat())) dir = -dir
+        if (abs(spDirRun) >= 2 && kotlin.math.sign(dir) == kotlin.math.sign(spDirRun.toFloat())) dir = -dir
         spDirRun = if (dir > 0f) (if (spDirRun > 0) spDirRun + 1 else 1) else (if (spDirRun < 0) spDirRun - 1 else -1)
         spDir = dir
         // History-aware variant choice: what happened last time is less likely now.
@@ -941,8 +950,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                             if (st - dt < 0f && rng.nextFloat() < 0.5f) blink.request(minGap = 0f)
                             val env = (1f - st / shakeDur).let { it * it }
                             shakeYaw = spShakeAmp * env * sin(2f * PI.toFloat() * spShakeHz * st)
-                        } else spT = -1f
-                    } else if (!spShake && spT >= tFol) spT = -1f
+                        } else { spT = -1f; beginRecover() }
+                    } else if (!spShake && spT >= tFol) { spT = -1f; beginRecover() }
                 }
             }
         }
@@ -1025,7 +1034,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun momentsUpdate(dt: Float) {
         val calm = director.lifecycle == MarkLifecycle.Idle && reaction == null && social == null &&
             freezeLeft <= 0f && takeT < 0f && scan.isEmpty() && driftU >= 1f && stretchU >= 1f &&
-            spT < 0f && abs(spinYaw) < 0.5f
+            spT < 0f && abs(spinYaw) < 0.5f && recoverT <= 0f && sinceStimulus > 3f
+        sinceStimulus += dt
+        recoverT = (recoverT - dt).coerceAtLeast(0f)
         moments.update(dt, temper, personality, calm, quietSec, targetCenter(AvatarStage.Target.ActivityPill) != null)?.let { playMoment(it) }
         val h = dt.coerceAtMost(1f / 30f)
         spinUpdate(dt)
@@ -1095,6 +1106,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      * human latency and a response is picked from the repertoire ([handler] gets it).
      */
     private fun stimulus(st: Stimulus, handler: ((Response) -> Unit)?, allowNone: Boolean = true) {
+        sinceStimulus = 0f
         val pc = attention.perceive(st, gaze.eyeX, gaze.eyeY, temper, personality)
         if (pc == null) { log("missed ${st.kind} sal=%.2f".format(st.salience)); return }
         temper.onEvent(st.salience * 0.5f)
@@ -1615,6 +1627,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         for (e in evs) {
             // The avatar's own reply tone is not perceived, it is felt: straight through.
             if (e.kind == AvatarStage.EventKind.ReplyTone) { legacyEvent(e); continue }
+            // Its own face changes are not something it "notices" (that read as a double take).
+            if (e.kind == AvatarStage.EventKind.AvatarAccent && e.source == stageId) continue
             val (dx, dy) = e.at?.let { lookAt(it) } ?: (0f to 0.6f)
             val st = Stimulus(e.kind.name, dx, dy, salienceFor(e.kind), direct = e.kind == AvatarStage.EventKind.AppResumed || e.kind == AvatarStage.EventKind.Error)
             stimulus(st, { r ->
