@@ -583,7 +583,7 @@ private const val POP_DIRECTIONAL_ISOLATE = '\u2069'
  */
 val LocalRpStyleRules = compositionLocalOf<List<RpStyleRule>> { emptyList() }
 
-private data class StreamingTextReveal(
+internal data class StreamingTextReveal(
     val ranges: List<StreamingSettleRange>,
     val nowMillis: Long,
     val color: Color,
@@ -617,7 +617,9 @@ internal data class StreamingSettleRange(
     }
 }
 
-private val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
+/** Content offset where a still-streaming code fence's text ends (null outside one). */
+internal val LocalCodeRevealAnchor = compositionLocalOf<Int?> { null }
+internal val LocalStreamingTextReveal = compositionLocalOf<StreamingTextReveal?> { null }
 val LocalMarkdownParagraphSpacing = compositionLocalOf { 4.dp }
 val LocalMarkdownWorkspaceId = compositionLocalOf<String?> { null }
 
@@ -1895,7 +1897,9 @@ private fun MarkdownNode(
                             .mediaEdgePadding(node, paragraphSpacing)
                             .fillMaxWidth(),
                     )
-                } else {
+                } else CompositionLocalProvider(
+                    LocalCodeRevealAnchor provides if (hasEnd) null else codeContentEndOffset
+                ) {
                     HighlightCodeBlock(
                         code = code,
                         language = normalizedLanguage,
@@ -2725,7 +2729,7 @@ private const val STREAMING_BLUR_MIN_RADIUS = 1.0f
 
 
 @Composable
-private fun RevealText(
+internal fun RevealText(
     text: AnnotatedString,
     modifier: Modifier,
     style: TextStyle,
@@ -3020,5 +3024,84 @@ internal fun StreamingRevealPreview(
     }
     CompositionLocalProvider(LocalStreamingTextReveal provides reveal) {
         RevealText(text = annotated, modifier = modifier, style = style.copy(color = color))
+    }
+}
+
+
+/**
+ * Streaming reveal for a code block: the same opacity + blur settle as prose, per new
+ * chunk, keeping the syntax colours. Offsets are mapped from the end of the fence
+ * ([anchorEnd] in content), since new code only ever arrives at the tail.
+ */
+internal fun AnnotatedString.withCodeStreamingReveal(
+    reveal: StreamingTextReveal?,
+    anchorEnd: Int,
+): AnnotatedString {
+    if (reveal == null || reveal.ranges.isEmpty() || isEmpty()) return this
+    val base = this
+    val codeLen = length
+    val settleDurationMillis = streamingSettleMillis(reveal.smoothedCharsPerSecond).toFloat()
+    var builder: AnnotatedString.Builder? = null
+    fun b() = builder ?: AnnotatedString.Builder(base).also { builder = it }
+    val sourceStart = anchorEnd - codeLen
+    reveal.ranges.fastForEach { range ->
+        if (reveal.nowMillis - range.revealedEndMillis >= settleDurationMillis) return@fastForEach
+        val ovStart = maxOf(sourceStart, range.startOffset)
+        val ovEnd = minOf(anchorEnd, range.endOffset)
+        if (ovEnd <= ovStart) return@fastForEach
+        val segment = maxOf(1, (ovEnd - ovStart + STREAMING_MAX_SEGMENTS_PER_RUN - 1) / STREAMING_MAX_SEGMENTS_PER_RUN)
+        var seg = ovStart
+        while (seg < ovEnd) {
+            val segEnd = minOf(ovEnd, seg + segment)
+            val mid = (seg + segEnd - 1) / 2
+            val progress = ((reveal.nowMillis - range.revealedAt(mid)) / settleDurationMillis).coerceIn(0f, 1f)
+            val visuals = streamingRevealVisuals(progress, 0f, reveal.blurEnabled)
+            val start = (seg - sourceStart).coerceIn(0, codeLen)
+            val end = (segEnd - sourceStart).coerceIn(start, codeLen)
+            if (end > start && !(visuals.alpha >= 0.995f && visuals.blurRadius <= 0.01f)) {
+                val level = streamingBlurLevel(visuals.blurRadius)
+                val renderBlur = reveal.blurEnabled && android.os.Build.VERSION.SDK_INT >= 31 && level >= 0
+                if (renderBlur) {
+                    b().addStringAnnotation(STREAMING_BLUR_ANNOTATION, "$level,${visuals.alpha}", start, end)
+                    b().addStyle(SpanStyle(color = Color.Transparent), start, end)
+                } else {
+                    // Fade without losing the token colours: plain text first, then each
+                    // token colour over its own overlap, all at this segment's opacity.
+                    b().addStyle(SpanStyle(color = reveal.color.copy(alpha = reveal.color.alpha * visuals.alpha)), start, end)
+                    base.spanStyles.fastForEach { sp ->
+                        val c = sp.item.color
+                        val s0 = maxOf(start, sp.start); val e0 = minOf(end, sp.end)
+                        if (e0 > s0 && c != Color.Unspecified) {
+                            b().addStyle(SpanStyle(color = c.copy(alpha = c.alpha * visuals.alpha)), s0, e0)
+                        }
+                    }
+                }
+            }
+            seg = segEnd
+        }
+    }
+    return builder?.toAnnotatedString() ?: this
+}
+
+/** Render-harness entry: a code tail streaming with token colours, as in a live fence. */
+@Composable
+internal fun CodeStreamingRevealPreview(
+    code: AnnotatedString,
+    ranges: List<StreamingSettleRange>,
+    nowMillis: Long,
+    charsPerSecond: Float,
+    color: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    val reveal = StreamingTextReveal(ranges, nowMillis, color, charsPerSecond, blurEnabled = true)
+    CompositionLocalProvider(LocalStreamingTextReveal provides reveal) {
+        RevealText(
+            text = code.withCodeStreamingReveal(reveal, code.length),
+            modifier = modifier,
+            style = style.copy(color = color),
+            softWrap = false,
+            overflow = TextOverflow.Visible,
+        )
     }
 }

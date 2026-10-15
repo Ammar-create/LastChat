@@ -686,11 +686,44 @@ private fun SharedTransitionScope.ChatListNormal(
 
         LaunchedEffect(loading, displayGroups.size, state) {
             if (!loading || !forceBottomAttachPending) return@LaunchedEffect
-
-            withFrameNanos { }
-            snapToStreamingBottom()
-            withFrameNanos { }
-            snapToStreamingBottom()
+            // A new reply joins the list with the same eased follow as the stream itself,
+            // so the start of a generation glides down instead of snapping.
+            val linePx = with(density) { 24.dp.toPx() }
+            val motion = StreamingFollowMotion()
+            var lastNanos = withFrameNanos { it }
+            var stillFrames = 0
+            while (isActive && forceBottomAttachPending && loadingState) {
+                val now = withFrameNanos { it }
+                val frameSeconds = ((now - lastNanos) / 1_000_000_000f).coerceIn(0.001f, 0.064f)
+                lastNanos = now
+                if (state.isScrollInProgress) {
+                    // The user took the list: hand over to the normal follow / detach logic.
+                    forceBottomAttachPending = false
+                    return@LaunchedEffect
+                }
+                val info = state.layoutInfo
+                val total = info.totalItemsCount
+                val tail = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+                if (total <= 0 || tail == null) {
+                    // The new turn is still off screen. One jump gets it in view;
+                    // the glide below finishes the rest.
+                    motion.reset()
+                    try { state.scrollToItem(total - 1) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+                    continue
+                }
+                val distance = streamingBottomDistance(
+                    itemEnd = tail.offset + tail.size,
+                    viewportEnd = info.viewportEndOffset,
+                    afterContentPadding = info.afterContentPadding,
+                ).toFloat()
+                if (distance <= 0.5f) {
+                    if (++stillFrames >= 2) break
+                } else {
+                    stillFrames = 0
+                    val delta = motion.step(distance, frameSeconds, streamingFollowOmega(distance, linePx))
+                    if (delta > 0f) state.dispatchRawDelta(delta)
+                }
+            }
             followStreamingBottom = true
             forceBottomAttachPending = false
         }

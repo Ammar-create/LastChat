@@ -45,6 +45,11 @@ fun HighlightText(
     softWrap: Boolean = true,
     maxLines: Int = Int.MAX_VALUE,
     minLines: Int = 1,
+    /**
+     * Optional replacement for the inner Text (e.g. a streaming reveal that fades and
+     * blurs the newest characters). Receives the string to show.
+     */
+    textContent: (@Composable (text: AnnotatedString, modifier: Modifier) -> Unit)? = null,
 ) {
     val highlighter = LocalHighlighter.current
     var tokens: List<HighlightToken> by remember { mutableStateOf(emptyList()) }
@@ -81,9 +86,26 @@ fun HighlightText(
         }
     }
 
+    // While a streamed block grows, the highlight for the new text lands a moment later.
+    // Show the already highlighted prefix plus the new plain tail right away, so the block
+    // grows with the stream instead of stalling and then jumping; the tail picks up its
+    // colours on the next pass (it is still fading in, so there is no visible flash).
+    val highlighted = annotatedString
+    val shown = if (code.length > highlighted.length && code.startsWith(highlighted.text)) {
+        buildAnnotatedString {
+            append(highlighted)
+            append(code.substring(highlighted.length))
+        }
+    } else {
+        highlighted
+    }
+    if (textContent != null) {
+        textContent(shown, modifier)
+        return
+    }
     Text(
         modifier = modifier,
-        text = annotatedString,
+        text = shown,
         fontSize = fontSize,
         fontFamily = fontFamily,
         fontStyle = fontStyle,

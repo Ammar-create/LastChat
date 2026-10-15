@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -204,6 +206,8 @@ fun HighlightCodeBlock(
     var programmaticScrollInProgress by remember { mutableStateOf(false) }
     var previousScrollValue by remember(completeCodeBlock, expandState) { mutableIntStateOf(0) }
     var previousCodeLength by remember { mutableIntStateOf(0) }
+    // One follow motion for the whole stream, so velocity carries across chunks.
+    val previewFollowMotion = remember { me.rerere.rikkahub.ui.pages.chat.StreamingFollowMotion() }
     val autoWrap = effectiveDisplay.codeBlockAutoWrap
     val footerAction = codeBlockFooterAction(expandState)
     val footerText = if (footerAction == CodeBlockFooterAction.Collapse) {
@@ -253,9 +257,6 @@ fun HighlightCodeBlock(
 
     LaunchedEffect(code, completeCodeBlock, expandState, previewAutoFollowPaused) {
         val codeGrew = code.length > previousCodeLength
-        if (codeGrew && !completeCodeBlock) {
-            pulseTrigger = 1
-        }
         previousCodeLength = code.length
         if (!codeGrew || completeCodeBlock) {
             return@LaunchedEffect
@@ -264,9 +265,22 @@ fun HighlightCodeBlock(
         when (expandState) {
             CodeBlockState.Preview -> {
                 if (!previewAutoFollowPaused) {
+                    // Ease toward the bottom with velocity carried across chunks, so a burst
+                    // of lines is one glide instead of a scroll animation restarted per chunk.
                     programmaticScrollInProgress = true
                     try {
-                        verticalScrollState.animateScrollTo(verticalScrollState.maxValue)
+                        var last = withFrameNanos { it }
+                        while (!previewAutoFollowPaused) {
+                            val now = withFrameNanos { it }
+                            val dt = ((now - last) / 1_000_000_000f).coerceIn(0.001f, 0.064f)
+                            last = now
+                            val distance = (verticalScrollState.maxValue - verticalScrollState.value).toFloat()
+                            if (distance <= 0.5f) { previewFollowMotion.reset(); break }
+                            val step = previewFollowMotion.step(
+                                distance, dt, me.rerere.rikkahub.ui.pages.chat.streamingFollowOmega(distance, 48f)
+                            )
+                            if (step > 0f) verticalScrollState.dispatchRawDelta(step)
+                        }
                     } finally {
                         programmaticScrollInProgress = false
                     }
@@ -572,6 +586,9 @@ private fun CodeBlockText(
 
     Column(modifier = contentModifier) {
         SelectionContainer {
+            val codeRevealAnchor = LocalCodeRevealAnchor.current
+            val codeStreamingReveal = LocalStreamingTextReveal.current
+            val codeRevealColor = LocalContentColor.current
             HighlightText(
                 code = code,
                 language = language,
@@ -587,7 +604,24 @@ private fun CodeBlockText(
                 colors = colorPalette,
                 overflow = TextOverflow.Visible,
                 softWrap = autoWrap || expandState == CodeBlockState.Collapsed,
-                fontFamily = codeFontFamily ?: FontFamily.Monospace
+                fontFamily = codeFontFamily ?: FontFamily.Monospace,
+                textContent = if (codeRevealAnchor != null && codeStreamingReveal != null) {
+                    { revealed, textModifier ->
+                        val revealedText = remember(revealed, codeStreamingReveal) {
+                            revealed.withCodeStreamingReveal(codeStreamingReveal, codeRevealAnchor)
+                        }
+                        RevealText(
+                            text = revealedText,
+                            modifier = textModifier,
+                            style = textStyle.copy(
+                                fontFamily = codeFontFamily ?: FontFamily.Monospace,
+                                color = codeRevealColor,
+                            ),
+                            softWrap = autoWrap || expandState == CodeBlockState.Collapsed,
+                            overflow = TextOverflow.Visible,
+                        )
+                    }
+                } else null,
             )
         }
     }
