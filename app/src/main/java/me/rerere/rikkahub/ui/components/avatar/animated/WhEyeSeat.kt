@@ -103,13 +103,15 @@ object WhEyeSeat {
      * to the circle, scaled by that factor. Gap tracks fit so the cute spacing ratio holds.
      */
     const val GENERICAL_FIGMA_SIZE = 0.91f
+    /** Engine14.3: tiny extra interocular distance on Generical only (size stays 0.91). */
+    const val GENERICAL_GAP_OVER_FIT = 1.04f
 
     fun genericalFitScale(pickerId: String): Float {
         val relative = if (pickerId == "blob") 1f else (oldFit(pickerId) / oldFit("blob")).coerceIn(0.6f, 1.1f)
         return GENERICAL_FIGMA_SIZE * relative
     }
 
-    fun genericalGapScale(pickerId: String): Float = genericalFitScale(pickerId)
+    fun genericalGapScale(pickerId: String): Float = genericalFitScale(pickerId) * GENERICAL_GAP_OVER_FIT
 
     /**
      * He-centered evenodd eye paths via full sx seat branches.

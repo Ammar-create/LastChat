@@ -479,3 +479,6 @@ The actions row and toolbar under chat messages now use `ExpandableContent` (one
 
 ### Engine14.2: Generical eye size
 Eyes stay Figma-faithful for shape, gradient, outline (8/500), spacing and placement, but size on every shape is scaled by `GENERICAL_FIGMA_SIZE = 0.91` (~midway between the pre-engine14 ~0.81 and full 1:1). Grok is unchanged.
+
+### Engine14.3: Generical gap bump
+Size stays at 0.91× Figma. Interocular gap is `fit × GENERICAL_GAP_OVER_FIT` with `GENERICAL_GAP_OVER_FIT = 1.04` (~4% more distance). Grok unchanged.
