@@ -165,6 +165,8 @@ internal class AlivenessEngine(private val rng: Random) {
     }
 
     /** The character's own reply had a tone: show it, scaled by expressiveness. */
+    private fun skeptical() = if (rng.nextBoolean()) "skeptical" else "skeptical left"
+
     private fun reactToTone(emo: Emotion, intensity: Float) {
         val p = personality
         if (!chance((0.35f + 0.6f * p.expressiveness) * (0.5f + intensity))) return
@@ -177,10 +179,12 @@ internal class AlivenessEngine(private val rng: Random) {
             Emotion.Concern -> sequence(d to Beat.Accent(FaceAccent.Worried, logRange(1.2f, 2.0f)))
             Emotion.Sadness -> sequence(d to Beat.Accent(FaceAccent.Sad, logRange(1.4f, 2.4f)),
                 d + 1.2f to Beat.Gesture(MotionDirector.Gesture.Droop))
-            Emotion.Surprise -> sequence(d to Beat.Accent(FaceAccent.Startled, 0.6f), d + 0.7f to Beat.Blink)
+            // A surprising claim sometimes earns a brief skeptical "hm, really?" after the first take.
+            Emotion.Surprise -> if (chance(0.2f)) sequence(d to Beat.Accent(FaceAccent.Startled, 0.5f), d + 0.6f to Beat.Face(skeptical(), logRange(0.8f, 1.3f)))
+            else sequence(d to Beat.Accent(FaceAccent.Startled, 0.6f), d + 0.7f to Beat.Blink)
             Emotion.Interest -> sequence(d to Beat.Accent(FaceAccent.Curious, logRange(1.0f, 1.6f)),
                 d + 0.1f to Beat.Gesture(MotionDirector.Gesture.Tilt))
-            Emotion.Confusion -> sequence(d to Beat.Face("confused", logRange(1.0f, 1.6f)))
+            Emotion.Confusion -> sequence(d to Beat.Face(if (chance(0.3f)) skeptical() else "confused", logRange(0.8f, 1.4f)))
             Emotion.Pride, Emotion.Calm -> sequence(d to Beat.Accent(FaceAccent.Smug, logRange(0.9f, 1.4f)))
         }
     }

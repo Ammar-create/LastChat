@@ -100,6 +100,12 @@ class AvatarMotionVideoTest {
             if (i < MORPH_SEQ.size && fired.add(i.toFloat())) s.debugReact(MORPH_SEQ[i], 3f)
             AvatarMotionHints()
         },
+        Script("skeptical", 10f) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugSkeptical(false)
+            if (t >= 4.5f && fired.add(4.5f)) s.debugSkeptical(true)
+            if (t >= 7.5f && fired.add(7.5f)) s.debugSkeptical(false)
+            AvatarMotionHints()
+        },
         Script("expr", 14f) { s, _, t, _ ->
             val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "angered or concentrated", "Worried")
             val i = (t / 2f).toInt()
@@ -198,11 +204,14 @@ class AvatarMotionVideoTest {
         assumeTrue(out != null && (only == null || "exprsheet" in only))
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
-            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3")
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3", "skeptical", "skeptical left")
         for (mode in listOf("generical", "grok")) {
             captureStrip(File(out, "exprsheet_$mode.png"), "blob", mode, ids.map { MotionFrame(exprFrom = it, exprTo = it) })
-            captureStrip(File(out, "gazeshape_$mode.png"), "blob", mode,
-                listOf(-0.95f, -0.6f, -0.3f, 0f, 0.3f, 0.6f, 0.95f).map { MotionFrame(headLookX = it) })
+            // Look-around: Neutral eye shapes, gaze only via the 3D turn / surface projection.
+            for (sh in listOf("blob", "heart"))
+                captureStrip(File(out, "lookaround_${mode}_$sh.png"), sh, mode,
+                    listOf(-0.95f to 0f, -0.5f to 0.4f, 0f to 0.9f, 0.6f to 0.6f, 0.95f to 0f, 0.6f to -0.6f, 0f to -0.9f, -0.6f to -0.6f)
+                        .map { (x, y) -> MotionFrame(headLookX = x, headLookY = y) })
         }
         File(out, "exprsheet_ids.txt").writeText(ids.joinToString("\n"))
     }

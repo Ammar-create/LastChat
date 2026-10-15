@@ -465,6 +465,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         set(v) { aliveness.personality = v }
 
     /** Harness hooks. */
+    internal fun debugSkeptical(left: Boolean) = setReaction(if (left) "skeptical left" else "skeptical", 1.1f)
     internal fun debugReact(expr: String, sec: Float) = setReaction(expr, sec)
     internal fun debugBoredom(v: Float) = aliveness.debugBoredom(v)
 
@@ -1195,7 +1196,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             Response.CuriousTilt -> {
                 gaze.focus(st.dirX, st.dirY, hold(1.4f, 2.4f), priority = 2)
                 director.gesture(MotionDirector.Gesture.Tilt)
-                if (rng.nextFloat() < 0.5f) accent(FaceAccent.Curious, hold(1f, 1.6f))
+                // Something odd caught its attention: now and then a brief skeptical look.
+                val r = rng.nextFloat()
+                if (r < 0.12f && reaction == null) setReaction(if (rng.nextBoolean()) "skeptical" else "skeptical left", hold(0.8f, 1.2f))
+                else if (r < 0.6f) accent(FaceAccent.Curious, hold(1f, 1.6f))
             }
             Response.Startle -> {
                 director.gesture(MotionDirector.Gesture.Recoil)

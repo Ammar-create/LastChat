@@ -389,17 +389,24 @@ are copied unchanged (`port.py`). The outline is drawn at the house width of 5.
 | Angry/pouty | pouty |
 | hurt/cute | hurt or cute |
 | Sleeping | Sleeping |
-| Looking to the right | gaze-shape reference; "Looking to the left" is its mirror about x = 250 |
-| Looking up | same eye shape as Neutral; the gaze system does the look |
+| Looking to the right | **skeptical** (raised-eyebrow, slightly confused "hm, really?"), plus "skeptical left" mirrored about x = 250. A normal expression, never tied to gaze or head turn |
+| Looking up | not used (gaze is the 3D turn only) |
 
 Only "Group 3" (playful) is kept from the old set, because no frame of his matches it.
 
 All frames are resampled to the same 96-point outline (top-start, clockwise), so morphs between
 any two frames, path or rect, are a single point-to-point blend.
 
-**Gaze shape.** While the face is Neutral, a sideways head look past about 0.3 leans the outlines
-up to 85 % toward his look-right pose (or its mirror): the far eye grows taller and the near eye
-gets a slanted top. Position still comes from the unrestricted gaze system.
+**"skeptical" triggers** (sparing, brief 0.8–1.4 s holds, through normal expression transitions):
+- 30 % of Confusion tone (doubtful or odd claims), instead of confused.
+- 20 % of Surprise tone, as a brief "really?" after the startled first take.
+- 12 % of curious-tilt responses to something odd.
+
+Grok shows its confused capsules for it.
+
+**No gaze-shape swaps** (engine13.2, Julian): the look-right/look-up frames are not used. Eyes
+keep their expression shape while looking around. The look comes only from the real 3D turn,
+with the eyes riding the surface projection.
 
 **Angry tone-down.** The Annoyed accent slant went from 0.32 to 0.14 and the upper lid from 0.60
 to 0.74, per Julian's note that our angry was too angry.
