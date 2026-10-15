@@ -876,12 +876,13 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // History-aware variant choice: what happened last time is less likely now.
         val pRun = (if (playful) 0.6f else 0.45f) * (if (spLastRun) 0.55f else 1.25f)
         val run = forceRun ?: (rng.nextFloat() < pRun)
-        spRun = if (run) rr(0.2f, 0.34f) else 0f
+        spRun = if (run) rr(0.3f, 0.44f) else 0f
         spRunDeg = if (run) rr(3f, 7f) else 0f
         spCrouch = if (run) rr(0.015f, 0.035f) else 0f
-        spMain = if (playful) rr(0.95f, 1.2f) else rr(1.25f, 1.6f)
-        spFollow = rr(0.05f, 0.1f) * (1.25f - 0.2f * spMain) // faster spin → a bit more drift
-        spFollowOut = rr(0.14f, 0.22f); spFollowBack = rr(0.38f, 0.6f)
+        // engine14.1: weighty spin, 360° in ~1.8–1.98s, peak ~280–320°/s.
+        spMain = if (playful) rr(1.8f, 1.86f) else rr(1.84f, 1.98f)
+        spFollow = rr(0.045f, 0.08f) * (1.6f - 0.3f * spMain) // faster spin → a bit more drift
+        spFollowOut = rr(0.2f, 0.3f); spFollowBack = rr(0.5f, 0.75f)
         val pShake = (0.18f + 0.22f * (if (playful) 1f else 0f) + 0.15f * (1f - temper.energy)) * (if (spLastShake) 0.45f else 1.2f)
         spShake = forceShake ?: (rng.nextFloat() < pShake)
         spShakeDelay = rr(0.05f, 0.25f); spShakeAmp = rr(3.5f, 6.5f); spShakeHz = rr(4f, 5.2f); spShakeCycles = rr(2f, 3f)
@@ -889,7 +890,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (forceRun == null && forceShake == null && run == spLastRun && spShake == spLastShake && rng.nextFloat() < 0.8f) {
             if (rng.nextBoolean()) { spShake = !spShake } else {
                 val r2 = !run
-                spRun = if (r2) rr(0.2f, 0.34f) else 0f; spRunDeg = if (r2) rr(3f, 7f) else 0f; spCrouch = if (r2) rr(0.015f, 0.035f) else 0f
+                spRun = if (r2) rr(0.3f, 0.44f) else 0f; spRunDeg = if (r2) rr(3f, 7f) else 0f; spCrouch = if (r2) rr(0.015f, 0.035f) else 0f
             }
         }
         spPeakAt = rr(0.24f, 0.36f)
@@ -900,16 +901,24 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     }
 
     private var spPeakAt = 0.3f
+    private val SPIN_RISE = 0.22f
+    private val SPIN_GLIDE = 0.4f
 
     /**
-     * Normalised turn progress whose velocity rises from rest along a half-cosine to its peak at
-     * [a], then falls along a longer half-cosine to exactly zero (friction-like stop). Unimodal,
-     * C¹-continuous, no overshoot.
+     * Normalised turn progress with mass: velocity rises slowly from rest along a half-cosine
+     * (first [SPIN_RISE]), holds its momentum, then glides out along a friction-like (1-s)²
+     * decay to exactly zero over the last [SPIN_GLIDE]. Monotonic, C¹, no overshoot.
      */
-    private fun spinCurve(u: Float, a: Float): Float {
-        val pi = PI.toFloat()
-        return if (u < a) u - a / pi * sin(pi * u / a)
-        else { val w = u - a; a + w + (1f - a) / pi * sin(pi * w / (1f - a)) }
+    private fun spinCurve(u: Float, @Suppress("UNUSED_PARAMETER") a0: Float): Float {
+        val pi = PI.toFloat(); val a = SPIN_RISE; val f = SPIN_GLIDE; val h = 1f - a - f
+        val vp = 1f / (a / 2f + h + f / 3f)
+        return when {
+            u <= 0f -> 0f
+            u < a -> vp * (u / 2f - a / (2f * pi) * sin(pi * u / a))
+            u < a + h -> vp * (a / 2f + (u - a))
+            u < 1f -> { val q = 1f - (u - a - h) / f; vp * (a / 2f + h + f * (1f - q * q * q) / 3f) }
+            else -> 1f
+        }
     }
 
     /** Advances the spin timeline. */

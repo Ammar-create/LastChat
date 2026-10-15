@@ -473,3 +473,6 @@ neutral + 3 % are guard-bound (gap = the never-touch minimum).
 
 ### Engine14: message actions collapse
 The actions row and toolbar under chat messages now use `ExpandableContent` (one 240ms tween of height+alpha to exactly 0) inside `CollapseSpacingColumn`, so the spacedBy gap shrinks with the row instead of snapping at the end — same fix as the settings menus.
+
+### Engine14.1: weighty spin
+360° now takes ~1.8–2.0s with a peak of ~295–317°/s (was ~0.9–1s and ~385–433°/s). Velocity rises along a half-cosine over the first 22% (mass), holds momentum, then glides out over the last 40% with a friction-like (1-s)² decay to exactly zero, so there is no bounce. The run-up is 0.30–0.44s, and the eye drift is longer and scaled to the slower turn.
