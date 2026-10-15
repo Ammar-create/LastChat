@@ -96,20 +96,20 @@ object WhEyeSeat {
     }
 
     /**
-     * Engine14: Julian's Figma frames are the reference. On the circle (blob) the eyes are
-     * 1:1 with his 500×500 frame (fit = 1). Other shapes keep their relative eye size (the
-     * per-shape face tune), normalised to the circle.
+     * Engine14.2: Julian's Figma frames stay the reference for shape, gradient, outline and
+     * spacing, but the eye size on the circle is pulled back a notch from full 1:1 so they
+     * don't read as permanently wide-open. [GENERICAL_FIGMA_SIZE] is ~midway between the
+     * pre-engine14 ~0.81 and the full Figma 1.0. Other shapes keep the same relative size
+     * to the circle, scaled by that factor. Gap tracks fit so the cute spacing ratio holds.
      */
-    fun genericalFitScale(pickerId: String): Float =
-        if (pickerId == "blob") 1f else (oldFit(pickerId) / oldFit("blob")).coerceIn(0.6f, 1.1f)
+    const val GENERICAL_FIGMA_SIZE = 0.91f
 
-    /**
-     * Generical interocular scale (1 = his frame's spacing). His frames space the eyes so the
-     * clear space is about 0.41 of an eye width. Keeping that ratio on every shape means the
-     * spacing scales with the eye size: gap = fit.
-     */
-    fun genericalGapScale(pickerId: String): Float =
-        if (pickerId == "blob") 1f else genericalFitScale(pickerId)
+    fun genericalFitScale(pickerId: String): Float {
+        val relative = if (pickerId == "blob") 1f else (oldFit(pickerId) / oldFit("blob")).coerceIn(0.6f, 1.1f)
+        return GENERICAL_FIGMA_SIZE * relative
+    }
+
+    fun genericalGapScale(pickerId: String): Float = genericalFitScale(pickerId)
 
     /**
      * He-centered evenodd eye paths via full sx seat branches.

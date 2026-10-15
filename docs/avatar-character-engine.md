@@ -476,3 +476,6 @@ The actions row and toolbar under chat messages now use `ExpandableContent` (one
 
 ### Engine14.1: weighty spin
 360° now takes ~1.8–2.0s with a peak of ~295–317°/s (was ~0.9–1s and ~385–433°/s). Velocity rises along a half-cosine over the first 22% (mass), holds momentum, then glides out over the last 40% with a friction-like (1-s)² decay to exactly zero, so there is no bounce. The run-up is 0.30–0.44s, and the eye drift is longer and scaled to the slower turn.
+
+### Engine14.2: Generical eye size
+Eyes stay Figma-faithful for shape, gradient, outline (8/500), spacing and placement, but size on every shape is scaled by `GENERICAL_FIGMA_SIZE = 0.91` (~midway between the pre-engine14 ~0.81 and full 1:1). Grok is unchanged.
