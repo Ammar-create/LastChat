@@ -18,6 +18,12 @@ import kotlin.random.Random
  * and gaze moves, so nothing here can cut. External input: [personality],
  * [feedTone] (per-message tone) and [onEvent] (chat / UI events).
  */
+/**
+ * Engine15: idle beats that were random faces / random glances. Gaze is now the attention
+ * episode planner and faces need a cause, so these never fire on their own when idle.
+ */
+private val NO_CAUSE_IDLE = setOf("curious", "smile", "glance", "survey", "shyLook")
+
 internal class AlivenessEngine(private val rng: Random) {
 
     sealed interface Beat {
@@ -277,7 +283,9 @@ internal class AlivenessEngine(private val rng: Random) {
             val f = if (c == 0f) 1f else cool("face:$k", c)
             (k to w * f * penalty).takeIf { it.second > 0f }
         }.ifEmpty { listOf("Neutral" to 1f) }
-        val k = weighted(opts)
+        var k = weighted(opts)
+        // Engine15: no cut from a low face straight to a bright one; pass through neutral.
+        if (busyFace in setOf("Bored", "Sad", "Worried") && k == "Happy") k = "Neutral"
         lastUsed["face:$k"] = clock
         recentFaces.addLast(k)
         while (recentFaces.size > 4) recentFaces.removeFirst()
@@ -352,7 +360,8 @@ internal class AlivenessEngine(private val rng: Random) {
             "sneeze" to 0.004f * cool("sneeze", 600f),
             "yawn" to 0.04f * fatigue() * cool("yawn", 240f),
             "twirl" to 0.003f * p.playfulness * p.energy * 4f * (0.5f + valence.coerceAtLeast(0f)) * cool("twirl", 900f),
-        ).map { (k, w) -> k to w * fresh(k) }.filter { it.second > 0f }
+        ).map { (k, w) -> k to w * fresh(k) * (if (k in NO_CAUSE_IDLE && !(k == "curious" && emo == Emotion.Interest) &&
+            !(k == "smile" && (emo == Emotion.Pride || emo == Emotion.Joy))) 0f else 1f) }.filter { it.second > 0f }
         val k = weighted(opts)
         remember(k)
         return when (k) {

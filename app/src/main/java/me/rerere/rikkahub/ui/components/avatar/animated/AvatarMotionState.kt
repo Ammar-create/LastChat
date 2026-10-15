@@ -104,16 +104,27 @@ internal class GazeDirector(
 
     /** Set when a big gaze jump happens (blink sometimes rides it). */
     var bigShift = false; private set
+    /** Attention event from the idle episode ("notice" / "ack"), consumed by the owner. */
+    private var event: String? = null
+    fun takeEvent(): String? = event.also { event = null }
+    val episode: String get() = planner.episodeName
 
-    fun focus(gx: Float, gy: Float, holdSec: Float, priority: Int, withHead: Boolean = true) {
+    fun focus(gx: Float, gy: Float, holdSec: Float, priority: Int, withHead: Boolean = true, travel: Float = 0f) {
         if (priority < focusPriority && focusLeft > 0f) return
         focusPriority = priority
         // Up-right is only ever a short glance.
         val upRight = gx > 0.15f && gy < -0.08f
         focusLeft = if (upRight) holdSec.coerceAtMost(0.9f) else holdSec
         if (upRight) returnToCenter = true
-        pursuitT = 1f
-        setTarget(gx, gy, withHead)
+        if (travel > 0f) {
+            // Smooth pursuit (a pan), the head following along.
+            p0x = tx; p0y = ty; p1x = gx.coerceIn(-1f, 1f); p1y = gy.coerceIn(-1f, 1f)
+            pursuitDur = travel; pursuitT = 0f
+            focusLeft += travel
+        } else {
+            pursuitT = 1f
+            setTarget(gx, gy, withHead)
+        }
     }
 
     fun releaseFocus(awayX: Float? = null) {
@@ -140,8 +151,9 @@ internal class GazeDirector(
         // ~75 % of the way, starting ~80–140 ms after the eyes.
         val headJoins = withHead || jump > 0.45f
         if (headJoins) {
-            pendingHx = gx * 0.75f; pendingHy = gy * 0.7f
-            headDelay = 0.08f + rng.nextFloat() * 0.06f
+            // Eyes lead, the head follows a beat later and carries most of a big turn.
+            pendingHx = gx * 0.8f; pendingHy = gy * 0.72f
+            headDelay = 0.12f + rng.nextFloat() * 0.1f
         }
     }
 
@@ -207,6 +219,7 @@ internal class GazeDirector(
         }
         val f = planner.next(life, temper, drowsy)
         kind = f.kind
+        if (f.event != null) event = f.event
         holdLeft = f.hold + f.travel
         if (f.thenCenter) returnToCenter = true
         if (f.travel > 0f) {
@@ -507,7 +520,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var droopIn = 12f
     private var perkIn = 0f
     private var spinIn = 30f + rng.nextFloat() * 30f
-    private var lastSpinAgo = 999f
+    private var lastSpinAgo = 20f
+    private var nextSpinAt = -1f
+    private var lastShownTarget = "Neutral"
+    private var lastGazeKind = ""
+    private var lastReactionShown: String? = null
     private var socialIn = 8f + rng.nextFloat() * 12f
     private var eventCooldown = 0f
     private var typingCooldown = 0f
@@ -601,6 +618,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         } else {
             reaction = null
             reactionQueue = null
+            train.clear()
             followLeft = 0f
             if (social != null) {
                 social = null
@@ -637,6 +655,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         gaze.update(dt, director.lifecycle, drowsy)
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift && rng.nextFloat() < 0.4f) blink.request(minGap = 0.9f)
+        gaze.takeEvent()?.let { ev -> if (live) attentionEvent(ev) }
+        if (gaze.kind != lastGazeKind) {
+            lastGazeKind = gaze.kind
+            log("gaze ${gaze.kind} (%.2f,%.2f)".format(gaze.eyeX, gaze.eyeY))
+        }
 
         // ---- expression ----
         // Never swap faces mid-nod (a morph under a nod reads as a size pop).
@@ -644,6 +667,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val spinFace = abs(spinYaw) > 0.5f || abs(spinV) > 1f
         if (!director.nodding && !spinFace) {
             val target = currentExpressionTarget()
+            if (target != lastShownTarget) {
+                // Every face change is logged with its cause (reactions log their own).
+                if (reaction == null || reaction != target) log("face ${lastShownTarget}→$target cause=" + when {
+                    reaction == null && lastShownTarget == lastReactionShown -> "reaction ends, back to rest"
+                    MotionDirector.isBusy(director.lifecycle) -> "busy phase (${director.lifecycle})"
+                    else -> "lifecycle ${director.lifecycle}"
+                })
+                lastShownTarget = target
+                lastReactionShown = reaction
+            }
             if (ExpressionDirector.normalize(target) != expr.to) {
                 expr.hint = when {
                     reaction != null && target == reaction -> reactionStyle.also { reactionStyle = null }
@@ -992,7 +1025,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             Moment.Spin -> {
                 val playful = temper.playful(personality) || temper.valence > 0.2f
                 startSpin(playful)
-                if (playful && rng.nextFloat() < 0.5f) setReaction("Happy", rr(1.6f, 2.4f), ExpressionDirector.Style.Soft)
+                if (playful && rng.nextFloat() < 0.5f) setReaction("Happy", rr(1.6f, 2.4f), ExpressionDirector.Style.Soft, cause = "spin joy")
             }
             Moment.Scan -> {
                 val n = 2 + rng.nextInt(3)
@@ -1000,13 +1033,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 var x = side * rr(0.35f, 0.6f)
                 scan.clear(); scanT = 0f
                 if (rng.nextFloat() < 0.3f) blink.request(minGap = 0f) // blinks often ride big gaze shifts
+                // Engine15: a slow pan across related points (one direction, small steps),
+                // not a teleport between random spots.
+                var y = rr(-0.1f, 0.3f)
+                val stepX = -side * rr(0.22f, 0.34f); val stepY = rr(-0.06f, 0.06f)
                 repeat(n) { k ->
-                    val y = rr(-0.25f, 0.35f)
                     val hold = rr(0.7f, 1.5f)
                     scan += floatArrayOf(at, x, y, hold)
                     at += hold + rr(0.1f, 0.25f)
-                    // Sweep across, sometimes doubling back.
-                    x = if (rng.nextFloat() < 0.7f) -x * rr(0.6f, 1.1f) else x * rr(0.3f, 0.7f)
+                    x = (x + stepX).coerceIn(-0.85f, 0.85f); y = (y + stepY).coerceIn(-0.3f, 0.45f)
                     if (k == n - 1) scan += floatArrayOf(at, rr(-0.06f, 0.06f), rr(-0.02f, 0.05f), rr(1.5f, 3f))
                 }
             }
@@ -1032,7 +1067,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
             Moment.Wiggle -> {
                 wiggleU = 0f; wiggleA = rr(3f, 5f) * side; wiggleDur = rr(0.7f, 0.95f)
-                setReaction("Happy", rr(1.3f, 2f), ExpressionDirector.Style.Snap)
+                remember("nice")
+                setReaction("Happy", rr(1.3f, 2f), ExpressionDirector.Style.Snap, cause = "nice message")
             }
             Moment.SmugNod -> {
                 accent(FaceAccent.Smug, rr(1.2f, 1.8f))
@@ -1063,7 +1099,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             val it = scan.iterator()
             while (it.hasNext()) {
                 val p = it.next()
-                if (t0 <= p[0] && scanT > p[0]) { gaze.focus(p[1], p[2], p[3], priority = 2); it.remove() }
+                if (t0 <= p[0] && scanT > p[0]) { gaze.focus(p[1], p[2], p[3], priority = 2, travel = if (p[0] > 0f) 0.7f else 0f); it.remove() }
             }
         }
         if (wiggleU < 1f) wiggleU = (wiggleU + dt / wiggleDur).coerceAtMost(1f)
@@ -1164,7 +1200,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             if (t0 < 0.7f && takeT >= 0.7f) {
                 gaze.focus(takeX, takeY, 1.6f + rng.nextFloat(), priority = 4)
                 blink.request(minGap = 0f)
-                if (rng.nextFloat() < 0.5f) setReaction("Surprised", 0.7f, ExpressionDirector.Style.Snap)
+                if (rng.nextFloat() < 0.5f) setReaction("Surprised", 0.7f, ExpressionDirector.Style.Snap, cause = "double take")
                 takeT = -1f
             }
         }
@@ -1207,7 +1243,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 director.gesture(MotionDirector.Gesture.Tilt)
                 // Something odd caught its attention: now and then a brief confused look.
                 val r = rng.nextFloat()
-                if (r < 0.08f && reaction == null) setReaction("confused", hold(0.8f, 1.2f))
+                if (r < 0.08f && reaction == null) setReaction("confused", hold(0.8f, 1.2f), cause = "odd stimulus")
                 else if (r < 0.6f) accent(FaceAccent.Curious, hold(1f, 1.6f))
             }
             Response.Startle -> {
@@ -1281,9 +1317,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
     private fun playBeat(b: AlivenessEngine.Beat) {
         when (b) {
-            is AlivenessEngine.Beat.Gesture -> director.gesture(b.g)
+            is AlivenessEngine.Beat.Gesture -> if (b.g == MotionDirector.Gesture.Spin) {
+                if (spT < 0f && lastSpinAgo > 20f) { moments.note(Moment.Spin); playMoment(Moment.Spin); lastSpinAgo = 0f; nextSpinAt = -1f }
+            } else director.gesture(b.g)
             is AlivenessEngine.Beat.Accent -> accent(b.a, b.sec, force = b.a == FaceAccent.Startled)
-            is AlivenessEngine.Beat.Face -> if (reaction == null) setReaction(b.expr, b.sec)
+            is AlivenessEngine.Beat.Face -> if (reaction == null) setReaction(b.expr, b.sec, cause = "feeling (tone/fatigue)")
             is AlivenessEngine.Beat.Blink -> blink.request(minGap = 0.8f)
             is AlivenessEngine.Beat.DoubleBlink -> blink.request(double = true, minGap = 0.8f)
             is AlivenessEngine.Beat.Glance -> {
@@ -1299,7 +1337,98 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
     }
 
-    private fun setReaction(e0: String, sec: Float, style: ExpressionDirector.Style? = null) {
+    // ---------------------------------------------------- engine15: causal trains
+
+    /** One delayed beat of a micro-story (notice → react → settle). */
+    private class TrainStep(var at: Float, val what: String, val act: () -> Unit)
+    private val train = ArrayList<TrainStep>()
+    /** Recent-event memory: what happened, and when (seconds of [time]). */
+    private val memory = ArrayDeque<Pair<String, Float>>()
+    private fun remember(what: String) { memory.addLast(what to time); while (memory.size > 8) memory.removeFirst() }
+    private fun recently(what: String, sec: Float) = memory.any { it.first == what && time - it.second < sec }
+
+    private fun tell(story: String, vararg steps: Pair<Float, String>, acts: List<() -> Unit>) {
+        train.clear()
+        steps.forEachIndexed { i, (d, w) -> train += TrainStep(d, "$story/$w", acts[i]) }
+        log("story $story: " + steps.joinToString(" → ") { "%.2f %s".format(it.first, it.second) })
+    }
+
+    private fun trainUpdate(dt: Float) {
+        if (train.isEmpty()) return
+        train.forEach { it.at -= dt }
+        while (train.isNotEmpty() && train[0].at <= 0f) {
+            val st = train.removeAt(0)
+            log("beat ${st.what}")
+            st.act()
+        }
+    }
+
+    /**
+     * The idle attention episode landed on something. React after a perception delay, and
+     * only with a reason: notice → (curious) → maybe pleased + nod; or acknowledge it.
+     */
+    private fun attentionEvent(ev: String) {
+        fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+        val free = director.lifecycle == MarkLifecycle.Idle && !drowsy && reaction == null &&
+            social == null && train.isEmpty() && spT < 0f && recoverT <= 0f
+        if (!free) return
+        remember(ev)
+        // The eyes are only just leaving: arrival (~0.25 s) plus perception delay.
+        val d = rr(0.45f, 0.75f)
+        when (ev) {
+            "notice" -> {
+                val r = rng.nextFloat()
+                when {
+                    mood.valence > 0.15f && r < 0.3f && !recently("face:Happy", 30f) -> {
+                        val c = d + rr(0.7f, 1.0f)
+                        tell("notice→pleased", d to "curious", c to "Happy", c + 0.25f to "nod", acts = listOf(
+                            { accent(FaceAccent.Curious, c - d + 0.3f) },
+                            { setReaction("Happy", rr(1.2f, 1.8f), ExpressionDirector.Style.Soft, cause = "thought completes: likes what it noticed") },
+                            { director.gesture(MotionDirector.Gesture.Nod) },
+                        ))
+                    }
+                    r < 0.65f -> tell("notice→curious", d to "curious", acts = listOf({
+                        accent(FaceAccent.Curious, rr(0.9f, 1.5f))
+                        if (rng.nextFloat() < 0.3f) director.gesture(MotionDirector.Gesture.Tilt)
+                    }))
+                    else -> tell("notice→blink", d to "blink", acts = listOf({ blink.request(minGap = 0.4f) }))
+                }
+            }
+            "ack" -> tell("acknowledge", d to "nod", d + 0.35f to "blink", acts = listOf(
+                { director.gesture(MotionDirector.Gesture.Nod) },
+                { blink.request(minGap = 0.3f) },
+            ))
+        }
+    }
+
+    private val lowFaces = setOf("Bored", "Sleeping", "Sad", "Eyes closed", "Worried")
+    private val brightFaces = setOf("Happy", "Group 3", "playful")
+
+    private fun setReaction(e0: String, sec: Float, style: ExpressionDirector.Style? = null, cause: String = "unspecified") {
+        val from = currentExpressionTarget()
+        // Never cut low → bright (bored → happy): go through noticing it first.
+        if (from in lowFaces && e0 in brightFaces) {
+            fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+            val n = rr(0.3f, 0.45f); val c = n + rr(0.35f, 0.5f); val t = c + rr(0.45f, 0.7f)
+            setReactionRaw("Neutral", t + 0.1f, ExpressionDirector.Style.Blink, "notice ($cause)", from)
+            tell("bridge $from→$e0", n to "curious", t to e0, acts = listOf(
+                { accent(FaceAccent.Curious, c - n + 0.5f) },
+                { setReactionRaw(e0, sec, style, cause, "Neutral") },
+            ))
+            return
+        }
+        // Bright → low settles through a beat of neutral (the smile fades first).
+        if (from in brightFaces && e0 in lowFaces && e0 != "Sleeping") {
+            setReactionRaw("Neutral", 1.4f, ExpressionDirector.Style.Gradual, "settle ($cause)", from)
+            tell("settle $from→$e0", 1.2f to e0, acts = listOf({ setReactionRaw(e0, sec, style, cause, "Neutral") }))
+            return
+        }
+        setReactionRaw(e0, sec, style, cause, from)
+    }
+
+    private fun setReactionRaw(e0: String, sec: Float, style: ExpressionDirector.Style?, cause: String, from: String) {
+        log("expr $from→$e0 cause=$cause")
+        remember("face:$e0")
         // Confused has a left/right variant: the raised brow goes on the side it is looking
         // toward; when looking ahead, either side (not the same one every time).
         val e = if (e0 != "confused") e0 else {
@@ -1321,6 +1450,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
     private fun aliveUpdate(dt: Float, nowMs: Long) {
         lastSpinAgo += dt
+        trainUpdate(dt)
         accentCooldown -= dt
         flingCooldown -= dt
         eventCooldown -= dt
@@ -1338,7 +1468,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
         }
         // ---- aliveness engine: spontaneous, context-aware beats ----
-        val engineCalm = social == null && reaction == null && followLeft <= 0f && !drowsy
+        val engineCalm = social == null && reaction == null && followLeft <= 0f && !drowsy && train.isEmpty()
         aliveness.update(dt, director.lifecycle, mood.valence, mood.arousal, engineCalm)?.let { playBeat(it) }
         aliveness.takeMoodNudge()?.let { (v, a) -> mood.nudge(v, a) }
         typingCooldown -= dt
@@ -1357,7 +1487,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         reactionQueue?.let { (e, sec) ->
             reactionQueueIn -= dt
             if (reactionQueueIn <= 0f) {
-                setReaction(e, sec)
+                setReaction(e, sec, cause = "queued")
                 reactionQueue = null
             }
         }
@@ -1369,7 +1499,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             director.finishedBusy = false
             val r = rng.nextFloat()
             if (r < 0.6f) {
-                setReaction("Happy", 1.6f + rng.nextFloat())
+                remember("nice")
+                setReaction("Happy", 1.6f + rng.nextFloat(), cause = "reply finished")
                 val g = rng.nextFloat()
                 when {
                     g < 0.35f -> director.gesture(MotionDirector.Gesture.Hop)
@@ -1416,13 +1547,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
 
         if (!calm) return
 
-        // Rare spin.
-        spinIn -= dt
-        if (spinIn <= 0f) {
-            spinIn = 25f + rng.nextFloat() * 25f
-            if (!drowsy && social == null && reaction == null && lastSpinAgo > 150f && rng.nextFloat() < 0.1f) {
-                if (director.gesture(MotionDirector.Gesture.Spin)) lastSpinAgo = 0f
-            }
+        // Engine15 spin cadence: special but not lost — about every 45–90 s when calm,
+        // sooner when lively. Always the weighty spin (run-up / drift / shake variants).
+        if (nextSpinAt < 0f) nextSpinAt = (45f + 45f * rng.nextFloat()) * (if (temper.playful(personality)) 0.65f else 1f)
+        if (lastSpinAgo >= nextSpinAt && !drowsy && social == null && reaction == null && train.isEmpty() &&
+            spT < 0f && recoverT <= 0f && !gaze.focused && quietSec > 6f
+        ) {
+            log("spin cause=" + if (temper.playful(personality)) "lively mood" else "restless after a long calm")
+            moments.note(Moment.Spin); playMoment(Moment.Spin)
+            lastSpinAgo = 0f; nextSpinAt = -1f
         }
 
         // Drowsy: now and then nod off a little, then catch yourself.
@@ -1436,25 +1569,19 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
         }
 
-        // Occasional quiet mood (rare; mostly the face just rests).
+        // Engine15: no random mood faces. The face changes on its own only with a reason.
         moodIn -= dt
         if (moodIn <= 0f) {
-            moodIn = 18f + rng.nextFloat() * 35f
-            if (!drowsy && reaction == null && social == null) {
-                // What the face does on its own depends on the mood.
-                val r = rng.nextFloat()
+            moodIn = 8f + rng.nextFloat() * 6f
+            if (!drowsy && reaction == null && social == null && train.isEmpty()) {
                 val v = mood.valence; val a = mood.arousal
                 when {
-                    r < 0.18f && v > 0.25f -> setReaction("Happy", 2f + rng.nextFloat() * 2f, ExpressionDirector.Style.Gradual)
-                    r < 0.3f && v > 0.25f -> accent(FaceAccent.Glee, 1.5f + rng.nextFloat())
-                    r < 0.3f && a > 0.58f -> {
-                        accent(FaceAccent.Curious, 1.6f + rng.nextFloat())
-                        director.gesture(MotionDirector.Gesture.Tilt)
-                    }
-                    r < 0.32f && a < 0.36f -> accent(FaceAccent.Drowsy, 2.5f + rng.nextFloat() * 2f)
-                    r < 0.32f && v < -0.2f -> accent(FaceAccent.Worried, 1.8f)
-                    r < 0.36f && quietSec > 45f -> setReaction("Bored", 3f + rng.nextFloat() * 3f)
-                    r < 0.4f -> accent(FaceAccent.Smug, 1.4f)
+                    // Boredom settles after a long stillness.
+                    quietSec > 50f && aliveness.boredom > 0.45f && a < 0.5f && !recently("face:Bored", 60f) ->
+                        setReaction("Bored", 3f + rng.nextFloat() * 3f, ExpressionDirector.Style.Gradual, cause = "boredom settles after stillness")
+                    // Afterglow: a recent nice thing still warms the face, once.
+                    v > 0.35f && (recently("nice", 25f)) && !recently("face:Happy", 30f) ->
+                        setReaction("Happy", 1.6f + rng.nextFloat(), ExpressionDirector.Style.Gradual, cause = "afterglow of a nice moment")
                 }
             }
         }
@@ -1482,7 +1609,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
         if (s.skepticAt > 0f && !s.skepticDone && s.t >= s.skepticAt) {
             s.skepticDone = true
-            setReaction("confused", 1.1f + rng.nextFloat() * 0.5f)
+            setReaction("confused", 1.1f + rng.nextFloat() * 0.5f, cause = "skeptic of neighbour")
             if (rng.nextFloat() < 0.7f) director.gesture(MotionDirector.Gesture.Tilt)
         }
         if (s.looking) contactSec += dt
@@ -1605,7 +1732,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     gaze.focus(gx, gy, 1.3f + rng.nextFloat() * 0.6f, priority = 2)
                 }
                 director.gesture(MotionDirector.Gesture.Tilt)
-                if (rng.nextFloat() < 0.45f) setReaction("Surprised", 0.55f)
+                if (rng.nextFloat() < 0.45f) setReaction("Surprised", 0.55f, cause = "typing started")
                 attendedTypingAt = time
             }
         }
@@ -1631,7 +1758,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         gaze.focus(gx, gy, 0.6f + rng.nextFloat() * 0.3f, priority = 2)
         if (rng.nextFloat() < 0.5f) blink.request(minGap = 0.4f)
         val calm = director.lifecycle == MarkLifecycle.Idle || director.lifecycle == MarkLifecycle.Listening
-        if (calm && reaction == null && rng.nextFloat() < 0.3f) setReaction("Happy", 0.7f)
+        if (calm && reaction == null && rng.nextFloat() < 0.3f) setReaction("Happy", 0.7f, cause = "message arrived")
         eventCooldown = 6f
     }
 
@@ -1716,20 +1843,20 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         when {
             pokeCount >= 6 && lastSpinAgo > 30f -> {
                 // Fine, you win: a spin, then all is forgiven.
-                if (director.gesture(MotionDirector.Gesture.Spin)) lastSpinAgo = 0f
+                if (spT < 0f) { moments.note(Moment.Spin); playMoment(Moment.Spin); lastSpinAgo = 0f; nextSpinAt = -1f }
                 pokeCount = 0
                 forgiveIn = 1.6f
             }
             pokeCount >= 3 -> {
                 director.gesture(MotionDirector.Gesture.TurnAway)
-                setReaction("pouty", 1.6f)
+                setReaction("pouty", 1.6f, cause = "poked too much")
                 accent(FaceAccent.Annoyed, 1.8f, force = true)
                 mood.nudge(-0.12f, 0.05f)
                 forgiveIn = 2.6f + rng.nextFloat() * 1.5f
             }
             pokeCount == 2 -> {
                 director.gesture(MotionDirector.Gesture.Recoil)
-                setReaction("Surprised", 0.9f)
+                setReaction("Surprised", 0.9f, cause = "poke")
                 blink.request(minGap = 0.2f)
             }
             // First poke: not the same reaction every time.

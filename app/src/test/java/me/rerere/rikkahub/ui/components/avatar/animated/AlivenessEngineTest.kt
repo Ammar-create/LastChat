@@ -82,10 +82,16 @@ class ToneAndHobbyTest {
                 t += 1f / 30f
             }
         }
-        assertTrue("kinds=$kinds", kinds.size >= 6)
-        // Julian: gaze is unrestricted (any direction, up-right included); only long holds are banned
-        // (enforced in AvatarMotionState's hold cap). Glances should spread over several directions.
-        val quadrants = glances.map { (if (it.x > 0f) 1 else 0) + (if (it.y < 0f) 2 else 0) }.toSet()
+        assertTrue("kinds=$kinds", kinds.size >= 5)
+        // Engine15: idle look-around is the attention planner (not engine glances). Gaze stays
+        // unrestricted: interest targets spread over several directions, and rests dominate.
+        val planner = IdlePlanner(Random(5))
+        val temper = Temperament(Random(5))
+        val fx = List(400) { planner.next(MarkLifecycle.Idle, temper, false) }
+        val interest = fx.filter { it.kind == "interest" }
+        val quadrants = interest.map { (if (it.x > 0f) 1 else 0) + (if (it.y < 0f) 2 else 0) }.toSet()
         assertTrue("quadrants=$quadrants", quadrants.size >= 3)
+        val restTime = fx.filter { it.kind == "rest" }.sumOf { it.hold.toDouble() }
+        assertTrue("rest should dominate", restTime > 0.45 * fx.sumOf { it.hold.toDouble() })
     }
 }

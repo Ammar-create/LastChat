@@ -482,3 +482,51 @@ Eyes stay Figma-faithful for shape, gradient, outline (8/500), spacing and place
 
 ### Engine14.3: Generical gap bump
 Size stays at 0.91× Figma. Interocular gap is `fit × GENERICAL_GAP_OVER_FIT` with `GENERICAL_GAP_OVER_FIT = 1.04` (~4% more distance). Grok unchanged.
+
+## Engine15: intentional aliveness
+
+The root fix: nothing on the face happens "to do something". Every change has a cause, and
+idle looking is attention, not random glances.
+
+### Behaviour model
+- **State**: mood (valence/arousal), temperament, an attention episode, and a short
+  recent-event memory (`remember` / `recently`: "nice", "notice", "ack", "face:X").
+- **Causes**: external (message tone, typing, poke, a message arriving, the pill, a
+  neighbour avatar) or internal (noticing something during an attention episode, a
+  thought completing, boredom settling after a long stillness, afterglow of a recent nice
+  moment, recovering from a spin). Every face change is logged as
+  `expr from→to cause=…` or `face from→to cause=…`; the audit asserts there are no
+  `cause=unspecified` changes.
+- **Micro-stories** (`tell` / `trainUpdate`): 1–3 beats with perception delays, e.g.
+  - notice → (0.45–0.75 s) curious → (0.7–1 s) Happy (soft) → nod — "likes what it noticed";
+  - notice → curious (+ sometimes a tilt);
+  - notice → just a blink;
+  - acknowledge → nod → blink.
+  While a story runs, spontaneous engine beats wait.
+- **No cuts across the mood map**: low → bright (Bored/Sleeping/Sad/Eyes closed/Worried →
+  Happy/Group 3/playful) always goes through a blink-swap to Neutral ("notice"), a curious
+  accent, then the target. Bright → low settles through ~1.2 s of neutral. The busy-face
+  rotation also never jumps Bored/Sad/Worried → Happy.
+- **Removed**: the random idle mood faces (Happy/Glee/Smug/Curious/Worried rolls) and the
+  idle engine beats that were random faces or glances (curious, smile, glance, survey,
+  shyLook — curious/smile remain only while a matching tone emotion is active).
+  Stillness and holding a face for seconds is the default.
+
+### Looking around = attention episodes (`IdlePlanner.nextAttention`)
+1. A long rest looking roughly ahead (4–12 s, never up-right).
+2. An interest: an imagined point anywhere in the full gaze range (sides/below favoured;
+   up-right only briefly), saccade with the head, held 1–3 s (micro-saccades on top).
+   25–45 % of interests are "noticed" (a story above).
+3. Then one of: soft drift away (pursuit), a slow pan across 2–3 related points in one
+   direction (pursuit, 0.5–1.4 s holds), an acknowledge (nod + blink), or just look back.
+4. Back to rest (slow pursuit).
+Eyes lead; the head follows 120–220 ms later and carries ~80 % of the turn on its own
+spring (lead-lag, not lockstep). Gaze is only ever the real 3D turn with eyes on the surface.
+The Scan moment is now a pan across related points with pursuit, not random teleports.
+
+### Spins
+Own cadence: every 45–90 s of calm (×0.65 when lively), only when nothing else is going on
+(no reaction/story/social/focus, not recovering). Every spin path (cadence, poke flurry,
+twirl beat) uses the engine14.1 weighty spin with run-up / eye drift / shake variants and
+the recover pause; the old plain-tween gesture spin is no longer used. Audit (600 s idle,
+5 seeds): 7–10 spins ⇒ one every ~60–85 s.

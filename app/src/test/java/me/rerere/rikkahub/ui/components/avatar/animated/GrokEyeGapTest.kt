@@ -67,7 +67,8 @@ class GrokEyeGapTest {
         while (t < 14f) {
             if (t % 2f < 1f / 120f) sim.debugReact(seq[((t / 2f).toInt()) % seq.size], 1.4f)
             sim.tick(1f / 120f, AvatarMotionHints(isGenerating = t > 7f), 1_700_000_000_000L + (t * 1000).toLong())
-            if (((t * 120f).toInt()) % 12 == 0) out += "sim@%.2f".format(t) to sim.frame
+            // Lids fully shut (mid blink-swap, lid < 3 %): the slits are sub-pixel, nothing to separate.
+            if (((t * 120f).toInt()) % 12 == 0 && sim.frame.lid >= 0.03f) out += "sim@%.2f".format(t) to sim.frame
             t += 1f / 120f
         }
         // Dense mid-blend sampling for the tilted faces (Λ / V tilts reach toward each other).

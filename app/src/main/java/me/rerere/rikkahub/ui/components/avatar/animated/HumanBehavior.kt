@@ -288,6 +288,8 @@ internal data class Fixation(
     val kind: String,
     /** Return near centre afterwards (side glances, up-right). */
     val thenCenter: Boolean = false,
+    /** Attention event to the owner when this fixation lands: "notice" or "ack". */
+    val event: String? = null,
 )
 
 /**
@@ -296,6 +298,9 @@ internal data class Fixation(
  */
 internal class IdlePlanner(private val rng: Random) {
     private var wasSide = false
+    /** Engine15: idle look-around is an attention episode, queued fixation by fixation. */
+    private val episode = ArrayDeque<Fixation>()
+    var episodeName = "rest"; private set
 
     private fun logN(median: Float, sigma: Float, lo: Float, hi: Float): Float {
         val u1 = rng.nextFloat().coerceAtLeast(1e-4f)
@@ -326,27 +331,62 @@ internal class IdlePlanner(private val rng: Random) {
             busy && life == MarkLifecycle.Streaming && r < 0.55f ->
                 fix(rr(-0.25f, 0.25f), rr(0.3f, 0.5f), logN(2.2f, 0.35f, 1.2f, 4.5f), kind = "read", head = false)
             busy -> fix(rr(-0.1f, 0.1f), rr(0f, 0.12f), logN(2.4f, 0.4f, 1.2f, 5f), kind = "rest")
-            // Idle: mostly long rests near front.
-            r < 0.46f -> fix(rr(-0.08f, 0.08f), rr(-0.04f, 0.06f), logN(med, 0.4f, 2f, 8f), kind = "rest", head = false)
-            // Slow drift: smooth pursuit to a nearby spot.
-            r < 0.62f -> {
-                val x = rr(-0.45f, 0.45f); val y = rr(-0.15f, 0.3f)
-                Fixation(x, y, logN(med * 0.8f, 0.4f, 1.5f, 6f), travel = rr(1.4f, 2.8f) / t.tempo, withHead = true, kind = "drift")
-            }
-            // Thinking stare (daydream): looks off and stays.
-            r < 0.76f -> {
-                val x = (if (rng.nextBoolean()) 1f else -1f) * rr(0.25f, 0.5f)
-                val y = if (rng.nextFloat() < 0.6f) rr(0.12f, 0.35f) else rr(-0.25f, -0.08f)
-                fix(x, y, logN(med * 0.9f, 0.35f, 2f, 7f), kind = "stare", head = rng.nextFloat() < 0.6f)
-            }
-            // Look down at the conversation.
-            r < 0.9f -> fix(rr(-0.3f, 0.3f), rr(0.3f, 0.5f), logN(2.6f, 0.4f, 1.4f, 6f), kind = "down", head = true)
-            // A side glance (curious): shorter, then back.
-            else -> {
-                wasSide = true
-                fix((if (rng.nextBoolean()) 1f else -1f) * rr(0.4f, 0.7f), rr(-0.2f, 0.25f), logN(1.2f, 0.3f, 0.6f, 2.2f), kind = "glance", head = true)
-            }
+            // Idle (engine15): attention, not random glances.
+            else -> nextAttention(t, med)
         }
+    }
+
+    /**
+     * Idle attention episodes. A long rest looking roughly ahead, then one interest:
+     * hold a target 1–3 s (micro-saccades ride on top), then soft drift away, or a slow
+     * pan across a few related points, or an acknowledge (nod + blink), then back to rest.
+     * Never random teleport glances; up-right is never a rest.
+     */
+    private fun nextAttention(t: Temperament, med: Float): Fixation {
+        episode.removeFirstOrNull()?.let { return it }
+        // Between interests: a long, quiet rest near the front.
+        if (episodeName != "rest") {
+            episodeName = "rest"
+            return Fixation(rr(-0.07f, 0.07f), rr(-0.02f, 0.07f), logN(med * 1.5f, 0.35f, 4f, 12f),
+                travel = rr(0.9f, 1.5f) / t.tempo, withHead = true, kind = "rest")
+        }
+        // Interest target: an imagined point anywhere (full range), biased to the sides/below.
+        val side = if (rng.nextBoolean()) 1f else -1f
+        val x = side * rr(0.25f, 0.85f)
+        var y = if (rng.nextFloat() < 0.6f) rr(0.05f, 0.5f) else rr(-0.4f, 0f)
+        if (x > 0.15f && y < -0.08f && rng.nextFloat() < 0.6f) y = -y * 0.5f // mostly not up-right
+        val noticed = rng.nextFloat() < 0.25f + 0.2f * t.curiosity
+        val first = fix(x, y, logN(1.8f, 0.3f, 1.0f, 3.0f), kind = "interest", head = true)
+            .copy(event = if (noticed) "notice" else null)
+        val r = rng.nextFloat()
+        when {
+            r < 0.4f -> {
+                // Soft drift away from it, then rest.
+                episodeName = "drift"
+                val dx = x + side * rr(-0.3f, -0.12f); val dy = y + rr(-0.12f, 0.12f)
+                episode += Fixation(dx, dy, logN(1.4f, 0.3f, 0.8f, 2.4f), travel = rr(1.2f, 2.2f) / t.tempo,
+                    withHead = true, kind = "drift")
+            }
+            r < 0.65f -> {
+                // Slow pan across 2–3 related points (one direction, pursuit between).
+                episodeName = "pan"
+                val n = 2 + rng.nextInt(2)
+                val dirX = -side * rr(0.18f, 0.32f); val dirY = rr(-0.08f, 0.08f)
+                var px = x; var py = y
+                repeat(n) {
+                    px = (px + dirX).coerceIn(-0.9f, 0.9f); py = (py + dirY).coerceIn(-0.4f, 0.5f)
+                    episode += Fixation(px, py, logN(0.9f, 0.3f, 0.5f, 1.4f), travel = rr(0.8f, 1.4f) / t.tempo,
+                        withHead = true, kind = "pan")
+                }
+            }
+            r < 0.85f -> {
+                // Acknowledge it: a small nod + blink, then away.
+                episodeName = "ack"
+                episode += Fixation(x * 0.95f, y * 0.95f, rr(0.8f, 1.2f), withHead = true, kind = "ack", event = "ack")
+            }
+            else -> episodeName = "look"
+        }
+        return first
     }
 
     private fun fix(x: Float, y: Float, hold: Float, kind: String, head: Boolean = true): Fixation {
@@ -415,7 +455,8 @@ internal class MomentPlanner(private val rng: Random) {
         if (clock - lastAny < spacing) return null
         val playful = t.playful(p) || (t.valence > 0.25f && p.playfulness > 0.55f)
         val opts = listOf(
-            Moment.Spin to (if (playful) 0.45f else 0.03f + 0.25f * (t.boredom - 0.45f).coerceAtLeast(0f)) * (0.4f + p.playfulness) * cool(Moment.Spin, 100f),
+            // Engine15: spins have their own cadence in the owner (no planner spins).
+            Moment.Spin to 0f,
             Moment.Scan to (0.4f * t.curiosity + 0.25f * t.boredom) * cool(Moment.Scan, 25f),
             Moment.Peek to 0.3f * t.curiosity * (0.5f + p.playfulness) * cool(Moment.Peek, 30f),
             Moment.Stretch to (if (quietSec > 40f && (t.boredom > 0.3f || t.energy < 0.35f)) 0.6f else 0f) * cool(Moment.Stretch, 180f),

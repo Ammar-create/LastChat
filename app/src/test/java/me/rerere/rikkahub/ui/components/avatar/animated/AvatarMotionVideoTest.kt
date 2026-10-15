@@ -61,6 +61,7 @@ class AvatarMotionVideoTest {
             }
         },
         Script("idle", 90f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() },
+        Script("idle150", 150f, preRoll = 20f, seed = 11) { _, _, _, _ -> AvatarMotionHints() },
         // Same stimulus six times (variation, latency, sometimes nothing), then one
         // off-gaze / out-of-view event that has to be noticed late.
         Script("reactions", 38f, preRoll = 10f) { s, _, t, _ ->
@@ -263,6 +264,29 @@ class AvatarMotionVideoTest {
             }
         }
         File(out, "draw_cost.csv").writeText(sb.toString())
+    }
+
+    @Test
+    fun behaviourAudit() {
+        val out = File(System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() } ?: "build/audit").apply { mkdirs() }
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        AvatarDebugMetrics.enabled = true
+        val sb = StringBuilder("seed,spins,faceChanges,uncaused,lowToBright,gazeChanges,storiesNotice,storiesAck\n")
+        val base = scripts.first { it.name == "idle150" }
+        for (seed in listOf(3, 11, 19, 27, 35)) {
+            simulate(Script("audit$seed", 600f, preRoll = 20f) { _, _, _, _ -> AvatarMotionHints() }, seed)
+            val log = lastLog
+            File(out, "audit_seed$seed.log").writeText(log.joinToString("\n"))
+            val spins = log.count { it.contains(",moment Spin") }
+            val faces = log.filter { it.contains(",expr ") || it.contains(",face ") }
+            val unc = faces.count { it.contains("cause=unspecified") }
+            val lb = faces.count { l -> Regex("(Bored|Sleeping|Sad|Eyes closed|Worried)→(Happy|Group 3|playful)").containsMatchIn(l) }
+            sb.append("$seed,$spins,${faces.size},$unc,$lb,${log.count { it.contains(",gaze ") }},${log.count { it.contains("story notice") }},${log.count { it.contains("story acknowledge") }}\n")
+        }
+        File(out, "audit_summary.csv").writeText(sb.toString())
+        AvatarDebugMetrics.enabled = false
+        println(sb)
+        @Suppress("UNUSED_VARIABLE") val unused = base
     }
 
     @Test
