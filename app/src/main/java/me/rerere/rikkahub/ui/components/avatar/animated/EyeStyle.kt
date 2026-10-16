@@ -43,6 +43,9 @@ object EyeStyle {
         }
         // Engine17.1 (Julian): the worried-neutral face is retired everywhere (both styles).
         if (low == "worried") return "angered or concentrated"
+        // Engine21: Group 3 (tilted cluster) is not one of Julian's Figma faces: play the
+        // designed hurt/cute wink instead.
+        if (raw == "Group 3" || low == "playful" || low == "group3") return if (exprs.containsKey("hurt or cute") || exprs.isEmpty()) "hurt or cute" else "Neutral"
         if (exprs.containsKey(raw) && raw != "Looking to the right") return raw
         if (raw == "confused left" && exprs.containsKey("confused")) return raw
         val mapped = when (low) {

@@ -1113,3 +1113,125 @@ scenario (for example idle12 4–6 of 7–10 shifts, session 18–19 of about 31
 * **Colour rings:** the dot inset is exactly stroke + gap (2.5 + 3 dp), so swatches and
   shapes share one ring weight and gap.
 * **Preview stage:** no surface behind the avatar; only the label underneath sits in a pill.
+
+## Engine21 — expressions that mean something, context fit, UI hooks
+
+The architecture is unchanged (one face spring vector, the mind, the lanes). Engine21 is an
+audit of *what* the avatar shows and *when*.
+
+### Grok expression audit (pill language)
+
+Every Grok face now has one readable meaning. Merges are deliberate: in pill language some
+Generical faces read identically, so they share one shape instead of two near-duplicates.
+
+| Generical id | Grok shape | Meaning |
+|---|---|---|
+| Neutral | neutral pills | resting, attentive |
+| Happy, hurt or cute, Group 3 | `happy`: bent pills ^ ^ at pill weight (stroke 0.097 → 0.112) | happy (wink / playful merged) |
+| Surprised | tall pills | surprised |
+| Sad, Worried | `sad`: / \ tilt, set a little lower | sad / worried (merged) |
+| Angry | `angry`: \ / 15° and a bit shorter (was 9.5° ≈ neutral) | cross, still gentle |
+| angered or concentrated | `focused`: short squint, no tilt (0.36 high) | concentrating |
+| Bored, pouty | flat bars | unimpressed (sulk merged) |
+| confused, confused left | `hm`: both pills tipped the same way, same size | "hm?" |
+| Eyes closed | `closed`: the neutral pill with its lid shut, a little wider | eyes closed (morphs by the lid only — no spin through a tilted bean) |
+| Sleeping | `sleepy`: soft ∪ strokes, thicker (0.07 → ~0.092) | asleep |
+
+Closed Grok shapes (happy, sleepy, closed) never blink. Grok accents are the averaged
+(symmetric) FaceRig deltas, amplified ×1.7 (slant ×2.6, the pill's only "brow"), so Curious
+is taller, Annoyed/Smug/Drowsy tilt, Shy/Glee/Focused/WakeSquint squint by different amounts.
+Sheet: `grok_contact_before_after.png`.
+
+### Generical: Figma only, no lopsided growth
+
+* Accents that grew one eye while the other stayed (Curious, Puzzled, Smug) are now symmetric
+  adaptations of a Figma face: Curious = a mild Surprised / Looking-up, Puzzled = a light
+  Sad/hurt/confused, Smug = a soft Suspicious. Dizzy keeps both eyes the same size (they only
+  circle in opposite phase).
+* `confused` stays: it *is* Julian's "Looking to the right" frame (a designed perspective
+  look); `confused left` is its mirror.
+* Group 3 (a tilted cluster, not a Figma frame) is removed from `generical-eyes.json`; the id
+  resolves to the designed hurt/cute wink.
+Sheet: `generical_contact_before_after.png`.
+
+### Per-transition speed (`TransitionRules`)
+
+Faces sit in a small valence × arousal map; the distance between two faces is the size of
+the emotional shift. A default (Soft) change gets ω = 15 for small shifts (d ≤ 0.3, ≈ 0.23 s
+to 90 %) easing to ω = 8.5 for big swings (d ≥ 1.3, ≈ 0.47 s), smoothstep in between.
+Snap (poke, startle) stays ω 20, Gradual / Settle keep theirs. Measured on `e21_speed`:
+concentrated → confused 0.23 s, → Happy 0.37 s, Happy → Sad 0.47 s, Happy → Angry 0.47 s.
+
+### The blink-mask rule (`TransitionRules.mask`)
+
+Most face changes now happen behind a blink (lids close on one face, open on the next):
+72 % of eligible changes, 85 % for big ones (d ≥ 0.8), when a blink can start (≥ 0.6 s after
+the last one) or a full blink is already closing. A masking blink always closes fully, holds
+≥ 35 ms and opens ~12 % slower onto the new face. A **direct morph** is kept for:
+
+* fast reactions — Snap style (poke surprise, startles) and user-priority causes;
+* closed-eye targets or sources (Eyes closed, Sleeping, Bored): the lids *are* the expression;
+* Happy as the source (Grok's happy is a closed arc — a swap would pop);
+* tiny intensity tweaks (d < 0.25);
+* while drowsy or spinning.
+Clip: `e21_mask` (each change is labelled "behind a blink" or "direct (reason, d)").
+
+### Context appropriateness (`ContextRules`)
+
+| context | long eyes-closed | eye rest / doze | sleepy face | bored face | yawn | drowsy accent | idle episodes | short squeeze | UI reactions | spins |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Idle (nobody around) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓* |
+| UserActive (≤ 12 s since any interaction, typing, listening) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓* |
+| Thinking / Working | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ (≤ 0.75 s) | ✓ (½ chance) | ✓* |
+| Streaming | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ (½ chance) | ✓* |
+| Outcome (finished / failed) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓* |
+| Asleep (own lifecycle) | ✓ | ✓ | ✓ | — | ✓ | — | — | ✓ | — | — |
+
+\* spins keep their own cause rules (classic Turn/Top/Flip only, never while negative, no idle spins).
+
+Enforced in three places: `setReactionRaw` / `accent` / `playEpisode0` refuse what the table
+bans (closed eyes are clamped to 0.75 s when attentive); `currentExpressionTarget` replaces a
+banned busy/clip face (concentration while thinking, Neutral otherwise); and `contextUpdate`
+re-checks every frame, ending a rest, doze, drowsy spell or banned face the moment the
+context turns attentive. That wake is *brisk*: no shut-eyed head shake, lids open with τ 0.18 s
+(was 0.45), the rest blend fades in 0.25 s (was 1.6) and the face leaves Sleeping with a Soft
+spring, bypassing dwell / budget holds. The busy "eyes closed to concentrate" face is capped at
+0.45 s and its dwell floor is 0.6 s (it inherited 1.4 s before — the long closed-eyes-during-
+generation bug). **CI gate** `ContextFitTest`: the table bans every low-energy behaviour in
+every attentive context, and over 8 seeds × 162 s of generation / typing (each preceded by
+resting eyes or a doze) eyes are never shut > 1.0 s and Sleeping/Bored are never shown after
+a 1.2 s grace (measured worst: 0.78 s, a blink-adjacent concentration squeeze).
+
+### UI hooks
+
+All hooks go through `hookGo(key, cooldown, p)`: per-hook cooldown, base chance halved while
+generating, decayed by 1/(1 + 0.6·uses in the last 5 min), only where the table allows UI
+reactions; variants via `pickVariant` never repeat back-to-back. Events still pass perception
+first (they can be missed or noticed late).
+
+| hook (event) | emitted from | reaction | cooldown / p |
+|---|---|---|---|
+| Timeline expanded (`PillExpanded`) | ActivityPill expand | when it notices: waits for the expansion, eyes to the top of the timeline, slow pursuit to its bottom (1.1–2.2 s by height), blink, back; otherwise a peek + attend | 35 s / 0.6 calm, 0.4 busy (pill 8 s / 0.7) |
+| Attachment added (`AttachmentAdded`) | ChatPage (pending attachments grew) | look at the composer, then curious / a nod / (3+ files) a startle → surprised | 20 s / 0.6 |
+| Model picker (`ModelPickerOpened`) | MinimalChatInput sheet | glance down, puzzled or curious, sometimes a tilt | 45 s / 0.45 |
+| Message editor (`EditorOpened`) | ChatPage (editing started) | reads along at the composer, often focused | 20 s / 0.6 |
+| Setting toggled (`SettingToggled`) | composer search toggle | on: small glee; else a blink; sometimes a nod | 15 s / 0.4 |
+| Scroll | ChatPage | glance the way content moves / short pursuit along it / curious look | 12 s / 0.25 |
+| Copy | ChatUtil | glee (+nod) / proud nod + smug / glance + blink | 10 s / 0.55 |
+| Regenerate | message actions | puzzled + blink / curious tilt / determined blink + focused | 6 s / 0.85 |
+| Error, Deleted, Menu, Keyboard, Fling, AppResumed | (unchanged) | as before | — |
+
+### Fine-tuning (motion)
+
+* Gaze: a big self-paced look against the head's still-running turn now waits for the head to
+  slow (momentum used to drag the first frame backwards — a gate-visible reversal); the
+  chooseFixation head-motion postpone may wait up to 0.8 s (was 0.4).
+* Blink: masking blinks are full-depth with a held bottom and a slightly slower reopen.
+* Wake on context: brisk profile (above). Nothing was rebuilt; all changes are tunings.
+
+### Verification
+
+Clips (`/workspace/lastchat-renders/engine21/clips`): `e21_timeline` (two expansions, short
+and tall timeline), `e21_ui` (every hook, forced to notice for the demo via
+`debugHooksAlways`), `e21_gen` (dozing, then a 30 s reply: eyes open, worst closed 0.07 s),
+`e21_speed`, `e21_mask`. All Engine19/20 gates (`ChannelMetricsTest`) still pass.

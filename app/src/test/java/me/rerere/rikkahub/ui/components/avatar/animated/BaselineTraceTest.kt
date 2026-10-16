@@ -14,7 +14,9 @@ class BaselineTraceTest {
     @Test
     fun frameMetricsForCompare() {
         ChannelScenarios.loadClips()
-        val dir = System.getProperty("lastchat.renderDir")!!
+        val dir0 = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }
+        org.junit.Assume.assumeTrue(dir0 != null) // a compare tool, not a gate: needs a render dir
+        val dir = dir0!!
         val sb = StringBuilder("scenario,seed," + ChannelScenarios.FRAME_KEYS.joinToString(",") + "\n")
         for (sc in ChannelScenarios.NAMES) for (seed in listOf(3, 11, 19, 5, 7, 23, 29, 31)) {
             val tr = ChannelScenarios.run(sc, seed)

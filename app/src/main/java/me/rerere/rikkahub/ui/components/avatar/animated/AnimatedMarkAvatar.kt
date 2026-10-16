@@ -602,7 +602,9 @@ internal fun softCap(v: Float, cap: Float): Float = cap * kotlin.math.tanh(v / c
 
 
 /** Grok eye shapes that are already closed: blinks don't apply to them. */
-private val GROK_CLOSED = setOf("sleepy", "happy")
+private const val GROK_ACCENT_GAIN = 1.7f
+private const val GROK_SLANT_GAIN = 2.6f
+private val GROK_CLOSED = setOf("sleepy", "happy", "closed")
 
 /**
  * Engine16.1: Grok faces stay mirror-symmetric. Size / lid / height are averaged across the
@@ -610,12 +612,19 @@ private val GROK_CLOSED = setOf("sleepy", "happy")
  * crooked. [EyeShape.dx] is left alone (it carries gaze translation, not shape).
  */
 internal fun FaceParams.grokSymmetric(): FaceParams {
-    if (left == right && left.rot == 0f) return this
-    fun m(a: Float, b: Float) = (a + b) / 2f
+    if (left == right && left.rot == 0f && left == EyeShape()) return this
+    // Engine21: pills carry an accent only through size, lid and slant, so the subtle
+    // FaceRig deltas (tuned for Generical's drawn lids) vanished on Grok. Amplify the
+    // averaged deviation from rest so each accent reads, clamped to a sane pill range.
+    val k = GROK_ACCENT_GAIN
+    fun m(a: Float, b: Float, rest: Float = 1f) = (rest + ((a + b) / 2f - rest) * k)
     val r = (right.rot - left.rot) / 2f
     fun mk(e: EyeShape, rot: Float) = e.copy(
-        sx = m(left.sx, right.sx), sy = m(left.sy, right.sy), dy = m(left.dy, right.dy),
-        upper = m(left.upper, right.upper), lower = m(left.lower, right.lower), slant = m(left.slant, right.slant), rot = rot,
+        sx = m(left.sx, right.sx).coerceIn(0.7f, 1.35f), sy = m(left.sy, right.sy).coerceIn(0.6f, 1.4f),
+        dy = m(left.dy, right.dy, 0f),
+        upper = m(left.upper, right.upper).coerceIn(0.35f, 1f), lower = m(left.lower, right.lower).coerceIn(0.35f, 1f),
+        // Slant is the pill's only "brow": it gets a stronger gain so annoyed / smug / drowsy tilt visibly.
+        slant = (m(left.slant, right.slant, 0f) * GROK_SLANT_GAIN / k).coerceIn(-0.75f, 0.75f), rot = rot * k,
     )
     return FaceParams(mk(left, -r), mk(right, r))
 }

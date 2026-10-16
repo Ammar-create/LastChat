@@ -2317,6 +2317,10 @@ private fun MinimalPickerContent(
     }
     
     // Model picker sheet - direct ModalBottomSheet (not ModelSelector which shows its own button)
+    LaunchedEffect(showModelPicker) {
+        if (showModelPicker) me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Global
+            .emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.ModelPickerOpened)
+    }
     if (showModelPicker) {
         val modelPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val filteredProviders = settings.providers.filter { 
@@ -2520,6 +2524,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     settings = settings,
                     model = chatModel,
                     onToggleSearch = { enabled ->
+                        me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Global
+                            .emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.SettingToggled, direction = if (enabled) 1 else -1)
                         if (enabled) {
                             // When turning on, restore the last known valid provider index
                             onUpdateSearchService(effectiveProviderIndex)

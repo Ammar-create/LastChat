@@ -115,7 +115,7 @@ internal object MindRules {
         "Bored" -> 3f
         "Drowsy", "Sleeping" -> 2.2f
         "angered or concentrated", "Focused", "confused", "confused left", "Puzzled" -> 1.6f
-        "WakeSquint", "Dizzy" -> 0.6f
+        "WakeSquint", "Dizzy", "Eyes closed" -> 0.6f
         else -> 1.4f
     }
     private val EVENT_CAUSE = Regex("poke|tone|apprais|reply|user|error|message|editor|event|touch|fling|spin|neighbour", RegexOption.IGNORE_CASE)

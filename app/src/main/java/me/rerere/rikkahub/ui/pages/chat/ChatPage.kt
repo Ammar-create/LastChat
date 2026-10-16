@@ -1315,6 +1315,15 @@ private fun ChatPageContent(
     }
     // What's in the composer (length, current line) — avatars may read along, rarely.
     LaunchedEffect(composerText) { avatarStage.updateComposer(composerText) }
+    // Engine21 UI hooks: attachments and the message editor.
+    val attachCount = inputState.pendingAttachments.size
+    var lastAttachCount by remember(conversation.id) { mutableStateOf(attachCount) }
+    LaunchedEffect(attachCount) {
+        if (attachCount > lastAttachCount) avatarStage.emit(AvatarStage.EventKind.AttachmentAdded, extra = attachCount - lastAttachCount)
+        lastAttachCount = attachCount
+    }
+    val editingNow = inputState.isEditing()
+    LaunchedEffect(editingNow) { if (editingNow) avatarStage.emit(AvatarStage.EventKind.EditorOpened) }
     LaunchedEffect(chatListState) {
         snapshotFlow { chatListState.isScrollInProgress }
             .distinctUntilChanged()

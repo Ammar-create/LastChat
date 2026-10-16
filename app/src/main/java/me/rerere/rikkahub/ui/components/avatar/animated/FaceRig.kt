@@ -210,15 +210,17 @@ class FaceRig(private val rng: Random) {
         slant = e.slant.coerceIn(-0.5f, 0.5f),
     )
 
+    /** Engine21: the full-strength accent shape (contact sheets / audits). */
+    internal fun accentPreview(a: FaceAccent): FaceParams { accentSide = 1f; return FaceParams(clampEye(accentTarget(a, 0, 0f)), clampEye(accentTarget(a, 1, 0f))) }
+
     /** side 0 = left (screen), 1 = right. "inner" is toward the other eye. */
     private fun accentTarget(a: FaceAccent, side: Int, time: Float): EyeShape {
         val s = accentSide
-        val lead = if ((side == 0) == (s > 0f)) 1f else 0f // the eye on the accent side
         return when (a) {
             FaceAccent.None -> EyeShape.ID
-            // One eye a little bigger, the other narrowed, head-tilt feel.
-            FaceAccent.Curious -> if (lead > 0f) EyeShape(sx = 1.06f, sy = 1.14f, dy = -0.01f, rot = 4f * s)
-            else EyeShape(sx = 0.98f, sy = 0.9f, upper = 0.86f, rot = 4f * s)
+            // Engine21 (Julian): no accent grows one eye while the other stays; every accent is a
+            // symmetric adaptation of a Figma face. Curious = a mild Surprised / Looking-up.
+            FaceAccent.Curious -> EyeShape(sx = 1.05f, sy = 1.12f, dy = -0.01f, rot = 3f * s)
             FaceAccent.Annoyed -> EyeShape(upper = 0.74f, slant = 0.14f, sy = 0.97f) // engine13: was 0.32 slant, read too angry
             FaceAccent.Shy -> EyeShape(lower = 0.68f, sy = 0.94f, dy = 0.02f)
             FaceAccent.Startled -> EyeShape(sx = 1.2f, sy = 1.4f, dy = -0.016f)
@@ -227,15 +229,16 @@ class FaceRig(private val rng: Random) {
                 val ph = time * 7f + side * PI.toFloat()
                 EyeShape(dx = cos(ph) * 0.03f, dy = sin(ph) * 0.03f, rot = sin(ph) * 6f, sy = 0.95f)
             }
-            FaceAccent.Smug -> if (lead > 0f) EyeShape(upper = 0.62f, lower = 0.85f, slant = -0.1f)
-            else EyeShape(upper = 0.7f, slant = -0.08f)
+            // Smug = a softened Suspicious (both lids in, a hint of happy lower lid).
+            FaceAccent.Smug -> EyeShape(upper = 0.68f, lower = 0.82f, slant = -0.08f)
             FaceAccent.Focused -> EyeShape(upper = 0.8f, lower = 0.9f, sx = 1.02f)
             FaceAccent.Drowsy -> EyeShape(upper = 0.48f, slant = -0.18f, dy = 0.01f)
             FaceAccent.Worried -> EyeShape(slant = -0.3f, sy = 1.05f, upper = 0.92f)
             FaceAccent.Glee -> EyeShape(lower = 0.58f, sx = 1.04f, sy = 0.96f)
             FaceAccent.WakeSquint -> EyeShape(upper = 0.42f, lower = 0.78f, sx = 1.04f)
             FaceAccent.Sad -> EyeShape(slant = -0.24f, upper = 0.84f, dy = 0.02f)
-            FaceAccent.Puzzled -> if (lead > 0f) EyeShape(sy = 1.1f, dy = -0.012f) else EyeShape(upper = 0.66f, slant = 0.12f)
+            // Puzzled = a light Sad/hurt/confused: soft outer droop, a touch taller.
+            FaceAccent.Puzzled -> EyeShape(sy = 1.05f, upper = 0.84f, slant = -0.12f, rot = 2f * s)
         }
     }
 

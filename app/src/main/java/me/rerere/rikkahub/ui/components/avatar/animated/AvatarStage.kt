@@ -50,6 +50,14 @@ class AvatarStage(private val rng: Random = Random.Default) {
         AppResumed,
         /** Another avatar just made a face ([Event.extra] = accent ordinal, [Event.source] = its id). */
         AvatarAccent,
+        /** Engine21 UI hooks: a file / image attached in the composer ([Event.extra] = count). */
+        AttachmentAdded,
+        /** The model picker sheet opened. */
+        ModelPickerOpened,
+        /** A sent message was opened in the composer for editing. */
+        EditorOpened,
+        /** A composer setting (search, reasoning…) was switched; [Event.direction] = +1 on, −1 off. */
+        SettingToggled,
     }
 
     /** UI elements avatars may look at; positions come from the real layout. */

@@ -589,6 +589,36 @@ class AvatarRenderHarnessTest {
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
     }
 
+    /** Engine21: every expression and every accent, one cell each, for the contact sheets. */
+    @Test
+    fun renderExpressionContact() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val tag = System.getProperty("lastchat.gridModes")?.takeIf { it.isNotBlank() } ?: "cells"
+        val dir = File(outDir, tag).apply { mkdirs() }
+        val exprs = listOf("Neutral", "Happy", "Surprised", "Sad", "Worried", "Eyes closed", "Sleeping", "Bored",
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "confused", "confused left", "Group 3")
+        val rig = FaceRig(kotlin.random.Random(1))
+        for (mode in listOf("generical", "grok")) {
+            exprs.forEachIndexed { i, e ->
+                capture("$tag/${mode}_e%02d_%s".format(i, e.replace(' ', '-')), 120, 120) {
+                    Box(Modifier.fillMaxSize().background(Color(0xFF1C1B1F)), contentAlignment = Alignment.Center) {
+                        AnimatedMarkAvatar(shapeId = "blob", eyeType = mode, colorHex = "#2A92FE", colorPreset = "blue", isLoading = false,
+                            debugFrame = MotionFrame(exprFrom = e, exprTo = e, exprT = 1f), modifier = Modifier.size(104.dp))
+                    }
+                }
+            }
+            FaceAccent.entries.filter { it != FaceAccent.None }.forEachIndexed { i, a ->
+                capture("$tag/${mode}_a%02d_%s".format(i, a.name), 120, 120) {
+                    Box(Modifier.fillMaxSize().background(Color(0xFF1C1B1F)), contentAlignment = Alignment.Center) {
+                        AnimatedMarkAvatar(shapeId = "blob", eyeType = mode, colorHex = "#2A92FE", colorPreset = "blue", isLoading = false,
+                            debugFrame = MotionFrame(face = rig.accentPreview(a)), modifier = Modifier.size(104.dp))
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Engine20.1: every shape's selection ring, drawn in red over the real calm preview (blue),
      * 54 dp option box, for zoomed inspection and the gap / stroke uniformity check

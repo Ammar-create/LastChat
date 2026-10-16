@@ -313,6 +313,8 @@ internal class AlivenessEngine(private val rng: Random) {
         }
         // Engine20: never a flicker — each face holds at least its emotional dwell.
         faceLeft = maxOf(faceLeft, MindRules.minDwell(k) * (0.9f + 0.4f * rng.nextFloat()))
+        // Engine21: busy = attentive — shut eyes are only a brief concentrating squeeze.
+        if (k == "Eyes closed") faceLeft = faceLeft.coerceAtMost(ContextRules.MAX_CLOSED_ATTENTIVE * 0.6f)
     }
 
     private fun busyBeat(life: MarkLifecycle, valence: Float): Beat? {

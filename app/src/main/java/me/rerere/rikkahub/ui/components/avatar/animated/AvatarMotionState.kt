@@ -186,6 +186,11 @@ internal class GazeDirector(
         if (!eyesOnly && sinceShift < SHIFT_REFRACTORY && hypot(x - tx, y - ty) > 0.06f) {
             pendX = x; pendY = y; pendHead = withHead; pending = true; return
         }
+        // Engine21: a big self-paced look against the head's still-running turn waits for the
+        // head to slow (its momentum would drag the look backwards first: a visible reversal).
+        if (!eyesOnly && hypot(hvx, hvy) > 0.3f && hypot(x - tx, y - ty) > 0.4f && (x - tx) * hvx + (y - ty) * hvy < 0f) {
+            pendX = x; pendY = y; pendHead = withHead; pending = true; return
+        }
         pending = false
         sinceShift = 0f
         val gx = x.coerceIn(-1f, 1f)
@@ -305,7 +310,7 @@ internal class GazeDirector(
         // Engine20: a self-started look waits for the head to finish its last move (a person
         // doesn't start a new look while still turning); otherwise the head's momentum drags
         // the new look backwards first.
-        if (hypot(hvx, hvy) > 0.12f && postponed < 0.4f) { postponed += 0.05f; holdLeft = 0.05f; return }
+        if (hypot(hvx, hvy) > 0.12f && postponed < 0.8f) { postponed += 0.05f; holdLeft = 0.05f; return }
         postponed = 0f
         if (returnToCenter) {
             returnToCenter = false
@@ -413,9 +418,11 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
         val h = hint
         hint = null
         if (t == target) return
+        val from = target
         target = t
         style = h ?: Style.Soft
-        omega = omegaFor(style)
+        // Engine21: a default change is timed by its emotional size (TransitionRules).
+        omega = if (h == null || h == Style.Soft) TransitionRules.softOmega(TransitionRules.distance(from, t)) else omegaFor(style)
         if (t !in names) { names += t; x += 0f; v += 0f }
         retargets++
     }
@@ -569,9 +576,12 @@ internal class Blinker(private val rng: Random) {
     private var quiet = 0f
 
     /** Start a blink right now if one may start (no deferral). True when it started. */
+    /** Engine21: a full blink is closing right now — a face change can ride it. */
+    val closingFull: Boolean get() = phase >= 0f && phase < closeT && depth >= 0.99f
+
     fun tryNow(minGap: Float = 1.2f): Boolean {
         if (quiet > 0f || phase >= 0f || gapLeft >= 0f || sinceLast < max(minGap, MIN_REQUEST_GAP) || !allow()) return false
-        begin(0, drowsy = false)
+        begin(0, drowsy = false, mask = true)
         return true
     }
 
@@ -593,7 +603,7 @@ internal class Blinker(private val rng: Random) {
         begin(0, drowsy = false)
     }
 
-    private fun begin(extra: Int, drowsy: Boolean, chained: Boolean = false) {
+    private fun begin(extra: Int, drowsy: Boolean, chained: Boolean = false, mask: Boolean = false) {
         if (phase >= 0f) overlaps++
         phase = 0f
         repeats = extra
@@ -604,7 +614,10 @@ internal class Blinker(private val rng: Random) {
         holdT = if (drowsy) 0.1f + rng.nextFloat() * 0.12f else (0.01f + rng.nextFloat() * 0.05f) * speed
         openT = if (drowsy) 0.25f + rng.nextFloat() * 0.12f else (0.13f + rng.nextFloat() * 0.08f) * speed // eased tail
         // ~1 in 8 blinks is a lazy half-blink.
-        depth = if (!drowsy && rng.nextFloat() < 0.12f) 0.65f + rng.nextFloat() * 0.25f else 1f
+        depth = if (!drowsy && !mask && rng.nextFloat() < 0.12f) 0.65f + rng.nextFloat() * 0.25f else 1f
+        // Engine21: a face-masking blink always closes fully and holds a beat (≥ 35 ms) so the
+        // swap lands behind shut lids; it opens a touch slower onto the new face.
+        if (mask) { holdT = max(holdT, 0.035f); openT *= 1.12f }
     }
 
     fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean) {
@@ -1005,6 +1018,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             pendingPokes = 0
         }
         val calmLife = director.lifecycle == MarkLifecycle.Idle && desired == MarkLifecycle.Idle
+        // Engine21: the user counts as active for a while after any interaction.
+        if (live && (stimulus || hints.isTyping || hints.inputFocused)) lastUserAt = time
+        ctx = ContextRules.of(if (desired != MarkLifecycle.Idle && MotionDirector.isBusy(desired)) desired else director.lifecycle,
+            time - lastUserAt < ContextRules.USER_ACTIVE_SEC)
+        if (live) contextUpdate(dt)
         if (stimulus || !calmLife) {
             if (drowsy) wake()
             if (quietSec > 20f) log("quiet reset after ${quietSec.toInt()} s (stimulus=$stimulus calm=$calmLife)")
@@ -1113,12 +1131,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 // spontaneous change before it has been felt for its minimum dwell.
                 val dwellHold = animate && prio < MindRules.P_EVENT && shownPrio < MindRules.P_EVENT &&
                     time - shownAt < MindRules.minDwell(expr.to) && !MindRules.hasEventCause(prio, cause)
-                if (!blockedBySpin && !dwellHold && (!animate || mind.faceSafe(prio, expr.morphing) &&
+                // Engine21: leaving a face the context forbids (asleep / bored / long-shut eyes while
+                // generating or with the user active) is never held back by dwell or budget.
+                val ctxForced = animate && !ContextRules.faceOk(ctx, expr.to, if (expr.to == "Eyes closed") closedHeld else 99f)
+                if (ctxForced || !blockedBySpin && !dwellHold && (!animate || mind.faceSafe(prio, expr.morphing) &&
                     mind.budgetOk(prio, MotionDirector.isBusy(director.lifecycle), mood.arousal, settle = baseline || relax))
                 ) {
                     expr.hint = when {
                         !animate -> ExpressionDirector.Style.Soft
                         isReaction -> reactionStyle.also { reactionStyle = null }
+                        time < briskUntil -> ExpressionDirector.Style.Soft
                         relax || baseline -> ExpressionDirector.Style.Settle
                         drowsy || temper.state == Temperament.State.Tired -> ExpressionDirector.Style.Gradual
                         else -> null
@@ -1126,11 +1148,17 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     // Engine20: now and then the face changes behind a blink (the lids close on
                     // one face and open on the next) — when it fits: a calm, not-snapped change
                     // with the eyes open and free to blink.
-                    val closedFace = ExpressionDirector.normalize(target) in BLINKLESS_FACES || expr.to in BLINKLESS_FACES
-                    val hideP = if (relax || baseline) 0.4f else 0.3f
-                    val hide = animate && !closedFace && expr.hint != ExpressionDirector.Style.Snap && !drowsy && spT < 0f &&
-                        rng.nextFloat() < hideP && blink.tryNow()
-                    if (hide) { expr.wantBehindBlink(target); log("face change behind a blink → $target") } else expr.want(target)
+                    // Engine21: the blink-mask rule (TransitionRules.mask) — most changes hide behind a
+                    // blink; fast reactions, closed-eye faces and tiny tweaks morph directly.
+                    val tgtN = ExpressionDirector.normalize(target)
+                    val dEmo = TransitionRules.distance(expr.to, tgtN)
+                    val maskKind = TransitionRules.mask(expr.to, tgtN, expr.hint == ExpressionDirector.Style.Snap, prio >= MindRules.P_USER)
+                    val hide = animate && maskKind == TransitionRules.Mask.Blink && !drowsy && spT < 0f &&
+                        rng.nextFloat() < TransitionRules.maskChance(dEmo) && (blink.closingFull || blink.tryNow(minGap = TransitionRules.MASK_MIN_GAP))
+                    if (hide) { expr.wantBehindBlink(target); log("face change behind a blink → $target") } else {
+                        if (animate) log("face morph direct → $target (${maskKind.name.lowercase()}, d=${"%.2f".format(dEmo)})")
+                        expr.want(target)
+                    }
                     shownAt = time; shownPrio = prio
                     faceCause = cause
                     mind.landFace(target, prio, cause, MindRules.hold(mood.arousal, knobs), countBudget = !(baseline || relax))
@@ -1577,7 +1605,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var shownPrio = -1
     private var lifeX = 0f
     private var lifeV = 0f
-    private val BLINKLESS_FACES = setOf("Eyes closed", "Sleeping", "Bored")
     private var upRightPause = 0f
     private var upK = 0f
 
@@ -1871,6 +1898,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val busy = MotionDirector.isBusy(director.lifecycle)
         if (spinningFace && a in MindRules.NEGATIVE_ACCENTS) return false
         if (a.name in MindRules.APPRAISED_NEGATIVE_ACCENTS && !MindRules.hasEventCause(prio, cause)) { log("accent $a dropped: no appraised cause ($cause)"); return false }
+        if (!ContextRules.accentOk(ctx, a)) { log("accent $a dropped: not in context $ctx"); return false }
         @Suppress("NAME_SHADOWING") val sec = if (prio >= MindRules.P_EVENT) sec else max(sec, MindRules.minDwell(a.name)) // spontaneous: full dwell
         if (!mind.faceSafe(prio, expr.morphing) || (!force && !mind.budgetOk(prio, busy, mood.arousal))) {
             mind.propose(Intention(Lane.Face, "accent:$a", prio, cause, mind.now, if (force) 2.5f else 1.2f) {
@@ -1910,7 +1938,39 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         return t
     }
 
+    // ------------------------------------------------- engine21: context appropriateness
+    private var lastUserAt = -999f
+    /** Engine21: waking because the context needs attention — eyes open promptly, no shut-eyed shake. */
+    private var briskWake = false
+    private var briskUntil = -1f
+    /** Current context (see [ContextRules.TABLE]). */
+    internal var ctx = ContextRules.Ctx.Idle; private set
+    /** How long the shown face has been a closed-eye one (s). */
+    private var closedHeld = 0f
+
+    /**
+     * Engine21: re-check the running state against the context every frame. A rest, doze,
+     * drowsy spell or low-energy face that was fine while idle ends the moment the avatar
+     * should be attentive (generating, streaming, the user active).
+     */
+    private fun contextUpdate(dt: Float) {
+        closedHeld = if (expr.to == "Eyes closed" || expr.to == "Sleeping") closedHeld + dt else 0f
+        if (!ContextRules.attentive(ctx)) return
+        if (restPhase > 0 || drowsy) { log("context $ctx: ends rest/drowsy"); briskWake = true; wake(); briskWake = false; briskUntil = time + 1.5f }
+        val r = reaction
+        if (r != null && !ContextRules.faceOk(ctx, r, if (r == "Eyes closed") closedHeld else 99f)) {
+            log("context $ctx: ends $r (held ${"%.2f".format(closedHeld)} s)")
+            reaction = null; reactionLeft = 0f
+        }
+    }
+
     private fun currentExpressionTarget(): String {
+        val t = currentExpressionTarget0()
+        if (!animate || reaction != null) return t
+        return if (ContextRules.faceOk(ctx, t, if (t == "Eyes closed") closedHeld else 99f)) t else ContextRules.substitute(ctx, t)
+    }
+
+    private fun currentExpressionTarget0(): String {
         if (!animate) return "Neutral"
         reaction?.let { return it }
         val life = director.lifecycle
@@ -2045,7 +2105,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val cause = if (cause0 == "unspecified" || cause0 == "queued") (if (why != "unspecified") why else cause0) else cause0
         val prio = whyPrio
         if (e0 in MindRules.APPRAISED_NEGATIVE && !MindRules.hasEventCause(prio, cause)) { log("expr $e0 dropped: no appraised cause ($cause)"); return }
-        @Suppress("NAME_SHADOWING") val sec = if (prio >= MindRules.P_EVENT) sec else max(sec, MindRules.minDwell(e0)) // spontaneous: full dwell
+        @Suppress("NAME_SHADOWING") var sec = if (prio >= MindRules.P_EVENT) sec else max(sec, MindRules.minDwell(e0)) // spontaneous: full dwell
+        // Engine21: context table. Attentive: eyes may only shut briefly; no sleepy / bored.
+        if (e0 == "Eyes closed" && ContextRules.attentive(ctx)) sec = min(sec, ContextRules.MAX_CLOSED_ATTENTIVE)
+        if (!ContextRules.faceOk(ctx, e0, sec)) { log("expr $e0 dropped: not in context $ctx ($cause)"); return }
         // Engine18: one intention owns the face. A weaker one waits (queued, expires).
         val cur = reaction
         if (cur != null && reactionLeft > 0f && prio < reactionPrio) {
@@ -2428,6 +2491,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             // Its own face changes are not something it "notices" (that read as a double take).
             if (e.kind == AvatarStage.EventKind.AvatarAccent && e.source == stageId) continue
             any = true
+            if (debugHooksAlways) { log("demo: ${e.kind} noticed"); legacyEvent(e); continue }
             val (dx, dy) = e.at?.let { lookAt(it) } ?: (0f to 0.6f)
             val st = Stimulus(e.kind.name, dx, dy, salienceFor(e.kind), direct = e.kind == AvatarStage.EventKind.AppResumed || e.kind == AvatarStage.EventKind.Error)
             stimulus(st, { r ->
@@ -2457,6 +2521,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         AvatarStage.EventKind.AvatarAccent -> 0.4f
         AvatarStage.EventKind.Copied -> 0.4f
         AvatarStage.EventKind.Scroll -> 0.3f
+        AvatarStage.EventKind.AttachmentAdded -> 0.6f
+        AvatarStage.EventKind.EditorOpened -> 0.55f
+        AvatarStage.EventKind.ModelPickerOpened -> 0.5f
+        AvatarStage.EventKind.SettingToggled -> 0.35f
         else -> 0.4f
     }
 
@@ -2478,8 +2546,19 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     gaze.focus(gx, gy, 0.9f + rng.nextFloat() * 0.7f, priority = 2)
                     eventCooldown = 8f
                 }
-                AvatarStage.EventKind.Scroll -> if (rng.nextFloat() < 0.25f) {
-                    gaze.focus((rng.nextFloat() - 0.5f) * 0.3f, -0.32f * e.direction, 0.6f + rng.nextFloat() * 0.4f, priority = 1)
+                AvatarStage.EventKind.Scroll -> if (hookGo("scroll", 12f, 0.25f)) {
+                    // Engine21: follows the content a little — a glance the way it moves, now and
+                    // then a short pursuit along it, or a curious look at what came into view.
+                    val r = rng.nextFloat()
+                    val gx = (rng.nextFloat() - 0.5f) * 0.3f
+                    when {
+                        r < 0.55f -> gaze.focus(gx, -0.32f * e.direction, 0.6f + rng.nextFloat() * 0.4f, priority = 1)
+                        r < 0.85f -> tell("scroll-follow", 0f to "eyes to the content", 0.35f to "follow it", acts = listOf(
+                            { gaze.focus(gx, 0.3f * e.direction, 0.4f, priority = 1) },
+                            { gaze.focus(gx * 0.5f, -0.3f * e.direction, 0.7f, priority = 1, travel = 0.9f) },
+                        ))
+                        else -> { gaze.focus(gx, -0.25f * e.direction, 0.9f, priority = 1); accent(FaceAccent.Curious, 0.9f) }
+                    }
                     eventCooldown = 12f
                 }
                 AvatarStage.EventKind.UserTyping -> onTypingStarted()
@@ -2547,6 +2626,72 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      * Every avatar on screen hears the same event, so a surprise lands on all of
      * them at once.
      */
+    // ------------------------------------------------------ engine21: UI hooks
+    private val hookLast = HashMap<String, Float>()
+    private val hookUses = HashMap<String, Int>()
+    private val variantLast = HashMap<String, Int>()
+
+    /**
+     * Engine21: should this UI hook react? Rare-ish and never repetitive: a per-hook cooldown,
+     * base chance [p] scaled by the context (busy = half) and decayed each time it fired in
+     * the last few minutes; the UiReaction behaviour must be allowed in the context.
+     */
+    /** Harness: every UI hook notices (demo clips only). */
+    internal var debugHooksAlways = false
+
+    private fun hookGo(key: String, cooldown: Float, p: Float): Boolean {
+        if (!ContextRules.allowed(ctx, ContextRules.Behaviour.UiReaction)) return false
+        if (debugHooksAlways) { log("hook $key fires (demo)"); return true }
+        val last = hookLast[key]
+        if (last != null && time - last < cooldown) return false
+        val uses = if (last != null && time - last > 300f) 0 else hookUses[key] ?: 0
+        val busy = ctx == ContextRules.Ctx.Thinking || ctx == ContextRules.Ctx.Streaming
+        val chance = p * (if (busy) 0.5f else 1f) * (1f / (1f + 0.6f * uses))
+        if (rng.nextFloat() >= chance) { log("hook $key: not noticed (p=${"%.2f".format(chance)})"); return false }
+        hookLast[key] = time; hookUses[key] = uses + 1
+        log("hook $key fires (use ${uses + 1})")
+        return true
+    }
+
+    /** A variant index in 0 until [n], never the same as last time. */
+    private fun pickVariant(key: String, n: Int): Int {
+        val prev = variantLast[key] ?: -1
+        var v = rng.nextInt(n)
+        if (v == prev) v = (v + 1 + rng.nextInt(n - 1)) % n
+        variantLast[key] = v
+        return v
+    }
+
+    /**
+     * Engine21: reads the expanded activity timeline — waits for the expansion, eyes to the
+     * top, a slow pursuit to the bottom (speed by height), a blink, back to rest.
+     */
+    private fun timelinePan(at: Offset?) {
+        fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+        val wait = rr(0.35f, 0.55f)
+        var down = rr(1.3f, 1.8f)
+        tell("timeline-pan", wait to "eyes to the top", wait + 0.45f to "pan down", acts = listOf(
+            {
+                val r = stage?.target(AvatarStage.Target.ActivityPill)
+                val top = if (r != null) Offset(r.center.x, r.top + minOf(r.height * 0.1f, 40f)) else at
+                if (top != null) { val (gx, gy) = lookAt(top); gaze.focus(gx, gy, 0.5f, priority = 2) }
+            },
+            {
+                val r = stage?.target(AvatarStage.Target.ActivityPill)
+                val bottom = if (r != null) Offset(r.center.x, r.bottom - minOf(r.height * 0.1f, 40f)) else at?.let { Offset(it.x, it.y + 400f) }
+                if (r != null) down = (0.9f + r.height / 900f).coerceIn(1.1f, 2.2f) * rr(0.9f, 1.1f)
+                if (bottom != null) {
+                    val (gx, gy) = lookAt(bottom)
+                    gaze.focus(gx, gy, down + 0.5f, priority = 2, travel = down)
+                    tell("timeline-pan-end", down + 0.25f to "blink", down + 0.6f to "back", acts = listOf(
+                        { blink.request(minGap = 0.2f) },
+                        { gaze.focus(0f, 0.03f, 1.2f, priority = 2, travel = 0.5f) },
+                    ))
+                }
+            },
+        ))
+    }
+
     private fun onUiEvent(e: AvatarStage.Event, calm: Boolean): Boolean {
         if (e.source != stageId) aliveness.onEvent(e)
         fun glance(at: Offset?, hold: Float, prio: Int = 2) {
@@ -2571,14 +2716,53 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             }
             AvatarStage.EventKind.Copied -> {
                 mood.nudge(0.12f, 0.05f)
-                if (calm && rng.nextFloat() < 0.5f) {
-                    accent(FaceAccent.Glee, 1.1f)
-                    if (rng.nextFloat() < 0.4f) director.gesture(MotionDirector.Gesture.Nod)
+                // Engine21: varied — pleased, a proud little nod, or a glance at what was copied.
+                if (calm && hookGo("copied", 10f, 0.55f)) when (pickVariant("copied", 3)) {
+                    0 -> { accent(FaceAccent.Glee, 1.1f); if (rng.nextFloat() < 0.4f) director.gesture(MotionDirector.Gesture.Nod) }
+                    1 -> tell("copied-proud", 0f to "nod", 0.3f to "smile", acts = listOf(
+                        { director.gesture(MotionDirector.Gesture.Nod) }, { accent(FaceAccent.Smug, 1.0f) }))
+                    else -> { glance(e.at, 0.8f); blink.request(minGap = 0.3f) }
                 }
             }
             AvatarStage.EventKind.Regenerated -> {
-                accent(FaceAccent.Puzzled, 0.9f, force = true)
-                blink.request(minGap = 0.3f)
+                // Engine21: "another go?" — puzzled, a curious tilt, or a determined blink.
+                if (hookGo("regen", 6f, 0.85f)) when (pickVariant("regen", 3)) {
+                    0 -> { accent(FaceAccent.Puzzled, 0.9f, force = true); blink.request(minGap = 0.3f) }
+                    1 -> { accent(FaceAccent.Curious, 1.0f, force = true); director.gesture(MotionDirector.Gesture.Tilt) }
+                    else -> { blink.request(minGap = 0.2f); accent(FaceAccent.Focused, 1.1f, force = true) }
+                }
+            }
+            AvatarStage.EventKind.AttachmentAdded -> if (social == null && hookGo("attach", 20f, 0.6f)) {
+                // Something new arrived in the composer: look at it, then react.
+                val at = targetCenter(AvatarStage.Target.Composer) ?: windowBottom()
+                glance(at, 1.1f + rng.nextFloat() * 0.5f)
+                val many = e.extra >= 3
+                when (if (many) 0 else pickVariant("attach", 3)) {
+                    0 -> accent(FaceAccent.Startled, if (many) 0.35f else 0.25f, force = true).also {
+                        reactionQueue = "Surprised" to 0.6f; reactionQueueIn = 0.5f
+                    }
+                    1 -> tell("attach-curious", 0.45f to "curious", acts = listOf({ accent(FaceAccent.Curious, 1.2f) }))
+                    else -> tell("attach-ack", 0.5f to "nod", acts = listOf({ director.gesture(MotionDirector.Gesture.Nod) }))
+                }
+            }
+            AvatarStage.EventKind.ModelPickerOpened -> if (social == null && hookGo("model", 45f, 0.45f)) {
+                // "Who am I going to be?" — glance at the sheet, puzzled or curious.
+                glance(windowBottom(), 1.2f)
+                tell("model-picker", 0.4f to if (rng.nextBoolean()) "puzzled" else "curious", acts = listOf({
+                    accent(if (rng.nextBoolean()) FaceAccent.Puzzled else FaceAccent.Curious, 1.2f)
+                    if (rng.nextFloat() < 0.4f) director.gesture(MotionDirector.Gesture.Tilt)
+                }))
+            }
+            AvatarStage.EventKind.EditorOpened -> if (social == null && hookGo("editor", 20f, 0.6f)) {
+                // Reads along as the old message comes back into the composer.
+                val at = targetCenter(AvatarStage.Target.Composer) ?: windowBottom()
+                glance(at, 1.4f + rng.nextFloat() * 0.6f)
+                if (rng.nextFloat() < 0.6f) tell("editor-read", 0.5f to "focused", acts = listOf({ accent(FaceAccent.Focused, 1.3f) }))
+            }
+            AvatarStage.EventKind.SettingToggled -> if (calm && social == null && hookGo("toggle", 15f, 0.4f)) {
+                if (e.direction > 0 && rng.nextFloat() < 0.5f) accent(FaceAccent.Glee, 0.8f)
+                else blink.request(minGap = 0.3f)
+                if (rng.nextFloat() < 0.3f) director.gesture(MotionDirector.Gesture.Nod)
             }
             AvatarStage.EventKind.AppResumed -> {
                 // Back from the background: a sleepy squint that opens up, blink-blink.
@@ -2617,10 +2801,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 }
             }
             AvatarStage.EventKind.PillExpanded -> {
-                // Peek at what opened.
-                if (social == null && rng.nextFloat() < 0.7f) {
-                    glance(e.at ?: targetCenter(AvatarStage.Target.ActivityPill), 1.3f + rng.nextFloat() * 0.6f)
-                    if (calm) director.gesture(MotionDirector.Gesture.Attend, 1.4f)
+                // Engine21: when it notices, it reads the opened timeline — eyes to its top, then a
+                // slow pan down to the bottom; otherwise a peek at what opened.
+                if (social == null && hookGo("pill", 8f, 0.7f)) {
+                    if (hookGo("timeline-pan", 35f, if (calm) 0.6f else 0.4f)) timelinePan(e.at)
+                    else {
+                        glance(e.at ?: targetCenter(AvatarStage.Target.ActivityPill), 1.3f + rng.nextFloat() * 0.6f)
+                        if (calm) director.gesture(MotionDirector.Gesture.Attend, 1.4f)
+                    }
                 }
             }
             AvatarStage.EventKind.AvatarAccent -> {
@@ -2645,7 +2833,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             log("wake from ${if (restPhase == 2) "doze" else "resting eyes"} cause=activity returned")
             if (restPhase == 2 && reaction == "Sleeping") { reaction = null; log("expr Sleeping→Neutral cause=woken gently") }
             restPhase = 0; restLeft = 0f
-            if (rng.nextFloat() < 0.35f) wakeShake(3.5f, cause = "wake")
+            if (!briskWake && rng.nextFloat() < 0.35f) wakeShake(3.5f, cause = "wake")
             sinceStimulus = -6f // just woke up: give it a moment before any self-started beat
         }
         drowsy = false
@@ -2737,9 +2925,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         }
         // Resting eyes / dozing.
         val lidT = when (restPhase) { 1 -> 0.06f; 2 -> 0f; else -> 1f }
-        restLid += (lidT - restLid) * (1f - exp(-dt / if (lidT < restLid) 1.1f else 0.45f))
+        restLid += (lidT - restLid) * (1f - exp(-dt / if (lidT < restLid) 1.1f else if (time < briskUntil) 0.18f else 0.45f))
         val kT = if (restPhase > 0) 1f else 0f
-        restK += (kT - restK) * (1f - exp(-dt / 1.6f))
+        restK += (kT - restK) * (1f - exp(-dt / if (time < briskUntil) 0.25f else 1.6f))
         if (restPhase > 0) {
             restLeft -= dt
             if (restPhase == 2 && reaction == "Sleeping") reactionLeft = 5f
@@ -2793,6 +2981,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun playEpisode(e: Episode) = because("episode $e: ${e.why}", MindRules.P_IDLE) { playEpisode0(e) }
     private fun playEpisode0(e: Episode) {
         fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+        val needs = when (e) {
+            Episode.Yawn -> ContextRules.Behaviour.Yawn
+            Episode.RestEyes -> ContextRules.Behaviour.EyeRest
+            Episode.SleepyDrift -> ContextRules.Behaviour.Sleepy
+            Episode.Stretch -> ContextRules.Behaviour.LongEyesClosed
+            else -> ContextRules.Behaviour.IdleEpisode
+        }
+        if (!ContextRules.allowed(ctx, needs)) { log("episode $e skipped: $needs not in context $ctx"); return }
         val s = if (rng.nextBoolean()) 1f else -1f
         log("episode $e (${e.tier}) why=${e.why}")
         when (e) {

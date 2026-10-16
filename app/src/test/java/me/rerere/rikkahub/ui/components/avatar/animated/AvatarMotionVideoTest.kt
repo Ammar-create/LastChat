@@ -208,6 +208,55 @@ class AvatarMotionVideoTest {
             for (k in 0 until 8) { val p = 1f + 2f * k; if (t >= p && fired.add(p)) s.poke() }
             AvatarMotionHints()
         },
+        // ---------------- engine21
+        // The activity timeline opens (below-right of the avatar): eyes to its top, pan to the bottom.
+        Script("e21_timeline", 16f, preRoll = 8f, seed = 81) { s, st, t, _ ->
+            s.debugHooksAlways = true
+            st.setTarget(AvatarStage.Target.ActivityPill, this, androidx.compose.ui.geometry.Rect(380f, 700f, 1040f, if (t < 9f) 1700f else 2200f))
+            if (t >= 1f && fired.add(1f)) st.emit(AvatarStage.EventKind.PillExpanded, at = Offset(700f, 720f))
+            if (t >= 9f && fired.add(9f)) st.emit(AvatarStage.EventKind.PillExpanded, at = Offset(700f, 720f))
+            AvatarMotionHints()
+        },
+        // Every UI hook once (forced to notice for the demo), 4 s apart.
+        Script("e21_ui", 40f, preRoll = 8f, seed = 83) { s, st, t, _ ->
+            s.debugHooksAlways = true
+            st.setTarget(AvatarStage.Target.Composer, this, androidx.compose.ui.geometry.Rect(40f, 2150f, 1040f, 2330f))
+            val ev = listOf(1f to AvatarStage.EventKind.AttachmentAdded, 5f to AvatarStage.EventKind.ModelPickerOpened,
+                9f to AvatarStage.EventKind.EditorOpened, 13f to AvatarStage.EventKind.SettingToggled, 17f to AvatarStage.EventKind.Copied,
+                21f to AvatarStage.EventKind.Regenerated, 25f to AvatarStage.EventKind.Scroll, 29f to AvatarStage.EventKind.Error,
+                33f to AvatarStage.EventKind.Regenerated, 36f to AvatarStage.EventKind.Copied)
+            for ((at, k) in ev) if (t >= at && fired.add(at)) st.emit(k, at = Offset(600f, 1400f), direction = 1)
+            AvatarMotionHints()
+        },
+        // Dozing right before a reply: generation wakes it at once and the eyes stay open.
+        Script("e21_gen", 34f, preRoll = 14f, seed = 85) { s, _, t, _ ->
+            if (t >= -10f && fired.add(-10f)) s.debugRest(doze = true)
+            when {
+                t < 1f -> AvatarMotionHints()
+                t < 11f -> AvatarMotionHints(isGenerating = true)
+                t < 31f -> AvatarMotionHints(isGenerating = true, hasStreamedTokens = true)
+                else -> AvatarMotionHints()
+            }
+        },
+        // Small vs big emotional shifts (per-transition speed), 1.6 s apart.
+        Script("e21_speed", 15f, preRoll = 6f, seed = 87) { s, _, t, _ ->
+            val seq = listOf("angered or concentrated", "confused", "Happy", "Sad", "pouty", "Surprised", "Happy", "Angry", "Neutral")
+            val i = (t / 1.6f).toInt()
+            if (i < seq.size && fired.add(200f + i)) s.debugReact(seq[i], 1.4f)
+            AvatarMotionHints()
+        },
+        // Blink-masked vs direct changes: normal changes (masked), a poke (direct), closed eyes (direct), a tiny tweak (direct).
+        Script("e21_mask", 22f, preRoll = 6f, seed = 89) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugReact("Eyes closed", 1.6f)
+            if (t >= 3.5f && fired.add(3.5f)) s.debugReact("Happy", 2f)
+            if (t >= 6.5f && fired.add(6.5f)) s.debugReact("Sad", 2f)
+            if (t >= 9.5f && fired.add(9.5f)) s.poke()
+            if (t >= 12f && fired.add(12f)) s.debugReact("angered or concentrated", 2f)
+            if (t >= 14.5f && fired.add(14.5f)) s.debugReact("confused", 2f)
+            if (t >= 17f && fired.add(17f)) s.debugReact("Surprised", 1.6f)
+            if (t >= 19.5f && fired.add(19.5f)) s.debugReact("Happy", 2f)
+            AvatarMotionHints()
+        },
         Script("pokes", 16f, preRoll = 10f, seed = 49) { s, _, t, _ ->
             for (p in listOf(1f, 4f, 5f, 5.6f, 6.2f, 6.8f, 7.4f)) if (t >= p && fired.add(p)) s.poke()
             AvatarMotionHints()

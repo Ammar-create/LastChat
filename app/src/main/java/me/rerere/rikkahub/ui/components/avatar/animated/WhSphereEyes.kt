@@ -25,8 +25,8 @@ object WhSphereEyes {
     /** Desktop `Iu` — default half-width for expression strokes. */
     const val IU = 0.1305f
     /** Stroke half-widths for arc eyes (happy ^, closed ‿). */
-    const val HAPPY_W = 0.097f // engine17.1: a touch chunkier, closer to the neutral stroke (cuter)
-    const val CLOSED_W = 0.07f
+    const val HAPPY_W = 0.112f // engine21: pill-weight stroke (was 0.097, read as a thin line)
+    const val CLOSED_W = 0.105f // engine21: closed eyes are soft pill strokes, not hairlines (was 0.07)
 
     data class Vec3(val x: Float, val y: Float, val z: Float) {
         operator fun times(s: Float) = Vec3(x * s, y * s, z * s)
@@ -149,9 +149,11 @@ object WhSphereEyes {
         val base = when (name.lowercase()) {
             // Clean ^ ^ arcs: a gentle upward-curved stroke whose bend radius stays
             // well above the stroke half-width, so the outline never folds into a bean.
+            // Engine21: a bent pill (^ ^) at pill weight — the happy squeeze of the neutral eye,
+            // with a gentler bend so the thicker stroke never folds into a bean.
             "happy" -> {
                 val e = pr(0f, 0.04f, 0f, HAPPY_W,
-                    floatArrayOf(0.2f, -0.05f), floatArrayOf(0f, 0.13f), floatArrayOf(-0.2f, -0.05f))
+                    floatArrayOf(0.18f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.18f, -0.04f))
                 listOf(e, e)
             }
             "surprised" -> {
@@ -160,13 +162,22 @@ object WhSphereEyes {
             }
             "sad" -> {
                 // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
-                // the / \ pair read clearly apart at a glance.
-                val e = en(UR, 0.51f, -17f, 0f) // engine18: a hair softer (was 0.5, −19°)
+                // the / \ pair read clearly apart at a glance. Engine21: a little lower too.
+                val e = en(UR, 0.5f, -19f, 0f).let { it.copy(offY = it.offY - 0.025f) }
                 listOf(e, e)
             }
+            // Engine21: asleep = soft downward-curved pill strokes (relaxed lids).
             "sleepy", "sleeping" -> {
-                val e = pr(0f, 0f, 0f, CLOSED_W,
-                    floatArrayOf(-0.16f, 0.03f), floatArrayOf(0f, -0.06f), floatArrayOf(0.16f, 0.03f))
+                val e = pr(0f, 0.02f, 0f, CLOSED_W * 0.88f,
+                    floatArrayOf(-0.155f, 0.035f), floatArrayOf(0f, -0.07f), floatArrayOf(0.155f, 0.035f))
+                listOf(e, e)
+            }
+            // Engine21: eyes simply closed (resting, concentrating) = the neutral pill with its
+            // lid shut (as at the bottom of a blink), a little wider: a flat pill that morphs
+            // in and out by the lid alone — no spine rotation through a tilted bean.
+            "closed" -> {
+                val n = en(UR, 0.57f, 0f, 0f)
+                val e = n.copy(wid = n.wid * 1.22f, lidY = 0.2f)
                 listOf(e, e)
             }
             "squinted", "bored", "calm" -> {
@@ -181,19 +192,20 @@ object WhSphereEyes {
             )
             // Engine17.1: concentrated / focused — calm, restrained: shorter pills with a
             // slight inward tilt (half of angry's), clearly not the flat bored bars.
+            // Engine21: concentrating = clearly shorter pills (a squint), no tilt — distinct
+            // from both neutral and angry.
             "focused" -> {
-                val e = en(UR, 0.44f, 6f, 0f)
+                val e = en(UR, 0.36f, 0f, 0f)
                 listOf(e, e)
             }
             // Engine16.1: symmetric, slightly shorter pills — a quiet "hm".
-            "hm" -> {
-                val e = en(UR, 0.46f, 0f, 0f)
-                listOf(e, e)
-            }
+            // Engine21: "hm?" — both pills tipped the same way (symmetric size, no lopsided
+            // growth), the old shorter pills were indistinguishable from neutral.
+            "hm" -> listOf(en(UR, 0.52f, 14f, 0f), en(UR, 0.52f, -14f, 0f))
             // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
             // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
             "angry" -> {
-                val e = en(UR, 0.51f, 9.5f, 0f) // engine18: a hair softer (was 0.5, 11°)
+                val e = en(UR, 0.47f, 15f, 0f) // engine21: readable cross (was 0.51, 9.5° ≈ neutral)
                 listOf(e, e)
             }
             // Playful (Group 3): one eye a hair shorter and tipped, the other open.
@@ -253,11 +265,15 @@ object WhSphereEyes {
         "Happy" -> "happy"
         "Surprised" -> "surprised"
         "Sad", "Worried" -> "sad"
-        "Sleeping", "Eyes closed" -> "sleepy"
+        // Engine21 audit: every Grok face has one readable meaning in pill language.
+        //  happy ^ ^ (also hurt-or-cute / playful: merged, they read the same in pills)
+        //  surprised tall · sad / \ low (Worried merged) · angry \ / · focused short squint
+        //  bored = flat bars (pouty merged: an unimpressed sulk) · confused = tipped pills
+        //  closed = short flat pills · sleeping = soft ∪ strokes.
+        "Sleeping" -> "sleepy"
+        "Eyes closed" -> "closed"
         "Bored", "pouty" -> "squinted"
         "angered or concentrated" -> "focused"
-        // Engine16.1 (Julian): no lopsided Grok faces. Confused = a symmetric "hm" (both pills
-        // a little shorter); wink / playful fall back to the clean ^ ^ happy arcs.
         "confused", "confused left" -> "hm"
         "hurt or cute", "Group 3" -> "happy"
         "Angry" -> "angry"
