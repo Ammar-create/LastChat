@@ -109,7 +109,7 @@ class AvatarMotionVideoTest {
             AvatarMotionHints()
         },
         Script("expr", 14f) { s, _, t, _ ->
-            val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "angered or concentrated", "Worried")
+            val seq = listOf("Happy", "Sad", "Surprised", "confused", "Bored", "angered or concentrated", "pouty")
             val i = (t / 2f).toInt()
             if (t % 2f < 1f / 24f && i < seq.size) s.debugReact(seq[i], 1.4f)
             AvatarMotionHints()
@@ -124,7 +124,7 @@ class AvatarMotionVideoTest {
         },
         Script("ep_character", 54f, preRoll = 10f, seed = 33) { s, _, t, _ ->
             ep(s, t, 1f to Episode.SkepticalLR, 7.5f to Episode.HmmLean, 13f to Episode.DoubleTake, 18.5f to Episode.Peek,
-                23.5f to Episode.LookUpRemember, 29f to Episode.ContentSlowBlink, 33f to Episode.WorriedGlance, 39f to Episode.Smug,
+                23.5f to Episode.LookUpRemember, 29f to Episode.ContentSlowBlink, 33f to Episode.ConcernGlance, 39f to Episode.Smug,
                 43f to Episode.Sneeze, 47f to Episode.ComeToSenses); AvatarMotionHints()
         },
         Script("ep_tired", 34f, preRoll = 10f, seed = 35) { s, _, t, _ ->

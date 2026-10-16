@@ -34,7 +34,7 @@ internal enum class Episode(val tier: Tier, val cooldown: Float, val why: String
     Yawn(Tier.Rare, 300f, "tired: a slow yawn (stretch up, eyes squeezed), maybe a shake to wake up"),
     SleepyDrift(Tier.Rare, 150f, "tired: head sinks … catches itself"),
     RestEyes(Tier.Rare, 200f, "untouched for a long while: rests his eyes, maybe dozes off"),
-    WorriedGlance(Tier.Rare, 300f, "a passing worry: glance down to the side, then reassures itself"),
+    ConcernGlance(Tier.Rare, 300f, "a passing concern: glance down to the side, a calm concentrated look, then settles"),
     ComeToSenses(Tier.Rare, 260f, "zoned out: a little head shake and blink-blink, back to the present"),
     // ---- very rare: easter-egg beats
     Smug(Tier.VeryRare, 600f, "remembers the nice exchange earlier: a small smug nod"),
@@ -93,7 +93,7 @@ internal class EpisodePlanner(private val rng: Random) {
             Episode.Yawn -> if (tired || (c.quietSec > 60f && t.energy < 0.4f)) 2.5f else if (c.quietSec > 90f) 0.4f else 0f
             Episode.SleepyDrift -> if (tired || t.boredom > 0.55f) 1.5f else 0f
             Episode.RestEyes -> if (c.drowsy && c.quietSec > 90f) 6f else 0f
-            Episode.WorriedGlance -> if (c.valence < 0.35f && !tired) 0.8f else 0.2f
+            Episode.ConcernGlance -> if (c.valence < 0.35f && !tired) 0.8f else 0.2f
             Episode.ComeToSenses -> if (c.quietSec > 45f && t.boredom > 0.3f) 1.2f else 0f
             Episode.Smug -> if (c.niceRecently) 3f else 0f
             Episode.LookAround360 -> if (tired) 0f else t.curiosity

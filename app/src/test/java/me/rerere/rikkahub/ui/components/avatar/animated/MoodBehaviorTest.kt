@@ -93,6 +93,8 @@ class MoodBehaviorTest {
         stage.emit(AvatarStage.EventKind.Error)
         repeat(30) { s.tick(DT, AvatarMotionHints(), at(15)) }
         assertTrue(s.moodValence < before - 0.2f)
-        assertTrue(s.currentAccent == FaceAccent.Worried)
+        // Engine17.1: the retired Worried face → calm concentrated reaction.
+        val f = s.frame
+        assertTrue("${f.exprFrom}/${f.exprTo}/${f.exprTop}", "angered or concentrated" in listOf(f.exprFrom, f.exprTo, f.exprTop))
     }
 }

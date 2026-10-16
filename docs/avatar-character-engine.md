@@ -767,3 +767,41 @@ Generical seated eyes, Grok sphere/mesh eyes, `radialPath` and `blendContours` �
 editor size. `ArtifactStripTest` renders the strips.
 
 **Chat input.** Hint text uses `chatInputHintColor()` = onSurfaceVariant @ 50 % (both themes).
+
+## Engine17.1 — Grok audit, one-piece morphs, shake, gaze rules
+
+**Grok audit** (`GrokAuditTest`: 16 likely transitions × t 0…1 and a blink row per expression, on
+circle/heart/square). Findings at 0d6bf864: Neutral→Bored and Angry→Sad swung through `\ /`
+diagonals (straight↔straight pairs bypassed the stub guard); arc↔pill changes were staged
+(straighten → turn → bend) with flat-bar plateaus and pops (Happy→Surprised, Happy→Sad,
+Neutral→Happy, Neutral→Eyes closed); blinks squashed pills into dots / hairlines (Sad: pointy specks,
+Surprised: squarish blobs); happy arcs thinner than the neutral stroke; "angered or concentrated"
+reused the bored bars.
+Fixes:
+- `WhSphereEyes.smoothBlend`: every capsule pair morphs in ONE continuous motion — spine decomposed
+  into chord centre / angle / half-length / bend profile, all blended at once; large turns get a
+  single smooth length dip (sin πu) so the stroke never reads as a diagonal. `barBlend`/`straight`
+  stages removed.
+- Blink: `EyeState.closeK` — straight eyes squash (radial per-angle blend) into a soft lid bar at
+  the lower middle, about eye-wide, gentle ‿, following the eye's tilt (Generical-like). Arcs only thin.
+  Closed Grok faces still never blink.
+- `HAPPY_W` 0.085 → 0.097; new Grok "focused" (shorter pills, 6° inward) for "angered or concentrated".
+
+**Worried retired** (Julian): the worried-neutral face is no longer used in either style.
+`EyeStyle` maps "worried" → "angered or concentrated"; `MarkLifecycle.Failed`, the Concern
+emotion beat (`concern`), the error event and the `ConcernGlance` episode (was WorriedGlance) all
+use the calm concentrated face (log causes: "error event: concentrates on it", "concern glance:
+concentrated").
+
+**Spins:** expressions keep blending during a turn (changes there use the soft blend, never a
+blink swap); no frozen face.
+
+**Head shake:** one shared `wakeShake(amp, cause)` for wake, come-to-senses, yawn and the spin
+shake-off: eyes squeeze shut (0.14 s), 2–3 slow decaying swings (1.7–2.1 Hz, 7.5–11°, soft attack),
+eyes open with the settle, then a blink. Logged as `head-shake cause=…`.
+
+**Gaze rules:** interest/explore/think/ack glances are ≥ 0.24 from rest (pushed out along their
+own direction, never up-right); `focus()` skips near-rest glances while resting; holds scale with
+the move (planner ≥ 0.45 + 2.2·d, focus ≥ 0.35 + 1.6·d); every return to rest is an eased glide
+(`glideHome`, 0.55–1.15 s by distance). `GazeAuditTest` reports near-rest glances (must be 0),
+minimum glance offset and peak return eye speed.

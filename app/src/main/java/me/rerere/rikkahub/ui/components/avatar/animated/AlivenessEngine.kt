@@ -180,7 +180,7 @@ internal class AlivenessEngine(private val rng: Random) {
                 d + 0.2f to if (chance(0.25f * p.playfulness)) Beat.Gesture(MotionDirector.Gesture.Hop) else Beat.Blink)
             Emotion.Amusement -> sequence(d to Beat.Accent(FaceAccent.Glee, logRange(1.0f, 1.8f)),
                 d + 0.3f to Beat.Gesture(MotionDirector.Gesture.Nod))
-            Emotion.Concern -> sequence(d to Beat.Accent(FaceAccent.Worried, logRange(1.2f, 2.0f)))
+            Emotion.Concern -> sequence(d to Beat.Face("angered or concentrated", logRange(1.2f, 2.0f))) // engine17.1: Worried retired
             Emotion.Sadness -> sequence(d to Beat.Accent(FaceAccent.Sad, logRange(1.4f, 2.4f)),
                 d + 1.2f to Beat.Gesture(MotionDirector.Gesture.Droop))
             Emotion.Surprise -> sequence(d to Beat.Accent(FaceAccent.Startled, 0.6f), d + 0.7f to Beat.Blink)
@@ -268,13 +268,14 @@ internal class AlivenessEngine(private val rng: Random) {
         val el = emotionLevel
         val base = listOf(
             "Neutral" to 0.34f * (1.4f - 0.5f * show),
-            "angered or concentrated" to (if (thinking) 0.15f else 0.09f) * (0.6f + p.attentiveness),
+            "angered or concentrated" to (if (thinking) 0.15f else 0.09f) * (0.6f + p.attentiveness) +
+                // engine17.1: concern (was the retired Worried face) folds into concentration.
+                (if (emo == Emotion.Concern) 0.08f * el else if (thinking) 0.012f else 0f),
             "Bored" to 0.07f * (1.2f - arousal) * (0.6f + p.calmness),
             "Happy" to (if (streaming) 0.11f else 0.04f) * (0.5f + pos) * (0.5f + p.warmth) * show *
                 (if (emo == Emotion.Joy || emo == Emotion.Amusement) 1f + 2f * el else 1f),
             "confused" to (if (thinking) 0.05f else 0.015f) * show * (if (emo == Emotion.Confusion) 1f + 3f * el else 1f),
             "Surprised" to 0.025f * (0.5f + arousal) * show * (if (emo == Emotion.Surprise) 1f + 3f * el else 1f),
-            "Worried" to (if (emo == Emotion.Concern) 0.08f * el else if (thinking) 0.012f else 0f),
             // Engine16 thinking variety: eyes shut to concentrate, a pout of effort, a small "hmm".
             "Eyes closed" to (if (thinking) 0.03f else 0f) * (0.6f + p.calmness),
             "pouty" to (if (thinking) 0.018f else 0.006f) * show,
@@ -289,7 +290,7 @@ internal class AlivenessEngine(private val rng: Random) {
         }.ifEmpty { listOf("Neutral" to 1f) }
         var k = weighted(opts)
         // Engine15: no cut from a low face straight to a bright one; pass through neutral.
-        if (busyFace in setOf("Bored", "Sad", "Worried", "Eyes closed") && k == "Happy") k = "Neutral"
+        if (busyFace in setOf("Bored", "Sad", "Eyes closed") && k == "Happy") k = "Neutral"
         lastUsed["face:$k"] = clock
         recentFaces.addLast(k)
         while (recentFaces.size > 4) recentFaces.removeFirst()
@@ -356,7 +357,7 @@ internal class AlivenessEngine(private val rng: Random) {
             "tilt" to 0.03f * (0.5f + p.curiosity) * cool("tiltI", 40f),
             "shyLook" to 0.03f * p.shyness * cool("shyLook", 50f),
             "hop" to 0.012f * p.playfulness * p.energy * 4f * (1f - boredom) * cool("hop", 90f),
-            "worried" to (if (emo == Emotion.Concern) 0.08f * emotionLevel else 0f),
+            "concern" to (if (emo == Emotion.Concern) 0.08f * emotionLevel else 0f),
             // Hobbies: short multi-step routines, more likely as boredom grows.
             "daydream" to 0.05f * (0.3f + boredom) * (0.5f + p.calmness) * cool("daydream", 70f),
             "survey" to 0.05f * (0.3f + boredom) * (0.5f + p.curiosity) * cool("survey", 60f),
@@ -385,7 +386,7 @@ internal class AlivenessEngine(private val rng: Random) {
             "wink" -> Beat.Face("hurt or cute", logRange(0.6f, 0.9f))
             "shyLook" -> Beat.Glance(-(0.3f + 0.3f * rng.nextFloat()), 0.3f + 0.2f * rng.nextFloat(), logRange(0.5f, 1.1f), "idle")
             "hop" -> Beat.Gesture(MotionDirector.Gesture.Hop)
-            "worried" -> Beat.Accent(FaceAccent.Worried, logRange(1f, 1.8f))
+            "concern" -> Beat.Face("angered or concentrated", logRange(1f, 1.8f)) // engine17.1
             "daydream" -> {
                 // Gaze drifts up to one side, lids soften, slow blink, back.
                 val hold = logRange(1.3f, 2.4f)

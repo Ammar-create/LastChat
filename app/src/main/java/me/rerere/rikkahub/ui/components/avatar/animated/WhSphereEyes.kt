@@ -25,7 +25,7 @@ object WhSphereEyes {
     /** Desktop `Iu` — default half-width for expression strokes. */
     const val IU = 0.1305f
     /** Stroke half-widths for arc eyes (happy ^, closed ‿). */
-    const val HAPPY_W = 0.085f
+    const val HAPPY_W = 0.097f // engine17.1: a touch chunkier, closer to the neutral stroke (cuter)
     const val CLOSED_W = 0.07f
 
     data class Vec3(val x: Float, val y: Float, val z: Float) {
@@ -61,6 +61,8 @@ object WhSphereEyes {
         val lidY: Float,
         val pts: List<FloatArray>, // spine [x,y]
         val oval: FloatArray = floatArrayOf(0f, 0f),
+        /** Engine17.1 blink: 0 open … 1 lids met (soft lid bar). Replaces the lidY squash. */
+        val closeK: Float = 0f,
     )
 
     /** Desktop `Ou(body, gazeX, gazeY)` — gaze ∈ [-1,1] → euler deg + pos. */
@@ -177,6 +179,12 @@ object WhSphereEyes {
                 en(UR, 0.6f, 0f, 0f),
                 en(UR, 0.58f, -18f, 0f),
             )
+            // Engine17.1: concentrated / focused — calm, restrained: shorter pills with a
+            // slight inward tilt (half of angry's), clearly not the flat bored bars.
+            "focused" -> {
+                val e = en(UR, 0.44f, 6f, 0f)
+                listOf(e, e)
+            }
             // Engine16.1: symmetric, slightly shorter pills — a quiet "hm".
             "hm" -> {
                 val e = en(UR, 0.46f, 0f, 0f)
@@ -246,7 +254,8 @@ object WhSphereEyes {
         "Surprised" -> "surprised"
         "Sad", "Worried" -> "sad"
         "Sleeping", "Eyes closed" -> "sleepy"
-        "Bored", "pouty", "angered or concentrated" -> "squinted"
+        "Bored", "pouty" -> "squinted"
+        "angered or concentrated" -> "focused"
         // Engine16.1 (Julian): no lopsided Grok faces. Confused = a symmetric "hm" (both pills
         // a little shorter); wink / playful fall back to the clean ^ ^ happy arcs.
         "confused", "confused left" -> "hm"
@@ -288,6 +297,7 @@ object WhSphereEyes {
                 wid = mix(e0.wid, e1.wid),
                 lidY = mix(e0.lidY, e1.lidY),
                 pts = pts,
+                closeK = mix(e0.closeK, e1.closeK),
             )
         }
     }
@@ -311,7 +321,11 @@ object WhSphereEyes {
             val arc0 = (if (curved(e0)) 1f - u else 0f) + (if (curved(e1)) u else 0f)
             val arc = arc0 * (1f - w) + (if (e2 != null && curved(e2)) w else 0f)
             val le = l + (1f - l).coerceAtLeast(0f) * arc * 0.8f
-            e.copy(lidY = e.lidY * le)
+            if (l >= 1f) e.copy(lidY = e.lidY * l) else {
+                // Engine17.1: straight eyes close into a soft lid bar (closeK); arcs only thin.
+                val a = arc.coerceIn(0f, 1f)
+                e.copy(lidY = e.lidY * (1f + (le - 1f) * a), closeK = ((1f - l) * (1f - a)).coerceIn(0f, 1f))
+            }
         }
     }
 
@@ -325,66 +339,75 @@ object WhSphereEyes {
     }
 
     /**
-     * Straight bar → straight bar. When the bars point in very different directions
-     * (vertical pill → horizontal arc bar) a point blend swings through a diagonal and
-     * reads as an angry \ / face; instead the bar shrinks to a short stub at its centre,
-     * then grows out along the new direction.
+     * Engine17.1: ONE continuous morph for every capsule pair (arc ↔ pill ↔ bar ↔ tilt).
+     * Each spine is decomposed into chord centre, chord angle, half-length and a bend
+     * profile (offsets perpendicular to the chord, at normalised positions along it); every
+     * parameter blends smoothly at once — an arc straightens *while* it turns and resizes, no
+     * stages, no hitches. When the angle changes a lot (pill ↔ bar), a single smooth length
+     * dip (sin πu) shortens the stroke toward a soft round so it never visibly swings through
+     * a \ / diagonal. C∞ in u; identical endpoints.
      */
-    private fun barBlend(s0: EyeState, s1: EyeState, u: Float): EyeState {
-        fun dir(e: EyeState): Float { val a = e.pts.first(); val b = e.pts.last(); return kotlin.math.atan2(b[1] - a[1], b[0] - a[0]) }
-        var d = kotlin.math.abs(dir(s0) - dir(s1)) % PI.toFloat()
-        if (d > PI.toFloat() / 2f) d = PI.toFloat() - d
-        if (d < 0.6f) return blendPairs(listOf(s0), listOf(s1), u)[0]
-        fun ctr(e: EyeState) = floatArrayOf(e.pts.sumOf { it[0].toDouble() }.toFloat() / e.pts.size,
-            e.pts.sumOf { it[1].toDouble() }.toFloat() / e.pts.size)
-        val c0 = ctr(s0); val c1 = ctr(s1)
-        val mx = (c0[0] + c1[0]) / 2f; val my = (c0[1] + c1[1]) / 2f
-        // A short stub centred midway between both bars' centres (continuous at u = 0.5).
-        fun stub(e: EyeState, k: Float): EyeState {
-            val c = ctr(e)
-            return e.copy(pts = e.pts.map { floatArrayOf(mx + (it[0] - c[0]) * k, my + (it[1] - c[1]) * k) })
+    private fun cleanBlend(e0: EyeState, e1: EyeState, u: Float): EyeState = smoothBlend(e0, e1, u)
+
+    private class Spine(val cx: Float, val cy: Float, val ang: Float, val half: Float, val s: FloatArray, val b: FloatArray)
+
+    private fun spineOf(pts: List<FloatArray>): Spine {
+        val a = pts.first(); val z = pts.last()
+        val dx = z[0] - a[0]; val dy = z[1] - a[1]
+        val len = hypot(dx, dy)
+        val ang = if (len > 1e-5f) kotlin.math.atan2(dy, dx) else (PI / 2).toFloat()
+        val ux = cos(ang); val uy = sin(ang)
+        val cx = (a[0] + z[0]) / 2f; val cy = (a[1] + z[1]) / 2f
+        val half = (len / 2f).coerceAtLeast(1e-5f)
+        val n = pts.size
+        val sArr = FloatArray(n); val bArr = FloatArray(n)
+        for (k in 0 until n) {
+            val rx = pts[k][0] - cx; val ry = pts[k][1] - cy
+            sArr[k] = (rx * ux + ry * uy) / half
+            bArr[k] = -rx * uy + ry * ux
         }
-        val m = blendPairs(listOf(s0), listOf(s1), u)[0]
-        // Stub keeps a real length (≥ 65% of the longer bar) so no blend frame is a dot.
-        fun span(e: EyeState): Float {
-            val xs = e.pts.map { it[0] }; val ys = e.pts.map { it[1] }
-            return kotlin.math.hypot(xs.max() - xs.min(), ys.max() - ys.min()).coerceAtLeast(1e-4f)
-        }
-        val target = 0.65f * maxOf(span(s0), span(s1))
-        val k0 = (target / span(s0)).coerceIn(0.5f, 1f)
-        val k1 = (target / span(s1)).coerceIn(0.5f, 1f)
-        val e = if (u < 0.5f) blendPairs(listOf(s0), listOf(stub(s0, k0)), u / 0.5f)[0]
-            else blendPairs(listOf(stub(s1, k1)), listOf(s1), (u - 0.5f) / 0.5f)[0]
-        // Spine shape from the stub path; position, width and tilt glide continuously.
-        return e.copy(offX = m.offX, offY = m.offY, wid = m.wid, tilt = m.tilt)
+        return Spine(cx, cy, ang, half, sArr, bArr)
     }
 
-    /** Same eye with its spine pulled straight between its end points. */
-    private fun straight(e: EyeState): EyeState {
-        val p = e.pts; val a = p.first(); val b = p.last(); val n = p.size
-        return e.copy(pts = List(n) { k ->
-            val f = k / (n - 1f)
-            floatArrayOf(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
-        })
-    }
-
-    /**
-     * Arc ↔ pill morph that stays a clean capsule at every t: an arc first
-     * straightens, the straight bars morph, then the target bends into its arc.
-     * (A direct point blend bends a fat stroke too tightly and reads as a bean.)
-     */
-    private fun cleanBlend(e0: EyeState, e1: EyeState, u: Float): EyeState {
-        val c0 = curved(e0); val c1 = curved(e1)
-        if (!c0 && !c1) return blendPairs(listOf(e0), listOf(e1), u)[0]
-        val s0 = if (c0) straight(e0) else e0
-        val s1 = if (c1) straight(e1) else e1
-        val phases = 1 + (if (c0) 1 else 0) + (if (c1) 1 else 0)
-        val w = 1f / phases
-        var x = u
-        if (c0) { if (x < w) return blendPairs(listOf(e0), listOf(s0), x / w)[0]; x -= w }
-        if (x < w || !c1) return barBlend(s0, s1, (x / w).coerceAtMost(1f))
-        x -= w
-        return blendPairs(listOf(s1), listOf(e1), (x / w).coerceAtMost(1f))[0]
+    private fun smoothBlend(e0: EyeState, e1r: EyeState, t: Float): EyeState {
+        val u = t.coerceIn(0f, 1f)
+        if (u <= 0f) return e0
+        if (u >= 1f) return e1r
+        fun mix(x: Float, y: Float) = x + (y - x) * u
+        val n = min(e0.pts.size, e1r.pts.size)
+        if (n < 2) return blendPairs(listOf(e0), listOf(e1r), u)[0]
+        val p0 = e0.pts.take(n)
+        var p1 = e1r.pts.take(n)
+        val A = spineOf(p0)
+        var B = spineOf(p1)
+        // Same travel direction (a reversed spine would flip through 180°).
+        var dAng = B.ang - A.ang
+        while (dAng > PI) dAng -= (2 * PI).toFloat()
+        while (dAng < -PI) dAng += (2 * PI).toFloat()
+        if (kotlin.math.abs(dAng) > PI / 2) {
+            p1 = p1.reversed(); B = spineOf(p1)
+            dAng = B.ang - A.ang
+            while (dAng > PI) dAng -= (2 * PI).toFloat()
+            while (dAng < -PI) dAng += (2 * PI).toFloat()
+        }
+        // Length dip for large turns: 0 for ≤ ~20°, ~0.72 at 90°.
+        val turn = ((kotlin.math.abs(dAng) - 0.35f) / (PI.toFloat() / 2f - 0.35f)).coerceIn(0f, 1f)
+        val dip = 1f - 0.72f * turn * turn * sin(PI.toFloat() * u)
+        val ang = A.ang + dAng * u
+        val half = mix(A.half, B.half) * dip
+        val ux = cos(ang); val uy = sin(ang)
+        val cx = mix(A.cx, B.cx); val cy = mix(A.cy, B.cy)
+        val pts = List(n) { k ->
+            val sk = mix(A.s[k], B.s[k]) * half
+            val bk = mix(A.b[k], B.b[k]) * dip
+            floatArrayOf(cx + ux * sk - uy * bk, cy + uy * sk + ux * bk)
+        }
+        return EyeState(
+            offX = mix(e0.offX, e1r.offX), offY = mix(e0.offY, e1r.offY),
+            tilt = mix(e0.tilt, e1r.tilt), wid = mix(e0.wid, e1r.wid),
+            lidY = mix(e0.lidY, e1r.lidY), pts = pts,
+            closeK = mix(e0.closeK, e1r.closeK),
+        )
     }
 
     // --- spine helpers (desktop Mk / eh, linear branch) ---
@@ -435,6 +458,38 @@ object WhSphereEyes {
 
     /** Capsule outline from spine + half-width (desktop sS) with rounded caps. */
     fun stadiumOutline(eye: EyeState): List<FloatArray> {
+        val c = eye.closeK
+        if (c <= 0.001f) return stadiumOpen(eye)
+        val open = stadiumOpen(eye.copy(closeK = 0f))
+        if (open.size < 3) return open
+        return lidSquash(open, eye.wid, c.coerceIn(0f, 1f))
+    }
+
+    /**
+     * Engine17.1 blink: the eye squashes about its lid line (lids meet at the lower middle),
+     * widening a little, never thinner than a soft lid bar, and bends into a gentle ‿ only as
+     * it closes — the Grok cousin of Generical's closing eye. Shape stays smooth and convex.
+     */
+    private fun lidSquash(open: List<FloatArray>, wid: Float, c: Float): List<FloatArray> {
+        val minX = open.minOf { it[0] }; val maxX = open.maxOf { it[0] }
+        val minY = open.minOf { it[1] }; val maxY = open.maxOf { it[1] }
+        val h = (maxY - minY).coerceAtLeast(1e-4f)
+        val cx = (minX + maxX) / 2f
+        val yl = minY + h * 0.4f
+        val bar = 2f * (wid * 0.42f).coerceIn(0.035f, 0.06f)
+        val k = c * c * (3f - 2f * c)
+        val sy = max(1f - k, (bar / h).coerceAtMost(1f) * k + (1f - k))
+        val sx = 1f + 0.22f * k
+        val halfW = ((maxX - minX) / 2f * sx).coerceAtLeast(1e-4f)
+        val bend = 0.2f * halfW * k * k
+        return open.map { p ->
+            val x = cx + (p[0] - cx) * sx
+            val f = (x - cx) / halfW
+            floatArrayOf(x, yl + (p[1] - yl) * sy + bend * f * f)
+        }
+    }
+
+    private fun stadiumOpen(eye: EyeState): List<FloatArray> {
         val pts = eye.pts
         if (pts.size < 2) return emptyList()
         val w = eye.wid.coerceAtLeast(0.02f)
