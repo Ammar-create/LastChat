@@ -204,7 +204,7 @@ internal fun AnimatedAvatarEditorContent(
     fun spot(k: EditorCue.Kind) = Modifier.onGloballyPositioned { spots[k] = it.boundsInWindow().center }
     fun fire(k: EditorCue.Kind) { cue = EditorCue((cue?.seq ?: 0) + 1, k, spots[k]) }
     // Engine17.2: avatars here sit on the editor container surface (contrast guard backdrop).
-    androidx.compose.runtime.CompositionLocalProvider(ContrastGuard.LocalAvatarBackdrop provides softSurface(0f)) {
+    androidx.compose.runtime.CompositionLocalProvider(ContrastGuard.LocalAvatarBackdrop provides cs.surfaceContainerLow) { // Engine20.1: previews sit on the sheet
     Box(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -219,9 +219,7 @@ internal fun AnimatedAvatarEditorContent(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(232.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(softSurface(0.22f)),
+                    .height(232.dp), // Engine20.1: no surface behind the preview; only the label has a pill
                 contentAlignment = Alignment.Center,
             ) {
                 AnimatedMarkAvatar(
@@ -269,24 +267,17 @@ internal fun AnimatedAvatarEditorContent(
                                 .size(54.dp)
                                 .drawBehind {
                                     if (ringK > 0.01f) {
-                                        // A true contour offset: a wide stroke of the silhouette in the
-                                        // ring colour, with the silhouette and its gap band cleared.
-                                        val raw = MarkShapes.getShapePath(s, androidx.compose.ui.geometry.Size(100f, 100f))
-                                        val b = raw.getBounds()
-                                        val bodyPx = SHAPE_BODY.toPx()
-                                        val k = bodyPx / maxOf(b.width, b.height)
-                                        val gap = SEL_GAP.toPx(); val sw = SEL_STROKE.toPx() * (0.6f + 0.4f * ringK)
-                                        val layer = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
-                                        drawContext.canvas.saveLayer(layer, androidx.compose.ui.graphics.Paint())
-                                        withTransform({
-                                            translate(center.x - b.center.x * k, center.y - b.center.y * k)
-                                            scale(k, k, androidx.compose.ui.geometry.Offset.Zero)
-                                        }) {
-                                            drawPath(raw, bodyColor.copy(alpha = ringK), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f * (gap + sw) / k, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-                                            drawPath(raw, Color.Black, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f * gap / k, join = androidx.compose.ui.graphics.StrokeJoin.Round), blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
-                                            drawPath(raw, Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+                                        // Engine20.1: a true constant-distance band around the drawn
+                                        // silhouette of the 36 dp preview (real geometry, see SelectionRing).
+                                        val inner = SHAPE_PREVIEW.toPx()
+                                        val ring = SelectionRing.ring(s, inner, SEL_GAP.toPx(), SEL_STROKE.toPx(), SEL_ROUND.toPx())
+                                        if (ring != null) {
+                                            val o = (size.width - inner) / 2f
+                                            val g = 0.94f + 0.06f * ringK
+                                            withTransform({ translate(o, o); scale(g, g, androidx.compose.ui.geometry.Offset(inner / 2f, inner / 2f)) }) {
+                                                drawPath(ring, bodyColor.copy(alpha = ringK))
+                                            }
                                         }
-                                        drawContext.canvas.restore()
                                     }
                                 }
                                 .clip(CircleShape)
@@ -302,7 +293,7 @@ internal fun AnimatedAvatarEditorContent(
                                 eyeShade = eyeShade,
                                 isLoading = false,
                                 calmPreview = true,
-                                modifier = Modifier.size(36.dp),
+                                modifier = Modifier.size(SHAPE_PREVIEW),
                             )
                         }
                     }
@@ -463,8 +454,9 @@ internal fun AnimatedAvatarEditorContent(
 /** Engine20: one selection-ring weight and gap for shapes and swatches. */
 private val SEL_STROKE = 2.5.dp
 private val SEL_GAP = 3.dp
-/** Drawn silhouette extent of a 36 dp shape preview (the body sits inside its box). */
-private val SHAPE_BODY = 31.5.dp
+private val SHAPE_PREVIEW = 36.dp
+/** Fillet radius for concave corners of the shape rings. */
+private val SEL_ROUND = 3.dp
 
 @Composable
 private fun EditorActionButton(
@@ -566,7 +558,7 @@ private fun Swatch(color: Color, selected: Boolean, contentDescription: String? 
             .clip(CircleShape)
             .then(if (k > 0.01f) Modifier.border(SEL_STROKE, ring.copy(alpha = k), CircleShape) else Modifier)
             .clickable(onClickLabel = contentDescription) { onClick() }
-            .padding(3.dp + (SEL_STROKE - 0.5.dp + SEL_GAP - 3.dp) * k)
+            .padding(3.dp + (SEL_STROKE + SEL_GAP - 3.dp) * k) // exact: ring, then the same gap as the shapes
             .clip(CircleShape)
             .background(color)
             .then(

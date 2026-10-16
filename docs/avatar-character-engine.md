@@ -1093,3 +1093,23 @@ any change of feeling comes from a cause that the viewer could name.
 
 These gates catch the old behaviour: E19.1's head timing fails `gaze_stepgo` in every
 scenario (for example idle12 4–6 of 7–10 shifts, session 18–19 of about 31).
+
+## Engine20.1 — editor rings and stage
+
+* **Shape selection rings are true offsets of the drawn silhouette.** `SelectionRing.silhouette`
+  rebuilds the exact outline a calm 36 dp preview draws: the centred body, the face-on
+  projection and the body transform. The ring is the band between offsets at distance
+  gap (3 dp) and gap + stroke (2.5 dp). Each offset is a Minkowski sum with a disk (fill ∪
+  round-joined stroke outline), followed by a morphological closing with radius 3 dp
+  (grow by r, shrink by r). Convex corners come out as arcs and concave notches become
+  fillets, with no cusps or pinches. The silhouette is first resampled into a clean
+  360-point polygon, because a few SVG contours (the sparkle) defeated the path ops; the
+  raw union is the fallback (the heart needed it).
+* **Measured on every shape** with `renderSelectionRings` (red ring over the real preview)
+  and `ring_check.py`, which takes the distance-transform from the ring's inner edge to the
+  body. The gap minimum is 3.0–3.07 dp on all 10 shapes. The maximum is 3.4 dp on convex
+  shapes (pixel quantisation) and 3.6–4.0 dp only inside concave fillets (cloud, clover,
+  flower, heart, star, sparkle). The stroke is even.
+* **Colour rings:** the dot inset is exactly stroke + gap (2.5 + 3 dp), so swatches and
+  shapes share one ring weight and gap.
+* **Preview stage:** no surface behind the avatar; only the label underneath sits in a pill.

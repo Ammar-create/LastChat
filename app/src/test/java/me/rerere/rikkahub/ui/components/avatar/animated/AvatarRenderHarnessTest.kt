@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.runBlocking
@@ -586,6 +587,32 @@ class AvatarRenderHarnessTest {
             }
         }
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
+    }
+
+    /**
+     * Engine20.1: every shape's selection ring, drawn in red over the real calm preview (blue),
+     * 54 dp option box, for zoomed inspection and the gap / stroke uniformity check
+     * (ring_check.py). Also the editor's own selected option (body-coloured ring).
+     */
+    @Test
+    fun renderSelectionRings() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val dir = File(outDir, "rings").apply { mkdirs() }
+        for (s in MarkShapes.SHAPES) {
+            capture("rings/ring_$s", 54, 54) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF1C1B1F)), contentAlignment = Alignment.Center) {
+                    AnimatedMarkAvatar(shapeId = s, eyeType = "generical", colorHex = "#2A92FE", colorPreset = "blue",
+                        isLoading = false, calmPreview = true, modifier = Modifier.size(36.dp))
+                    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                        val inner = 36.dp.toPx()
+                        val ring = SelectionRing.ring(s, inner, 3.dp.toPx(), 2.5.dp.toPx(), 3.dp.toPx()) ?: return@Canvas
+                        val o = (size.width - inner) / 2f
+                        translate(o, o) { drawPath(ring, Color.Red) }
+                    }
+                }
+            }
+        }
     }
 
     /**
