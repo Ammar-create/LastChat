@@ -62,8 +62,27 @@ object GenericalFace {
             ?: return null
         var l = sample(expr.left) ?: return null
         var r = sample(expr.right) ?: return null
+        // Engine18: Angry and Sad toned down a touch — 10 % of the way back toward Neutral.
+        TONED[exprId]?.let { k ->
+            val n = face("Neutral")
+            if (n != null) {
+                l = towards(l, n.left, k, shiftFor(exprId, "Neutral", 0, l, n.left))
+                r = towards(r, n.right, k, shiftFor(exprId, "Neutral", 1, r, n.right))
+            }
+        }
         // Engine14: no re-centring; every frame sits exactly where Julian drew it.
         return Face(l, r).also { faces[exprId] = it }
+    }
+
+    private val TONED = mapOf("Angry" to 0.10f, "Sad" to 0.10f)
+
+    private fun towards(a: Outline, b: Outline, k: Float, sh: Int): Outline {
+        val xs = FloatArray(N); val ys = FloatArray(N)
+        for (i in 0 until N) {
+            val j = ((i + sh) % N + N) % N
+            xs[i] = a.x[i] + (b.x[j] - a.x[i]) * k; ys[i] = a.y[i] + (b.y[j] - a.y[i]) * k
+        }
+        return Outline(xs, ys)
     }
 
     const val SIDE_EYE = "confused"

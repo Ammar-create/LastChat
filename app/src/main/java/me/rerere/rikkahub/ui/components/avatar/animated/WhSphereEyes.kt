@@ -161,7 +161,7 @@ object WhSphereEyes {
             "sad" -> {
                 // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
                 // the / \ pair read clearly apart at a glance.
-                val e = en(UR, 0.5f, -19f, 0f)
+                val e = en(UR, 0.51f, -17f, 0f) // engine18: a hair softer (was 0.5, −19°)
                 listOf(e, e)
             }
             "sleepy", "sleeping" -> {
@@ -193,7 +193,7 @@ object WhSphereEyes {
             // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
             // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
             "angry" -> {
-                val e = en(UR, 0.5f, 11f, 0f)
+                val e = en(UR, 0.51f, 9.5f, 0f) // engine18: a hair softer (was 0.5, 11°)
                 listOf(e, e)
             }
             // Playful (Group 3): one eye a hair shorter and tipped, the other open.

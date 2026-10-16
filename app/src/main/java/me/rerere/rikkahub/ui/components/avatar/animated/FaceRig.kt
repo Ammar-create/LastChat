@@ -65,20 +65,34 @@ class MoodEngine(private val rng: Random) {
     /** Baseline arousal: lower late at night / early morning. Set from the clock. */
     var arousalBase = 0.5f
 
+    /** Engine18: events push where the mood is heading; the mood itself drifts over minutes. */
+    private var pushV = 0f
+    private var pushA = 0f
+
     fun nudge(dv: Float, da: Float) {
-        valence = (valence + dv).coerceIn(-1f, 1f)
-        arousal = (arousal + da).coerceIn(0f, 1f)
+        pushV = (pushV + dv).coerceIn(-1f, 1f)
+        pushA = (pushA + da).coerceIn(-0.6f, 0.6f)
     }
 
     fun update(dt: Float, quietSec: Float) {
-        // Valence returns to slightly positive in ~40 s; arousal to its baseline in
-        // ~60 s, and slowly below it the longer nothing happens (boredom).
+        // Pushes fade over ~4 min; valence / arousal follow their target with τ ≈ 90 / 120 s
+        // and never faster than MAX_RATE per second — mood moves over minutes, not frames.
         val boredom = ((quietSec - 30f) / 120f).coerceIn(0f, 0.3f)
-        valence += (0.1f - valence) * (1f - exp(-dt / 40f))
-        arousal += ((arousalBase - boredom) - arousal) * (1f - exp(-dt / 60f))
+        pushV *= exp(-dt / 240f); pushA *= exp(-dt / 240f)
+        val tv = (0.1f + pushV).coerceIn(-1f, 1f)
+        val ta = (arousalBase - boredom + pushA).coerceIn(0f, 1f)
+        fun step(x: Float, t: Float, tau: Float): Float {
+            val d = (t - x) * (1f - exp(-dt / tau))
+            val m = MAX_RATE * dt
+            return x + d.coerceIn(-m, m)
+        }
+        valence = step(valence, tv, 90f)
+        arousal = step(arousal, ta, 120f)
     }
 
     companion object {
+        /** Fastest mood drift (units per second): a full swing takes minutes. */
+        const val MAX_RATE = 0.006f
         /** Arousal baseline by local hour: alert in the day, sleepy after midnight. */
         fun baseForHour(h: Int): Float = when (h) {
             in 0..5 -> 0.28f

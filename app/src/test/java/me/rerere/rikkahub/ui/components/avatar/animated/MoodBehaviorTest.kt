@@ -91,10 +91,13 @@ class MoodBehaviorTest {
         repeat(60) { s.tick(DT, AvatarMotionHints(), at(15)) }
         val before = s.moodValence
         stage.emit(AvatarStage.EventKind.Error)
-        repeat(30) { s.tick(DT, AvatarMotionHints(), at(15)) }
-        assertTrue(s.moodValence < before - 0.2f)
-        // Engine17.1: the retired Worried face → calm concentrated reaction.
+        repeat(60) { s.tick(DT, AvatarMotionHints(), at(15)) }
+        // Engine17.1: the retired Worried face → calm concentrated reaction (right away).
         val f = s.frame
         assertTrue("${f.exprFrom}/${f.exprTo}/${f.exprTop}", "angered or concentrated" in listOf(f.exprFrom, f.exprTo, f.exprTop))
+        // Engine18: the mood itself only drifts — no jump on the event, clearly lower minutes later.
+        assertTrue("no instant mood jump", s.moodValence > before - 0.05f)
+        repeat((180 / DT).toInt()) { s.tick(DT, AvatarMotionHints(), at(15)) }
+        assertTrue("mood lower after minutes (${s.moodValence} vs $before)", s.moodValence < before - 0.15f)
     }
 }

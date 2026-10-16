@@ -63,11 +63,11 @@ internal object ContrastGuard {
 
     fun DrawScope.bodyOutline(p: Path, he: Float) {
         if (bodyK < 0.01f) return
-        drawPath(p, bodyLine.copy(alpha = bodyLine.alpha * bodyK), style = Stroke(width = he * 0.022f))
+        drawPath(p, bodyLine.copy(alpha = bodyLine.alpha * bodyK), style = Stroke(width = he * 0.036f))
     }
 
     fun DrawScope.eyeOutline(p: Path, he: Float) {
         if (eyeK < 0.01f) return
-        drawPath(p, eyeLine.copy(alpha = eyeLine.alpha * eyeK), style = Stroke(width = he * 0.018f))
+        drawPath(p, eyeLine.copy(alpha = eyeLine.alpha * eyeK), style = Stroke(width = he * 0.030f))
     }
 }

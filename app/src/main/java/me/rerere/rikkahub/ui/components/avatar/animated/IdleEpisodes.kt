@@ -30,16 +30,16 @@ internal enum class Episode(val tier: Tier, val cooldown: Float, val why: String
     ContentSlowBlink(Tier.Uncommon, 120f, "content: a slow cat-like blink with a soft smile"),
     NoticePill(Tier.Uncommon, 120f, "notices the activity pill"),
     // ---- rare: tired / long stillness
-    Stretch(Tier.Rare, 240f, "stiff after stillness: stretches up, eyes shut, exhale"),
-    Yawn(Tier.Rare, 300f, "tired: a slow yawn (stretch up, eyes squeezed), maybe a shake to wake up"),
-    SleepyDrift(Tier.Rare, 150f, "tired: head sinks … catches itself"),
-    RestEyes(Tier.Rare, 200f, "untouched for a long while: rests his eyes, maybe dozes off"),
-    ConcernGlance(Tier.Rare, 300f, "a passing concern: glance down to the side, a calm concentrated look, then settles"),
-    ComeToSenses(Tier.Rare, 260f, "zoned out: a little head shake and blink-blink, back to the present"),
+    Stretch(Tier.Rare, 1200f, "stiff after stillness: stretches up, eyes shut, exhale"),
+    Yawn(Tier.Rare, 1500f, "tired: a slow yawn (stretch up, eyes squeezed), maybe a shake to wake up"),
+    SleepyDrift(Tier.Rare, 900f, "tired: head sinks … catches itself"),
+    RestEyes(Tier.Rare, 600f, "untouched for a long while: rests his eyes, maybe dozes off"),
+    ConcernGlance(Tier.Rare, 1200f, "a passing concern: glance down to the side, a calm concentrated look, then settles"),
+    ComeToSenses(Tier.Rare, 1100f, "zoned out: a little head shake and blink-blink, back to the present"),
     // ---- very rare: easter-egg beats
-    Smug(Tier.VeryRare, 600f, "remembers the nice exchange earlier: a small smug nod"),
-    LookAround360(Tier.VeryRare, 700f, "really curious: a long survey left → far right → back, with a tilt"),
-    Sneeze(Tier.VeryRare, 900f, "a tiny sneeze: recoil + blink-blink"),
+    Smug(Tier.VeryRare, 1800f, "remembers the nice exchange earlier: a small smug nod"),
+    LookAround360(Tier.VeryRare, 2400f, "really curious: a long survey left → far right → back, with a tilt"),
+    Sneeze(Tier.VeryRare, 3000f, "a tiny sneeze: recoil + blink-blink"),
 }
 
 internal class EpisodePlanner(private val rng: Random) {
@@ -50,12 +50,28 @@ internal class EpisodePlanner(private val rng: Random) {
     private val recent = ArrayDeque<Episode>()
     val seen = LinkedHashMap<Episode, Int>()
 
+    /**
+     * Engine18: rare / very rare episodes keep a strict cooldown in idle time (15–50 idle
+     * minutes; RestEyes, a drowsiness response, 10). A fresh avatar starts part-way cooled,
+     * so the first one comes after 60–80 % of its cooldown, never right away.
+     */
     private fun cool(e: Episode): Float {
-        val f = ((clock - (lastAt[e] ?: -1e5f)) / e.cooldown).coerceIn(0f, 1f)
+        val strict = e.tier == Tier.Rare || e.tier == Tier.VeryRare
+        val last = lastAt[e] ?: if (strict && e != Episode.RestEyes) lastAt.getOrPut(e) { -e.cooldown * (0.2f + 0.2f * rng.nextFloat()) } else -1e5f
+        val el = clock - last
+        if (strict && el < e.cooldown) return 0f
+        val f = (el / e.cooldown).coerceIn(0f, 1f)
         return f * f
     }
 
+    /** May [e] play now (its cooldown has run)? For episodes started outside the planner. */
+    fun ready(e: Episode) = cool(e) > 0f
+
+    /** Audit: idle seconds between consecutive plays of each strict-cooldown episode. */
+    val plays = ArrayList<Pair<Episode, Float>>()
+
     fun note(e: Episode) {
+        plays += e to clock
         lastAt[e] = clock; lastAny = clock
         recent.addLast(e); while (recent.size > 5) recent.removeFirst()
         seen[e] = (seen[e] ?: 0) + 1

@@ -383,7 +383,10 @@ private fun DrawScope.drawMarkInner(
     if (sink == null) with(ContrastGuard) {
         if (bodyK >= 0.01f) Soft3DMark.withBodyTransform(this@drawMarkInner, clip, sizePx, he, morph, false) {
             // Outer silhouette only: the projected body can carry inner facet edges mid-spin.
-            val sil = radialSilhouette(projected); bodyOutline(radialPath(sil, sil, 1f, Path()), he)
+            // Engine18: the true outer boundary (path union), so concave tips mid-spin keep their
+            // shape (the radial silhouette kinked at the star's side tips); radial is the fallback.
+            val sil = Path().apply { op(projected, Path(), androidx.compose.ui.graphics.PathOperation.Union) }
+            bodyOutline(if (sil.isEmpty) radialSilhouette(projected).let { radialPath(it, it, 1f, Path()) } else sil, he)
         }
     }
 

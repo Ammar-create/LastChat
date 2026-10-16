@@ -49,7 +49,7 @@ class AvatarMotionVideoTest {
     private val cellDp = 120
     private val perStrip = 15
 
-    private class Script(val name: String, val seconds: Float, val preRoll: Float = 0f, val seed: Int = 7, val at: (AvatarMotionState, AvatarStage, Float, Long) -> AvatarMotionHints)
+    private class Script(val name: String, val seconds: Float, val preRoll: Float = 0f, val seed: Int = 7, val stride: Int = 1, val at: (AvatarMotionState, AvatarStage, Float, Long) -> AvatarMotionHints)
 
     private val scripts = listOf(
         Script("busy", 30f) { _, _, t, _ ->
@@ -154,6 +154,38 @@ class AvatarMotionVideoTest {
         Script("busy_think", 40f, preRoll = 5f, seed = 47) { _, _, t, _ ->
             if (t < 1f) AvatarMotionHints() else if (t < 26f) AvatarMotionHints(isGenerating = true) else if (t < 37f) AvatarMotionHints(isGenerating = true, hasStreamedTokens = true) else AvatarMotionHints()
         },
+        // ---------------- engine18 mind previews
+        // 12 idle minutes (a few outside happenings), rendered 10× compressed.
+        Script("idle12m", 720f, preRoll = 20f, seed = 51, stride = 10) { s, st, t, _ ->
+            if (t >= 90f && fired.add(90f)) st.emit(AvatarStage.EventKind.MessageArrived, at = Offset(700f, 1900f))
+            if (t >= 260f && fired.add(260f)) st.emit(AvatarStage.EventKind.Copied, at = Offset(200f, 1200f))
+            if (t >= 430f && fired.add(430f)) s.poke()
+            if (t >= 560f && fired.add(560f)) st.emit(AvatarStage.EventKind.MenuOpened, at = Offset(950f, 200f))
+            AvatarMotionHints()
+        },
+        // A single poke, a burst until fed up (forgives, spins only once no longer cross), later pokes.
+        Script("mind_pokes", 34f, preRoll = 10f, seed = 53) { s, _, t, _ ->
+            for (p in listOf(1f, 6f, 6.6f, 7.2f, 7.8f, 8.4f, 9.0f, 9.6f, 10.2f, 24f, 29f)) if (t >= p && fired.add(p)) s.poke()
+            AvatarMotionHints()
+        },
+        // Outside happenings: noticed after a perception delay, appraised, sometimes glanced back at.
+        Script("mind_events", 60f, preRoll = 10f, seed = 55) { _, st, t, _ ->
+            if (t >= 2f && fired.add(2f)) st.emit(AvatarStage.EventKind.MessageSent, at = Offset(800f, 2100f))
+            if (t >= 12f && fired.add(12f)) st.emit(AvatarStage.EventKind.Error, at = Offset(540f, 1500f))
+            if (t >= 24f && fired.add(24f)) st.emit(AvatarStage.EventKind.Copied, at = Offset(150f, 1300f))
+            if (t >= 32f && fired.add(32f)) st.emit(AvatarStage.EventKind.MenuOpened, at = Offset(980f, 180f))
+            AvatarMotionHints()
+        },
+        // Typing, a reply that thinks and streams, the end of the reply (satisfied), then quiet.
+        Script("mind_stream", 50f, preRoll = 10f, seed = 57) { _, _, t, _ ->
+            when {
+                t < 2f -> AvatarMotionHints()
+                t < 6f -> AvatarMotionHints(inputFocused = true, isTyping = true)
+                t < 14f -> AvatarMotionHints(isGenerating = true)
+                t < 34f -> AvatarMotionHints(isGenerating = true, hasStreamedTokens = true)
+                else -> AvatarMotionHints()
+            }
+        },
         Script("pokes", 16f, preRoll = 10f, seed = 49) { s, _, t, _ ->
             for (p in listOf(1f, 4f, 5f, 5.6f, 6.2f, 6.8f, 7.4f)) if (t >= p && fired.add(p)) s.poke()
             AvatarMotionHints()
@@ -188,7 +220,7 @@ class AvatarMotionVideoTest {
         while (t < sc.seconds) {
             val hints = if (t < 0f) AvatarMotionHints() else sc.at(s, stage, t, ms)
             s.tick(dt, hints, ms)
-            if (t >= nextFrame - 1e-4f) { frames += s.frame; nextFrame += 1f / fps }
+            if (t >= nextFrame - 1e-4f) { frames += s.frame; nextFrame += sc.stride.toFloat() / fps }
             t += dt; ms += (dt * 1000).toLong()
         }
         lastLog = s.behaviorLog.map { l -> val (a, b) = l.split(',', limit = 2); "%.2f,%s".format(a.toFloat() - sc.preRoll, b) }

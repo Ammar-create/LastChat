@@ -814,3 +814,58 @@ minimum glance offset and peak return eye speed.
 - **Morph resolution.** Root causes: the morph body was a max-per-angular-bin radial silhouette (stair-stepped, wobbly edges), and morph eyes were resampled to 64 points. Now `radialSilhouette` interpolates the exact contour crossing at each bin-centre angle (falling back to per-bin max for tiny contours), `RADIAL_STEP` 1.5→3 (the old step was already capped by the 400-sample limit on big bodies), and morph eyes use 96 points like the static ones. Bench (median/p95 ms, before → after): shape morph 2.35/3.26 → 2.29/2.77, eye-style morph 4.56/5.50 → 3.90/4.41, change frame 9.72/10.54 → 8.27/9.25, steady 3.68 → 3.84 (noise). Strips: `engine17.2/morph_{before,after}/morph_res.png`, zoom `morph_zoom_before_after.png`.
 - **Extreme-contrast safety outline (`ContrastGuard.kt`).** Body vs backdrop and eyes vs body. Strength = (1 − smoothstep(1.12, 1.30, WCAG contrast ratio)) × (1 − smoothstep(0.06, 0.13, RGB distance)), so only near-identical pairs get it; every normal pairing scores exactly 0 (`normalColoursNeverOutlined`). It's a flat, thin stroke (body 2.2 % of the head radius, eyes 1.8 %) in the colour pushed toward white (dark pairs) or black (light pairs). It's computed from the animated colours, so it fades with colour glides. It strokes the outer silhouette of the projected body and the seated eye paths in static, live, morph and spin draws. The Generical eye outline is unchanged (eye colour) otherwise. Backdrop: `ContrastGuard.LocalAvatarBackdrop`, default `colorScheme.background`; the editor provides its container surface. Renders: `engine17.2/contrast/`.
 - **Editor container surfaces.** The drawer search bar is `LastChatDrawerSearch` (ui-core), a `TextField` with `TextFieldDefaults.colors()` whose container is M3's default `colorScheme.surfaceContainerHighest`. The editor's `softSurface` now returns exactly that token in both themes (light #DEE4E0, dark #303634 on the default preset). Render: `engine17.2/contrast/surfaces_drawer_vs_editor.png`.
+
+## Engine18 — the avatar mind
+
+Engine18 puts a "mind" between everything that wants the avatar to move and the motion itself (`AvatarMind.kt`). Systems no longer change the face or body directly. They propose **intentions**, and a single **director** decides what lands, when, and for how long.
+
+```
+event → Perception (noticed after a mood-varying delay)
+      → Appraisal (what it means here)
+      → Intention {lane, priority, cause, expiry}
+      → MindDirector (owner, safe point, hold, budget, cross-lane rules)
+      → motion lanes: Body · Gaze · Face · Lids · Spin
+```
+
+### Pass 1 — director, lanes, audit
+- **One owner for the face.** A landed face change (expression morph or accent) owns the face. It starts its **hold** once its morph has *settled*. The hold is `MindRules.hold`: 0.7–2.6 s, longer when calm or low-energy, shorter when lively, scaled by expressiveness and patience. Weaker proposals wait in the **priority queue** and **expire** (reaction 3 s, accent 1.2 s, forced accent 2.5 s, plan 2.5 s). A stronger one (poke P3, error P4) only skips the hold. It still waits for the **safe point**: no morph running, ≥ 0.42 s since the last eye change, ≥ 0.16 s after a big gaze shift ("gaze leads, face follows"). Nothing cuts a morph mid-way any more; the engine17 retreat/third-layer paths are never reached in normal play.
+- **Reactions** keep their countdown paused until they are actually on screen. A reaction that never reaches a safe point expires and is logged.
+- **Lids lane.** No blink while an expression morphs. Requests are deferred and land right after the morph settles; spontaneous blinks wait. A morph waits for a blink already under way ("blink just before"). The blink-masked swap (Style.Blink) is the only morph under closed lids. Slow blinks and the closed-eye head shake also start only on a settled face.
+- **Budget.** Per rolling minute, spontaneous changes (≤ P1) are limited to `MindRules.budget`: 2–9, idle ≈ 4, busy ≈ 6, scaled by expressiveness and arousal. Everything below P3 is under a hard cap of 14. Pokes are exempt, and returning to rest is not new activity. Aliveness beats (other than blinks), idle episodes, glance-backs and non-forced accents all ask first.
+- **Spins.** Never self-started while idle (blocked and counted). **Never while angry, sad, pouty, annoyed or bored**, including 2 s after such a face and while mood valence < −0.25. A negative face also can't start *during* a spin. The "fine, you win" spin after a long poke burst now comes *after* forgiving, only once the face is no longer cross; if that doesn't happen within 6 s, it never comes.
+- **Planner.** Beat plans (notice → pause → react → settle; the old `tell` trains) carry their cause. A new plan replaces a running one only at a safe point: next beat ≥ 0.35 s away and no morph. Otherwise it is queued.
+- **Rare behaviours.** Stretch 20 min, Yawn 25, SleepyDrift 15, ConcernGlance 20, ComeToSenses 18, Smug 30, LookAround360 40, Sneeze 50 idle minutes, strict. A fresh avatar starts part-cooled, so the first one comes after 60–80 % of its cooldown. RestEyes, a drowsiness response, keeps 10 min.
+- **Causes.** Every handler runs under `because(cause, priority)`. Every face, accent, spin and beat is logged with its cause.
+
+### Pass 2 — perception, appraisal, mood
+- **Perception.** The repertoire's latency is scaled by `MindRules.perceptionScale`: ×0.6–2.2 (alert and curious = quicker; tired or drowsy = slower).
+- **Appraisal.**
+  - Pokes: first = Startled (keeps the surprised bounce); a burst reaching the patience threshold (2–5) = Annoyed; three more = FedUp. Poked again and again across minutes without a burst = Amused, then Habituated (calm blink + look, no bounce).
+  - Reply end: Satisfied, or Relieved after a long one (adds a sigh).
+  - Events: Interested / Concerned / Curious.
+- **Mood.** `MoodEngine` events now push the mood's *target*. The push fades over about 4 min, valence follows with τ 90 s and arousal with τ 120 s, and drift is capped at 0.006/s. The mood moves over minutes; the face reacts at once.
+
+### Pass 3 — memory, knobs
+- **ShortTermMemory.**
+  - No repeated looks: a glance at a spot looked at in the last 25 s goes the other way instead.
+  - Poke habituation: familiarity +1 per poke, τ 150 s.
+  - Places where things happened: 8–45 s later it may glance back once, with chance from curiosity, inside the budget.
+- **`MindKnobs`** (expressiveness, curiosity, patience, playfulness) is the API for LC Smart Core. Set it with `AvatarMotionState.mindKnobs`, or use `MindKnobs.resolve(base, map)`. When unset, defaults come from `Personality`.
+
+### Also in engine18
+- The contrast safety outline is thicker: body 3.6 % and eyes 3.0 % of the head radius (was 2.2 / 1.8). The body outline uses the true outer boundary (path union) instead of the radial silhouette, so the star's side tips no longer kink mid-spin.
+- Angry and Sad are a touch softer. Grok: lid 0.5 → 0.51, angry tilt 11° → 9.5°, sad −19° → −17°. Generical: both frames moved 10 % toward Neutral.
+
+### Audit
+- `MindAuditTest` runs 12-minute mixed sessions (idle, a 4-poke burst, a 7-poke burst, single pokes, typing, a thinking + streaming reply, idle) over 4 seeds. It fails on:
+  - morph interrupted before settling;
+  - eye changes < 0.4 s apart;
+  - blinks starting mid-morph;
+  - uncaused changes;
+  - budget violations;
+  - idle spins;
+  - spins while negative;
+  - more than 8 changes/min in quiet idle.
+
+  It also checks the rare cooldowns over 45 idle minutes, perception, appraisal, memory and knobs, and the minutes-scale mood drift.
+- `MindFrameAuditTest` measures the same from rendered frames only, so it also runs unchanged on engine17.2 for before/after (`/workspace/lastchat-renders/engine18/{before,after}/frame_audit.csv`).
