@@ -84,7 +84,7 @@ class ExpressionContinuityTest {
             }
             if (legacy) lg.update(dt) else nw.update(dt, 0f)
             val s = if (legacy) shape(lg.from, lg.to, lg.eased, null, 0f)
-                else shape(nw.from, nw.pairTo, nw.eased, nw.top, nw.topEased)
+                else GenericalFace.outlineWeighted(0, nw.weights, 0f)!!
             val goal = finalShape.getOrPut(intent) { shape(intent, intent, 1f, null, 0f) }
             val off = dist(s, goal)
             val step = prev?.let { dist(it, s) } ?: 0f
@@ -93,7 +93,7 @@ class ExpressionContinuityTest {
                 if (step < 0.05f && off > 1.5f) stalls++
                 if (off > 0.5f) arrive = time
             }
-            csv.append("${if (legacy) "legacy" else "engine17"},%.3f,%.3f,%.3f,%s\n".format(time, step, off, intent))
+            csv.append("${if (legacy) "legacy" else "engine19"},%.3f,%.3f,%.3f,%s\n".format(time, step, off, intent))
             prev = s; prevStep = step
         }
         return Stats(maxStep, stalls, maxJerk, arrive)
@@ -104,7 +104,7 @@ class ExpressionContinuityTest {
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val csv = StringBuilder("director,t,step,offTarget,intent\n")
         val old = run(true, csv); val new = run(false, csv)
-        val report = "legacy   $old\nengine17 $new\n"
+        val report = "legacy   $old\nengine19 $new\n"
         println(report)
         System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() }?.let {
             File(it).mkdirs(); File(it, "expr_continuity.csv").writeText(csv.toString()); File(it, "expr_continuity.txt").writeText(report)
@@ -119,12 +119,56 @@ class ExpressionContinuityTest {
     fun interruptBendsImmediately() {
         val d = ExpressionDirector(Random(2))
         d.hint = ExpressionDirector.Style.Soft; d.want("Happy")
-        repeat(10) { d.update(1f / 60f, 0f) }
+        repeat(10) { d.update(1f / 60f) }
+        val vBefore = d.weightOf("Happy")
         d.hint = ExpressionDirector.Style.Soft; d.want("Sad")
         assertEquals("Sad", d.to)
-        d.update(1f / 60f, 0f)
-        assertTrue("new layer starts growing on the next frame", d.topEased > 0f)
-        repeat(120) { d.update(1f / 60f, 0f) }
+        d.update(1f / 60f)
+        assertTrue("new face starts growing on the next frame", d.weightOf("Sad") > 0f)
+        // Velocity carries over: Happy keeps rising a moment (no stop), then turns smoothly.
+        assertTrue("no velocity reset on retarget", d.weightOf("Happy") > vBefore)
+        repeat(120) { d.update(1f / 60f) }
         assertTrue(!d.morphing && d.from == "Sad")
+    }
+
+    /** Engine19: a chain of faces never passes through Neutral on the way. */
+    @Test
+    fun chainsNeverDetourThroughNeutral() {
+        val d = ExpressionDirector(Random(3))
+        d.jump("Bored")
+        val chain = listOf("Happy" to 0.5f, "Surprised" to 0.15f, "Sad" to 0.6f, "confused" to 0.3f, "Happy" to 0.8f)
+        var maxNeutral = 0f
+        for ((x, hold) in chain) {
+            d.hint = ExpressionDirector.Style.Soft; d.want(x)
+            var t = 0f
+            while (t < hold) { d.update(1f / 60f); t += 1f / 60f; maxNeutral = maxOf(maxNeutral, d.weightOf("Neutral")) }
+        }
+        assertTrue("Neutral weight rose to $maxNeutral", maxNeutral < 1e-4f)
+        val ws = d.weights
+        assertEquals(1f, ws.sumOf { it.second.toDouble() }.toFloat(), 1e-4f)
+    }
+
+    /** Engine19: the face spring is frame-rate invariant (exact closed-form step). */
+    @Test
+    fun frameRateInvariance() {
+        fun run(hz: Int): List<Float> {
+            val d = ExpressionDirector(Random(4))
+            val dt = 1f / hz
+            val out = ArrayList<Float>()
+            var t = 0f; var k = 0
+            val train = listOf(0f to "Happy", 0.2f to "Sad", 0.5f to "Surprised", 0.9f to "Neutral")
+            var sample = 0f
+            while (t < 1.6f) {
+                while (k < train.size && train[k].first <= t + 1e-5f) { d.hint = ExpressionDirector.Style.Soft; d.want(train[k].second); k++ }
+                d.update(dt); t += dt
+                if (t + 1e-5f >= sample) { out += d.weightOf("Sad"); sample += 0.1f }
+            }
+            return out
+        }
+        val a = run(30); val b = run(60); val c = run(120)
+        for (i in 0 until minOf(a.size, b.size, c.size)) {
+            assertEquals("30 vs 120 Hz at sample $i", c[i], a[i], 0.03f)
+            assertEquals("60 vs 120 Hz at sample $i", c[i], b[i], 0.015f)
+        }
     }
 }

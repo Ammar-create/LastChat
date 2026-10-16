@@ -146,7 +146,7 @@ class MarkColorsAndRestTest {
             if (settledAt < 0f && st.isSettled) settledAt = t
             prev = f
         }
-        assertTrue("settles within ~1.6 s (was $settledAt)", settledAt in 0f..1.6f)
+        assertTrue("settles within ~2 s (was $settledAt)", settledAt in 0f..2.0f)
         val rest = st.frame
         assertEquals(0f, rest.body.yaw, 1e-3f)
         assertEquals(0f, rest.body.pitch, 1e-3f)

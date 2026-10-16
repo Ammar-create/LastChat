@@ -186,6 +186,23 @@ class AvatarMotionVideoTest {
                 else -> AvatarMotionHints()
             }
         },
+        // ---------------- engine19: look around, then poke mid-look (no recenter first).
+        Script("lookpoke", 20f, preRoll = 10f, seed = 63) { s, _, t, _ ->
+            if (t >= 1f && fired.add(1f)) s.debugStimulus("ping", 0.85f, 0.25f, 0.8f)
+            if (t >= 3.2f && fired.add(3.2f)) s.poke()
+            if (t >= 8f && fired.add(8f)) s.debugStimulus("ping", -0.9f, 0.1f, 0.8f)
+            if (t >= 9.6f && fired.add(9.6f)) s.poke()
+            if (t >= 14f && fired.add(14f)) s.debugEpisode(Episode.CuriousLR)
+            if (t >= 15.4f && fired.add(15.4f)) s.poke()
+            AvatarMotionHints()
+        },
+        // Faces requested faster than they finish: each must morph from wherever it is.
+        Script("chain", 12f, preRoll = 6f, seed = 65) { s, _, t, _ ->
+            val seq = listOf("Happy", "Surprised", "Sad", "confused", "Happy", "angered or concentrated", "Bored", "pouty", "Happy")
+            val i = (t / 0.9f).toInt()
+            if (i < seq.size && fired.add(100f + i)) s.debugReact(seq[i], 1.2f)
+            AvatarMotionHints()
+        },
         Script("pokes", 16f, preRoll = 10f, seed = 49) { s, _, t, _ ->
             for (p in listOf(1f, 4f, 5f, 5.6f, 6.2f, 6.8f, 7.4f)) if (t >= p && fired.add(p)) s.poke()
             AvatarMotionHints()

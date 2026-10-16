@@ -172,8 +172,10 @@ fun AnimatedMarkAvatar(
             .pointerInput(Unit) {
                 // Observe pokes without consuming, so parent click handlers still work.
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    motionState.poke()
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Engine19: where the finger landed (−1…1, y down) — attention goes there.
+                    val w = size.width.coerceAtLeast(1); val h = size.height.coerceAtLeast(1)
+                    motionState.poke(down.position.x / w * 2f - 1f, down.position.y / h * 2f - 1f)
                 }
             }
     }
@@ -397,15 +399,19 @@ private fun DrawScope.drawMarkInner(
         val lidG = lid.coerceAtLeast(GROK_SLIT)
         // Engine16.1: eyes that are already closed (sleepy arcs, ^ ^ happy arcs) never blink —
         // the lid is ignored in proportion to how far the face is into a closed shape.
-        val closedPair = (if (WhSphereEyes.grokNameFor(f.exprFrom) in GROK_CLOSED) 1f - f.exprT else 0f) +
-            (if (WhSphereEyes.grokNameFor(f.exprTo) in GROK_CLOSED) f.exprT else 0f)
-        val topW = if (f.exprTop != null) f.exprTopT.coerceIn(0f, 1f) else 0f
-        val closedW = closedPair * (1f - topW) +
-            (if (f.exprTop != null && WhSphereEyes.grokNameFor(f.exprTop) in GROK_CLOSED) topW else 0f)
+        val ws = f.exprWeights
+        val closedW = if (ws != null) ws.sumOf { (n, w) -> if (WhSphereEyes.grokNameFor(n) in GROK_CLOSED) w.toDouble() else 0.0 }.toFloat() else {
+            val closedPair = (if (WhSphereEyes.grokNameFor(f.exprFrom) in GROK_CLOSED) 1f - f.exprT else 0f) +
+                (if (WhSphereEyes.grokNameFor(f.exprTo) in GROK_CLOSED) f.exprT else 0f)
+            val topW = if (f.exprTop != null) f.exprTopT.coerceIn(0f, 1f) else 0f
+            closedPair * (1f - topW) +
+                (if (f.exprTop != null && WhSphereEyes.grokNameFor(f.exprTop) in GROK_CLOSED) topW else 0f)
+        }
         val lidOpenG = lidG + (1f - lidG) * closedW.coerceIn(0f, 1f)
         val lidForPair = if (bodyKind == "sphere") lidOpenG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidOpenG
         val symFace = f.face.grokSymmetric()
-        val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair, f.exprTop, f.exprTopT)
+        val pair = (if (ws != null) WhSphereEyes.morphWeighted(ws, lidForPair)
+            else WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair, f.exprTop, f.exprTopT))
             .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, symFace.eye(i)) }
         val safeBody = EyeSafeRegion.Body(projected)
         // The turn applied to the eyes is scaled down only as far as needed to keep
@@ -525,8 +531,9 @@ private fun DrawScope.drawMarkInner(
 
     // Generical: morph → seat on the surface → eye-colour fill fading into the surface tint.
     val closure = (1f - lid).coerceIn(0f, 1f)
-    val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT) ?: return
-    val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT) ?: return
+    val wsG = f.exprWeights
+    val lo = (if (wsG != null) GenericalFace.outlineWeighted(0, wsG, closure) else GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return
+    val ro = (if (wsG != null) GenericalFace.outlineWeighted(1, wsG, closure) else GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return
     FaceRig.shapeOutline(lo.x, lo.y, 0, f.face.left)
     FaceRig.shapeOutline(ro.x, ro.y, 1, f.face.right)
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)

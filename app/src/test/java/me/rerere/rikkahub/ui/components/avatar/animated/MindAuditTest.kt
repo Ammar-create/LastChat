@@ -23,10 +23,9 @@ class MindAuditTest {
             val m = r.state.mind
             val glanceBacks = m.log.count { it.name == "glance back" }
             sb.append("$seed,${r.faceChanges},${r.interrupted},${r.overlaps},${"%.2f".format(r.minGap)},${r.blinkMidMorph},${r.idleSpins},${r.negSpins},${r.maxPerMinQuiet},${r.uncaused},${m.budgetViolations},${m.interruptsPrevented},${m.budgetDeferred},${m.expired},${m.spinsBlockedIdle},${m.spinsBlockedNegative},${m.blinksDeferred},${r.state.debugGaze.auditRepeatAvoided},$glanceBacks,${r.rare}\n")
-            assertEquals("morphs interrupted before settling (seed $seed)", 0, r.interrupted)
-            assertEquals("eye changes closer than 0.4 s (seed $seed)", 0, r.overlaps)
-            assertEquals("blinks starting mid-morph (seed $seed)", 0, r.blinkMidMorph)
-            assertEquals("uncaused changes (seed $seed)", 0, r.uncaused)
+            // Engine19: retargets mid-morph and blinks over a morph are the point now (no
+            // gates); continuity is asserted on the channel trace (ChannelMetricsTest).
+            assertEquals("uncaused changes (seed $seed): " + r.state.behaviorLog.filter { it.contains("cause=unspecified") }.take(3), 0, r.uncaused)
             assertEquals("budget violations (seed $seed)", 0, m.budgetViolations)
             assertEquals("idle spins (seed $seed)", 0, r.idleSpins + r.state.auditIdleSpins)
             assertEquals("spins while negative (seed $seed)", 0, r.negSpins + r.state.auditSpinsNegative)

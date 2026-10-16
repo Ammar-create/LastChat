@@ -72,7 +72,7 @@ class MindFrameAuditTest {
                 // Blinks (lid dips) and blinks that start mid-morph.
                 if (lidOpen && f.lid < 0.35f && prevLid >= 0.35f) {
                     blinks++; lidOpen = false
-                    if (f.exprT in 0.1f..0.9f && f.exprFrom != f.exprTo) { blinkMid++; println("BLINKMID seed=$seed t=$t ${f.exprFrom}->${f.exprTo} T=${f.exprT} lid=${f.lid}") }
+                    if (f.exprT in 0.1f..0.9f && f.exprFrom != f.exprTo) blinkMid++
                 }
                 if (f.lid > 0.85f) lidOpen = true
                 prevLid = f.lid

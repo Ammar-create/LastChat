@@ -218,6 +218,55 @@ object GenericalFace {
     }
 
     /**
+     * Engine19: outline for a weight vector over faces (Σ w = 1): every face is aligned to
+     * the Neutral outline's indexing (best cyclic shift) and the points are averaged, so the
+     * shape is continuous in every weight and any mix of faces morphs from where it is.
+     */
+    fun outlineWeighted(side: Int, weights: List<Pair<String, Float>>, closure: Float): Outline? {
+        val refF = face("Neutral") ?: return null
+        val ref = if (side == 0) refF.left else refF.right
+        val xs = FloatArray(N); val ys = FloatArray(N)
+        var sum = 0f
+        for ((name, w) in weights) {
+            if (w <= 0f) continue
+            val f = face(name) ?: continue
+            val o = if (side == 0) f.left else f.right
+            val sh = if (name == "Neutral") 0 else shiftFor("Neutral", name, side, ref, o)
+            for (i in 0 until N) {
+                val j = ((i + sh) % N + N) % N
+                xs[i] += o.x[j] * w; ys[i] += o.y[j] * w
+            }
+            sum += w
+        }
+        if (sum <= 1e-6f) return outline(side, "Neutral", "Neutral", 1f, closure)
+        for (i in 0 until N) { xs[i] /= sum; ys[i] /= sum }
+        applyClosure(xs, ys, "Neutral", ref, side, closure)
+        return Outline(xs, ys)
+    }
+
+    private fun applyClosure(xs: FloatArray, ys: FloatArray, key: String, ref: Outline, side: Int, closure: Float) {
+        val c = closure.coerceIn(0f, 1f)
+        if (c <= 0.001f) return
+        val closedFace = face("Eyes closed") ?: return
+        val closed = if (side == 0) closedFace.left else closedFace.right
+        val ccx = closed.cx; val ccy = closed.cy
+        val mx = xs.average().toFloat()
+        val ymin = ys.min(); val ymax = ys.max()
+        val my = ymin + (ymax - ymin) * 0.58f
+        val w = (xs.max() - xs.min()).coerceAtLeast(30f)
+        val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
+        val sx = min(1f, w / cw)
+        val sa = shiftFor(key, "Eyes closed", side, ref, closed)
+        for (i in 0 until N) {
+            val j = ((i + sa) % N + N) % N
+            val tx = mx + (closed.x[j] - ccx) * sx
+            val ty = my + (closed.y[j] - ccy)
+            xs[i] += (tx - xs[i]) * c
+            ys[i] += (ty - ys[i]) * c
+        }
+    }
+
+    /**
      * Morphed eye outline in the 500 reference viewBox (y down).
      * [closure] 0 = as designed, 1 = fully closed bar (blink).
      */

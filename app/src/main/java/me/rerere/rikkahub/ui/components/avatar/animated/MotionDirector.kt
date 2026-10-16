@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.components.avatar.animated
 
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -191,7 +192,7 @@ class MotionDirector(
     var exprMorphing = false
 
     /** A nod (gesture or busy beat) is playing; expression changes wait for it. */
-    val nodding: Boolean get() = layers.any { it.kind == "nod" }
+    val nodding: Boolean get() = adds.any { it.name == "nod" || it.name == "nodB" }
     private var lifeSec = 0f
     private var pendingSince = -1f
     private val recentKinds = ArrayDeque<String>()
@@ -231,6 +232,9 @@ class MotionDirector(
 
     internal fun debugLayers(): String = layers.joinToString("|") { "%s@%.2f/%.2f w%.2f".format(it.source.name, it.t, it.tEnd, it.weight) }
 
+    /** Base beat + additive gestures (trace). */
+    val traceName: String get() = activeName + adds.joinToString("") { "+" + it.name } + (if (pops.isNotEmpty()) "+pop" else "")
+
     /** Name of the dominant layer (debug / tests). */
     val activeName: String get() = layers.lastOrNull()?.source?.name ?: "-"
 
@@ -242,40 +246,73 @@ class MotionDirector(
     private var filterReady = false
     private var stretchSm = 0f
 
+    /** Engine19: something just grabbed attention — no new idle beat starts for [sec]. */
+    fun holdBeats(sec: Float) { holdOff = maxOf(holdOff, sec) }
+    private var holdOff = 0f
+
+    /**
+     * Engine19 startle freeze: the base beat's clock eases almost to a stop for [sec] (a
+     * critically damped time-scale, so the motion decelerates rather than halts) and then
+     * picks up again. Additive gestures (the startle pop, a nod) are not slowed.
+     */
+    fun freezeBase(sec: Float) {
+        // Hold where the body actually is (the spring's position), not where it was heading.
+        if (freezeLeft <= 0f && filterReady) frozenPose = BodyPose(
+            pitch = MarkClipEngine.wrap180(fx[0]), yaw = MarkClipEngine.wrap180(fx[1]), roll = MarkClipEngine.wrap180(fx[2]),
+            posY = fx[3], squashX = fx[4], squashY = fx[5], scale = fx[6], lidOpen = fx[7],
+        )
+        freezeLeft = maxOf(freezeLeft, sec); holdBeats(sec + 0.3f)
+    }
+    private var frozenPose: BodyPose? = null
+    /** Poke freeze: the base clock slows to this rate… */
+    private val FREEZE_GOAL = 0.4f
+    /** …and the body holds this much of where it actually was (never a full stop-start). */
+    private val FREEZE_HOLD = 0.7f
+    private var freezeLeft = 0f
+    private var tScale = 1f
+    private var tScaleV = 0f
+
     fun setDesired(l: MarkLifecycle) {
         desired = l
     }
 
-    /** Start a small gesture now (crossfaded). Returns false when not appropriate. */
-    /** [holdSec] is only used by [Gesture.Attend] (how long to keep still and look). */
+    /**
+     * Engine19: gestures are ADDITIVE, zero-mean offsets on top of the steered base pose —
+     * they never replace it (so a nod during a turn nods from the turned pose, and nothing
+     * writes a rest pose). They may start in any lifecycle; only the idle-only ones (spin,
+     * hop, droop) need a calm phase, and a gesture of the same kind never stacks.
+     * [holdSec] is only used by [Gesture.Attend] (how long to keep still and look).
+     */
     fun gesture(g: Gesture, holdSec: Float = 0f): Boolean {
         val calm = lifecycle == MarkLifecycle.Idle || lifecycle == MarkLifecycle.Listening ||
             lifecycle == MarkLifecycle.Sleeping
-        // A startle (recoil) lands even while the lifecycle is changing (typing → listening).
-        if (!calm || (desired != lifecycle && g != Gesture.Recoil)) return false
-        if (g == Gesture.Nod && exprMorphing) return false
-        val top = layers.lastOrNull()
-        // Recoil may interrupt anything; a tilt may ride on top of an attentive hold (🤨).
-        val overAttend = top?.kind == "attend" && g == Gesture.Tilt
-        if (top != null && top.gesture && g != Gesture.Recoil && !overAttend) return false
-        val layer = when (g) {
+        if (!calm && (g == Gesture.Spin || g == Gesture.Hop || g == Gesture.Droop)) return false
+        val name = g.name.lowercase()
+        if (g != Gesture.Recoil && adds.any { it.name == name }) return false
+        when (g) {
             Gesture.Spin -> {
                 val dir = if (rng.nextBoolean()) 1f else -1f
                 val d = range(1.45f, 1.8f)
-                Layer(ProceduralSource("spin", d) { u ->
+                adds += Add(name, d) { u, _ ->
                     val e = easeInOutCubic(u)
-                    BodyPose(
-                        pitch = sin(PI.toFloat() * u) * 3f,
-                        yaw = dir * 360f * e,
-                        roll = -dir * sin(PI.toFloat() * u) * 4f,
-                    )
-                }, 0f, d, 1f, 0.3f, "spin", gesture = true)
+                    BodyPose(pitch = sin(PI.toFloat() * u) * 3f, yaw = dir * 360f * e, roll = -dir * sin(PI.toFloat() * u) * 4f)
+                }
             }
             Gesture.Hop -> {
-                val clip = clipLookup("Done_B")
-                if (clip != null) {
-                    Layer(ClipSource(clip, 0.42f, rng.nextBoolean(), 0.95f, squashAmp = 1f), 0f, 0.95f, range(0.9f, 1.05f), 0.18f, "hop", gesture = true)
-                } else null
+                val clip = clipLookup("Done_B") ?: return false
+                val src = ClipSource(clip, 0.42f, rng.nextBoolean(), 0.95f, squashAmp = 1f)
+                val p0 = src.pose(0f)
+                val sp = range(0.9f, 1.05f)
+                val d = 0.95f / sp
+                adds += Add(name, d) { u, _ ->
+                    val q = src.pose(u * 0.95f)
+                    val w = window(u, 0.12f, 0.2f)
+                    BodyPose(
+                        pitch = MarkClipEngine.wrap180(q.pitch - p0.pitch) * w, yaw = MarkClipEngine.wrap180(q.yaw - p0.yaw) * w,
+                        roll = MarkClipEngine.wrap180(q.roll - p0.roll) * w, posY = (q.posY - p0.posY) * w,
+                        squashX = 1f + (q.squashX - p0.squashX) * w, squashY = 1f + (q.squashY - p0.squashY) * w,
+                    )
+                }
             }
             Gesture.Nod -> {
                 // Natural nod: eyes dip first, head follows in one eased arc, soft settle.
@@ -283,44 +320,48 @@ class MotionDirector(
                 val deep = range(6f, 9f)
                 gazeCue = GazeCue(0f, 0.28f, d * 0.55f, "nod")
                 val springy = playful
-                Layer(ProceduralSource("nod", d) { u ->
+                adds += Add(name, d) { u, _ ->
                     if (springy) springNodPose(u, deep)
                     else BodyPose(pitch = deep * nodCurve(u, 0.08f), posY = 0.012f * nodCurve(u, 0f))
-                }, 0f, d, 1f, 0.15f, "nod", gesture = true)
+                }
             }
             Gesture.Recoil -> {
-                // Startle: a snappy pop up and back (stretch), a squashy landing, then a
-                // springy settle with overshoot (no anticipation: it's a surprise).
+                // Startle: a snappy pop up and back (stretch), a squashy landing, then a springy
+                // settle with overshoot. A poke during a pop adds a smaller pop on top (never
+                // restarts the curve), so rapid pokes stay continuous.
                 val d = range(0.8f, 0.95f)
-                // The pop itself is added AFTER the smoothing filter (see update), so its
-                // ~70 ms rise is not rounded off; this layer just holds a calm base.
-                startleU = 0f; startleDur = d
-                Layer(ProceduralSource("recoil", d) { _ -> BodyPose() }, 0f, d, 1f, 0.05f, "recoil", gesture = true)
+                val live = pops.sumOf { abs(startlePop(it[0])).toDouble() }.toFloat().coerceIn(0f, 1f)
+                pops += floatArrayOf(0f, d, 1f - 0.6f * live)
             }
             Gesture.TurnAway -> {
-                val side = if (rng.nextBoolean()) 1f else -1f
-                val d = range(1.2f, 1.8f)
-                Layer(HoldSource("turnAway", BodyPose(yaw = side * range(16f, 22f), roll = -side * 3f, pitch = 2f), d),
-                    0f, d, 1f, 0.2f, "turnAway", gesture = true)
+                // Turn further away from where it already faces (never back through centre).
+                val cur = MarkClipEngine.wrap180(tgt[1])
+                val side = if (abs(cur) > 3f) kotlin.math.sign(cur) else if (rng.nextBoolean()) 1f else -1f
+                val d = range(1.2f, 1.8f) + 0.5f
+                val yaw = side * range(16f, 22f)
+                adds += Add(name, d) { u, t -> envPose(t, d, 0.32f, 0.5f, BodyPose(yaw = yaw, roll = -side * 3f, pitch = 2f)) }
             }
             Gesture.Tilt -> {
-                val side = if (rng.nextBoolean()) 1f else -1f
-                val d = range(1.2f, 1.6f)
-                Layer(HoldSource("tilt", BodyPose(roll = side * range(6f, 9f), yaw = side * range(2f, 5f), pitch = 1f), d),
-                    0f, d, 1f, 0.2f, "tiltG", gesture = true)
+                // Tilt toward the side it already faces (a tilt never swings it back to centre).
+                val cur = MarkClipEngine.wrap180(tgt[1])
+                val side = if (abs(cur) > 3f) kotlin.math.sign(cur) else if (rng.nextBoolean()) 1f else -1f
+                val d = range(1.2f, 1.6f) + 0.45f
+                val roll = side * range(6f, 9f); val yaw = side * range(2f, 5f)
+                adds += Add(name, d) { _, t -> envPose(t, d, 0.3f, 0.45f, BodyPose(roll = roll, yaw = yaw, pitch = 1f)) }
             }
             Gesture.Attend -> {
                 // Settle the idle sway so a look at something reads as a deliberate look.
-                val d = holdSec.coerceIn(0.8f, 4f)
-                Layer(HoldSource("attend", BodyPose(pitch = 1f), d), 0f, d, 1f, 0.25f, "attend", gesture = true)
+                val d = holdSec.coerceIn(0.8f, 4f) + 0.4f
+                attendPose = poseOf(tgt).copy(pitch = MarkClipEngine.wrap180(tgt[0]) + 1f)
+                attendT = 0f; attendDur = d
             }
             Gesture.Droop -> {
                 val d = range(2.2f, 3.4f)
-                Layer(HoldSource("droop", BodyPose(pitch = range(10f, 14f), roll = range(-5f, 5f)), d),
-                    0f, d, 1f, range(1.6f, 2.4f), "droop", gesture = true)
+                val rise = range(1.6f, 2.4f)
+                val pitch = range(10f, 14f); val roll = range(-5f, 5f)
+                adds += Add(name, d + 1.2f) { _, t -> envPose(t, d + 1.2f, rise, 1.2f, BodyPose(pitch = pitch, roll = roll)) }
             }
-        } ?: return false
-        push(layer)
+        }
         return true
     }
 
@@ -358,120 +399,214 @@ class MotionDirector(
             pendingSince = -1f
         }
 
-        // --- advance layers ---
-        for (l in layers) {
-            val t0 = l.t
-            l.t += dt * l.speed
-            l.progress = min(1f, l.progress + dt / l.fadeIn.coerceAtLeast(0.02f))
-            if (l === layers.last() && l.source.blinkIn(t0, l.t)) clipBlink = true
+        // --- advance the base beat (on its own, possibly frozen, clock) ---
+        run {
+            freezeLeft -= dt
+            val goal = if (freezeLeft > 0f) FREEZE_GOAL else 1f
+            val w = if (freezeLeft > 0f) 10f else 2.6f // resume gently: idle drifts back in, no restart
+            val k = exp(-w * dt)
+            val e = tScale - goal; val c = tScaleV + w * e
+            tScale = goal + (e + c * dt) * k; tScaleV = (tScaleV - w * c * dt) * k
         }
-        // Drop everything underneath a fully faded-in layer.
-        val topFull = layers.indexOfLast { it.progress >= 1f }
-        if (topFull > 0) {
-            val before = composeNow()
-            repeat(topFull) { layers.removeAt(0) }
-            stackChanged = true
-            noteHandOver(before)
+        val bdt = dt * tScale.coerceIn(0f, 1f)
+        val top0 = layers.last()
+        run {
+            val t0 = top0.t
+            top0.t += bdt * top0.speed
+            top0.progress = min(1f, top0.progress + dt / top0.fadeIn.coerceAtLeast(0.02f))
+            if (top0.source.blinkIn(t0, top0.t)) clipBlink = true
         }
 
         // --- schedule the next beat when the top window ends ---
-        val top = layers.last()
         val waitingToLeaveBusy = desired != lifecycle
-        if (top.t >= top.tEnd && !(waitingToLeaveBusy && isBusy(lifecycle))) {
+        holdOff -= dt
+        if (top0.t >= top0.tEnd && holdOff <= 0f && frozenPose == null && !(waitingToLeaveBusy && isBusy(lifecycle))) {
             push(nextBeat(lifecycle, entering = false))
         }
 
-        // --- compose ---
-        val pose = composeNow()
-        val dom = layers.lastOrNull { it.weight >= 0.5f } ?: layers[0]
-        clipExpression = dom.source.expression(dom.t)
+        // --- compose: inertialized base target (C² across beat switches) ---
+        val top = layers.last()
+        var pose = steer(top, dt, bdt)
+        frozenPose?.let { fp ->
+            val fw = (FREEZE_HOLD * (1f - tScale) / (1f - FREEZE_GOAL).coerceAtLeast(1e-3f)).coerceIn(0f, FREEZE_HOLD)
+            if (fw > 1e-3f) pose = pose.lerpTo(fp, fw) else if (freezeLeft <= 0f) frozenPose = null
+        }
+        clipExpression = top.source.expression(top.t)
         rawPose = pose
 
-        val out = filter(pose, dt)
-        if (startleU < 1f) {
-            startleU = (startleU + dt / startleDur).coerceAtMost(1f)
-            val sp = startlePose(startleU)
-            return out.copy(
-                pitch = out.pitch + sp.pitch,
-                posY = out.posY + sp.posY,
-                squashX = out.squashX * sp.squashX,
-                squashY = out.squashY * sp.squashY,
-            )
-        }
-        return out
+        // Spins ride the base target (the output spring caps the turn speed); everything else
+        // is added after the spring so its shape is exact.
+        val out = filter(addGestures(pose, dt, pre = true), dt)
+        return addGestures(out, dt, pre = false)
     }
+
+    // ------------------------------------------------------- engine19 execution layer
+
+    private class Add(val name: String, val dur: Float, val fn: (Float, Float) -> BodyPose) {
+        var t = 0f
+        val pre: Boolean get() = name.startsWith("spin")
+    }
+    private val adds = ArrayList<Add>()
+    /** Startle pops: [u, dur, amp]. */
+    private val pops = ArrayList<FloatArray>()
+    private var attendPose: BodyPose? = null
+    private var attendT = 0f
+    private var attendDur = 0f
+
+    /** Base target (angles unwrapped) and its velocity / acceleration, per axis. */
+    private val tgt = FloatArray(8)
+    private val tgtV = FloatArray(8)
+    private val tgtA = FloatArray(8)
+    private var tgtReady = false
+    private val base = FloatArray(8)
+    private val lastBaseRaw = FloatArray(3)
+    private var switched = false
+    private var switchFade = 0.6f
+    /** Quintic inertialization: offset polynomial coefficients per axis (x0, v0, a0, A, B, C) and its clock. */
+    private val inC = Array(8) { FloatArray(6) }
+    private var inT = 0f
+    private var inDur = 0f
+
+    /** Debug / tests: the base target just before the output spring. */
+    internal val steerTarget: FloatArray get() = tgt
+
+    private fun arr(p: BodyPose, out: FloatArray) {
+        out[0] = p.pitch; out[1] = p.yaw; out[2] = p.roll; out[3] = p.posY
+        out[4] = p.squashX; out[5] = p.squashY; out[6] = p.scale; out[7] = p.lidOpen
+    }
+
+    private fun poseOf(a: FloatArray) = BodyPose(
+        pitch = MarkClipEngine.wrap180(a[0]), yaw = MarkClipEngine.wrap180(a[1]), roll = MarkClipEngine.wrap180(a[2]),
+        posY = a[3], squashX = a[4], squashY = a[5], scale = a[6], lidOpen = a[7],
+    )
+
+    /**
+     * Engine19: the base pose is the CURRENT beat's pose plus a decaying offset. When a beat
+     * changes (a new hold, clip or look), the difference between where the body is going and
+     * where the new beat starts — in position, velocity and acceleration — becomes an offset
+     * that dies out on a quintic over the beat's fade (inertialization). The new beat plays
+     * exactly as authored; the move into it carries the old momentum, with no crossfade
+     * blend, no velocity reset and no detour through a rest pose.
+     */
+    private fun steer(top: Layer, dt: Float, bdt: Float = dt): BodyPose {
+        val raw = FloatArray(8)
+        arr(top.pose(), raw)
+        if (!tgtReady) {
+            for (i in 0 until 8) { tgt[i] = raw[i]; base[i] = raw[i]; tgtV[i] = 0f; tgtA[i] = 0f }
+            for (a in 0..2) lastBaseRaw[a] = raw[a]
+            tgtReady = true; switched = false
+            return poseOf(tgt)
+        }
+        if (switched) {
+            switched = false
+            // New beat: align its angles to the nearest turn of the current target.
+            for (a in 0..2) { base[a] = tgt[a] - MarkClipEngine.wrap180(tgt[a] - raw[a]); lastBaseRaw[a] = raw[a] }
+            for (i in 3 until 8) base[i] = raw[i]
+            // The new beat's own velocity right now (finite difference on its source).
+            val h = 0.01f
+            val q = FloatArray(8)
+            arr(top.source.pose((top.t - h * top.speed).coerceAtLeast(0f)), q)
+            val T = switchFade.coerceIn(0.22f, 2.6f)
+            for (i in 0 until 8) {
+                val dq = if (i < 3) MarkClipEngine.wrap180(raw[i] - q[i]) else raw[i] - q[i]
+                val bv = if (top.t > h * top.speed) dq / h * top.speed * tScale.coerceIn(0f, 1f) else 0f
+                val pred = tgt[i] + tgtV[i] * dt
+                setQuintic(inC[i], pred - base[i], tgtV[i] - bv, tgtA[i].coerceIn(-4000f, 4000f), T)
+            }
+            inT = 0f; inDur = T
+        } else {
+            for (a in 0..2) { base[a] += MarkClipEngine.wrap180(raw[a] - lastBaseRaw[a]); lastBaseRaw[a] = raw[a] }
+            for (i in 3 until 8) base[i] = raw[i]
+        }
+        inT += bdt
+        val inv = 1f / dt.coerceAtLeast(1e-4f)
+        for (i in 0 until 8) {
+            val off = if (inT < inDur) evalQuintic(inC[i], inT) else 0f
+            val x = base[i] + off
+            val v = (x - tgt[i]) * inv
+            tgtA[i] = (v - tgtV[i]) * inv
+            tgtV[i] = v
+            tgt[i] = x
+        }
+        // Keep the unwrapped angles bounded (spins add ±360 per turn).
+        for (a in 0..2) if (abs(tgt[a]) > 720f) {
+            val k = 360f * kotlin.math.round(tgt[a] / 360f); tgt[a] -= k; base[a] -= k
+        }
+        var p = poseOf(tgt)
+        // Attend: ease the sway out toward a still look, and back (a smooth weight, not a cut).
+        attendPose?.let { ap ->
+            attendT += dt
+            val w = window(attendT / attendDur, 0.25f / attendDur, 0.4f / attendDur) * 0.85f
+            p = p.lerpTo(ap, w)
+            if (attendT >= attendDur) attendPose = null
+        }
+        return p
+    }
+
+    private fun addGestures(out: BodyPose, dt: Float, pre: Boolean): BodyPose {
+        var pitch = out.pitch; var yaw = out.yaw; var roll = out.roll; var posY = out.posY
+        var sx = out.squashX; var sy = out.squashY
+        val it = adds.iterator()
+        while (it.hasNext()) {
+            val g = it.next()
+            if (g.pre != pre) continue
+            g.t += dt
+            val u = (g.t / g.dur).coerceIn(0f, 1f)
+            val d = g.fn(u, g.t)
+            pitch += d.pitch; yaw += d.yaw; roll += d.roll; posY += d.posY
+            sx *= d.squashX; sy *= d.squashY
+            if (g.t >= g.dur) it.remove()
+        }
+        val pi = pops.iterator()
+        while (!pre && pi.hasNext()) {
+            val pp = pi.next()
+            pp[0] = (pp[0] + dt / pp[1]).coerceAtMost(1f)
+            val sp = startlePose(pp[0])
+            val k = pp[2]
+            pitch += sp.pitch * k; posY += sp.posY * k
+            sx *= 1f + (sp.squashX - 1f) * k; sy *= 1f + (sp.squashY - 1f) * k
+            if (pp[0] >= 1f) pi.remove()
+        }
+        return out.copy(
+            pitch = MarkClipEngine.wrap180(pitch), yaw = MarkClipEngine.wrap180(yaw), roll = MarkClipEngine.wrap180(roll),
+            posY = posY, squashX = sx, squashY = sy,
+        )
+    }
+
+    private fun envPose(t: Float, dur: Float, rise: Float, fall: Float, p: BodyPose): BodyPose {
+        val w = smootherstep(t / rise) * smootherstep((dur - t) / fall)
+        return BodyPose(pitch = p.pitch * w, yaw = p.yaw * w, roll = p.roll * w, posY = p.posY * w,
+            squashX = 1f + (p.squashX - 1f) * w, squashY = 1f + (p.squashY - 1f) * w)
+    }
+
+    /** The body holds where it is now (a beat that keeps the current pose; gestures ride it). */
+    private fun holdHere(name: String, dur: Float, kind: String): Layer =
+        Layer(HoldSource(name, poseOf(tgt), dur), 0f, dur, 1f, 0.35f, kind)
 
     // ------------------------------------------------------------------ beats
 
-    private fun composeNow(): BodyPose {
-        var pose = layers[0].pose()
-        for (i in 1 until layers.size) pose = pose.lerpTo(layers[i].pose(), layers[i].weight)
-        return pose
-    }
+    /** Engine19: dominant beat pose (no crossfade). */
+    private fun composeNow(): BodyPose = layers.last().pose()
 
-    /**
-     * Largest pose change caused purely by a stack edit (push / fold / drop) this frame,
-     * evaluated at the same instant before and after the edit. A hard cut shows up here;
-     * the authored motion of the clips themselves does not.
-     */
+    /** Largest jump of the base target caused by a beat switch (stays ~0: inertialized). */
     internal var handOverDelta = 0f
         private set
 
-    private fun noteHandOver(before: BodyPose) {
-        if (layers.isEmpty()) return
-        val after = composeNow()
-        val d = maxOf(
-            abs(MarkClipEngine.wrap180(after.pitch - before.pitch)),
-            abs(MarkClipEngine.wrap180(after.yaw - before.yaw)),
-            abs(MarkClipEngine.wrap180(after.roll - before.roll)),
-            abs(after.scale - before.scale) * 100f,
-        )
-        handOverDelta = maxOf(handOverDelta, d)
-    }
-
     private fun push(lIn: Layer) {
         stackChanged = true
-        val before = if (layers.isEmpty()) null else composeNow()
-        // Snappy attack: awake beats crossfade quickly and the springy output filter
-        // shapes the move (anticipation, overshoot, settle). Drowsy / sleep stay slow.
-        val slow = drowsy || lifecycle == MarkLifecycle.Sleeping || lIn.kind == "blend"
-        val l = if (slow || lIn.gesture) lIn else Layer(
-            lIn.source, lIn.t, lIn.tEnd, lIn.speed,
-            (lIn.fadeIn * lerpA(1f, 0.55f)).coerceIn(0.35f, 1.3f), lIn.kind, lIn.gesture,
-        )
-        if (!slow && playful && before != null && filterReady) anticipate(before, l.pose())
-        // Stack full: fold the two bottom layers into one frozen pose so nothing
-        // that is still visible gets dropped (dropping it would be a jump).
-        if (layers.size >= 4) {
-            val a = layers[0]
-            val b = layers[1]
-            val merged = a.pose().lerpTo(b.pose(), b.weight)
-            layers.removeAt(0)
-            layers[0] = Layer(HoldSource("blend", merged, 0.5f), 0f, 0.5f, 1f, 1f, "blend").also { it.progress = 1f }
-        }
-        layers += l
-        before?.let { noteHandOver(it) }
-        recentKinds.addLast(l.kind)
+        // Snappy attack: awake beats move in quickly and the output spring shapes the move.
+        // Drowsy / sleep stay slow.
+        val slow = drowsy || lifecycle == MarkLifecycle.Sleeping
+        val fade = if (slow) lIn.fadeIn else (lIn.fadeIn * lerpA(1f, 0.55f)).coerceIn(0.35f, 1.3f)
+        layers.clear()
+        layers += lIn
+        switched = true
+        switchFade = fade
+        recentKinds.addLast(lIn.kind)
         while (recentKinds.size > 3) recentKinds.removeFirst()
-        (l.source as? ClipSource)?.let {
+        (lIn.source as? ClipSource)?.let {
             recentClips.addLast(it.name)
             while (recentClips.size > 2) recentClips.removeFirst()
-        }
-    }
-
-    /**
-     * Anticipation: a big new target gets a small counter-move first (velocity kick
-     * the other way); the spring then swings through with a little overshoot.
-     */
-    private fun anticipate(from: BodyPose, to: BodyPose) {
-        val d = floatArrayOf(
-            MarkClipEngine.wrap180(to.pitch - from.pitch),
-            MarkClipEngine.wrap180(to.yaw - from.yaw),
-            MarkClipEngine.wrap180(to.roll - from.roll),
-        )
-        for (a in 0..2) {
-            val m = d[a].coerceIn(-40f, 40f)
-            if (abs(m) > 6f) fv[a] -= m * ANTICIPATION * range(0.7f, 1.2f)
         }
     }
 
@@ -588,7 +723,7 @@ class MotionDirector(
             val extra = if (k == "pause" && recentKinds.takeLast(2).all { it == "pause" }) 0f else 1f
             (k to w * f * f * extra).takeIf { it.second > 0f }
         }.ifEmpty { listOf("pause" to 1f) }
-        val kind = weighted(opts).let { if (it == "nod" && exprMorphing) "pause" else it }
+        val kind = weighted(opts)
         lastUsed[kind] = clock
         val side = pickSide()
         val layer = when (kind) {
@@ -641,32 +776,36 @@ class MotionDirector(
                 }
             }
             "nod" -> {
-                // Nodding along: one or two smooth nods (the second smaller), eyes leading.
+                // Nodding along: one or two smooth nods (the second smaller), eyes leading —
+                // added on top of wherever the head is (never back to a rest pose first).
                 val d = range(0.6f, 0.78f)
                 val deep = range(4f, 7f)
                 val twice = rng.nextFloat() < 0.35f
                 val total = d * if (twice) 1.85f else 1f
                 gazeCue = GazeCue(0f, 0.25f, total * 0.5f, "nod")
-                Layer(ProceduralSource("nodB", total) { u ->
+                adds += Add("nodB", total) { u, _ ->
                     val p = if (!twice) springNodPose(u, deep)
                     else if (u < 0.5f) springNodPose(u * 2f, deep) else springNodPose(u * 2f - 1f, deep * 0.6f)
                     p.copy(yaw = side * 1.5f * kotlin.math.abs(p.pitch / deep))
-                }, 0f, total, 1f, 0.15f, "nod")
+                }
+                holdHere("nodHold", total + 0.2f, "nod")
             }
             "bob" -> {
-                // A small "got it" bounce (squash, not a size change).
+                // A small "got it" bounce (squash, not a size change), on the current pose.
                 val d = range(0.55f, 0.8f)
-                Layer(ProceduralSource("bob", d) { u ->
-                    val k = sin(PI.toFloat() * u)
+                adds += Add("bob", d) { u, _ ->
+                    val k = sin(PI.toFloat() * u).let { it * it }
                     BodyPose(posY = -0.03f * k, squashX = 1f - 0.03f * k, squashY = 1f + 0.03f * k, pitch = -2f * k)
-                }, 0f, d, 1f, 0.2f, "bob")
+                }
+                holdHere("bobHold", d + 0.2f, "bob")
             }
             "spin" -> {
                 val d = range(1.4f, 1.9f)
-                Layer(ProceduralSource("spinB", d) { u ->
+                adds += Add("spinB", d) { u, _ ->
                     val e = easeInOutCubic(u)
                     BodyPose(pitch = sin(PI.toFloat() * u) * 3f, yaw = side * 360f * e, roll = -side * sin(PI.toFloat() * u) * 4f)
-                }, 0f, d, 1f, 0.35f, "spin")
+                }
+                holdHere("spinHold", d + 0.2f, "spin")
             }
             else -> hold("pause", BodyPose(pitch = range(0f, 4f), yaw = gauss(3f).coerceIn(-6f, 6f), roll = gauss(2f).coerceIn(-4f, 4f)),
                 logRange(0.5f, 1.8f), range(0.7f, 1.3f), kind = "pause")
@@ -760,10 +899,8 @@ class MotionDirector(
 
     // ----------------------------------------------------------------- filter
 
-    /** Startle pop progress (0…1; 1 = idle), applied on top of the filtered pose. */
-    private var startleU = 1f
-    private var startleDur = 0.85f
-    val startling: Boolean get() = startleU < 1f
+    /** A startle pop is playing (added on top of the filtered pose). */
+    val startling: Boolean get() = pops.isNotEmpty()
 
     private fun filter(p: BodyPose, dt: Float): BodyPose {
         // Any direction is allowed (no up-right suppression).
@@ -930,6 +1067,37 @@ class MotionDirector(
                 squashY = 1f + 0.15f * pop,
             )
         }
+
+        /** Startle pop channel alone (0 at both ends). */
+        fun startlePop(u: Float): Float {
+            val x = u.coerceIn(0f, 1f)
+            return if (x < 0.09f) sin(PI.toFloat() * 0.5f * x / 0.09f)
+                else { val v = (x - 0.09f) / 0.91f; kotlin.math.exp(-3.6f * v) * kotlin.math.cos(2.4f * PI.toFloat() * v) * (1f - v * v) }
+        }
+
+        /** 0 → 1 → 0 window on u with smootherstep edges of [a] and [b] (fractions of the span). */
+        fun window(u: Float, a: Float, b: Float): Float =
+            smootherstep(u / a.coerceAtLeast(1e-3f)) * smootherstep((1f - u) / b.coerceAtLeast(1e-3f))
+
+        /**
+         * Quintic inertialization (pos, vel, acc → 0 at [T]); the offset never overshoots
+         * zero on its way home (Bollo's clamps). Stored as (x0, v0, a0, A, B, C).
+         */
+        fun setQuintic(c: FloatArray, x0In: Float, v0In: Float, a0In: Float, Tin: Float) {
+            val s = if (x0In < 0f) -1f else 1f
+            val x0 = x0In * s; var v0 = v0In * s; var a0 = a0In * s
+            var T = Tin
+            if (v0 < 0f && x0 > 1e-5f) T = min(T, -5f * x0 / v0).coerceAtLeast(0.12f)
+            a0 = max(a0, (-8f * v0 * T - 20f * x0) / (T * T))
+            val T2 = T * T; val T3 = T2 * T
+            c[0] = x0 * s; c[1] = v0 * s; c[2] = a0 * s
+            c[3] = -(a0 * T2 + 6f * v0 * T + 12f * x0) / (2f * T3 * T2) * s
+            c[4] = (3f * a0 * T2 + 16f * v0 * T + 30f * x0) / (2f * T2 * T2) * s
+            c[5] = -(3f * a0 * T2 + 12f * v0 * T + 20f * x0) / (2f * T3) * s
+        }
+
+        fun evalQuintic(c: FloatArray, t: Float): Float =
+            (((((c[3] * t + c[4]) * t + c[5]) * t + c[2] * 0.5f) * t + c[1]) * t + c[0])
 
         fun smootherstep(x: Float): Float {
             val t = x.coerceIn(0f, 1f)

@@ -289,15 +289,15 @@ internal class AlivenessEngine(private val rng: Random) {
             (k to w * f * penalty).takeIf { it.second > 0f }
         }.ifEmpty { listOf("Neutral" to 1f) }
         var k = weighted(opts)
-        // Engine15: no cut from a low face straight to a bright one; pass through neutral.
-        if (busyFace in setOf("Bored", "Sad", "Eyes closed") && k == "Happy") k = "Neutral"
+        // Engine19: faces morph straight into each other (no pass through Neutral).
         lastUsed["face:$k"] = clock
         recentFaces.addLast(k)
         while (recentFaces.size > 4) recentFaces.removeFirst()
         busyFace = k
         val hold = 0.8f + 0.5f * p.calmness
         faceLeft = hold * when (k) {
-            "Neutral" -> logRange(1.2f, 6.5f)
+            // A busy rest face is a real rest (≥ ~2.4 s), never a blip between two faces.
+            "Neutral" -> logRange(1.2f, 6.5f).coerceAtLeast(2.4f / hold)
             "angered or concentrated" -> logRange(0.9f, 3.6f)
             "Bored" -> logRange(0.7f, 2.2f)
             "Happy" -> logRange(0.7f, 1.8f)

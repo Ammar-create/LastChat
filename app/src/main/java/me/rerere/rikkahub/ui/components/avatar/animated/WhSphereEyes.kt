@@ -329,6 +329,35 @@ object WhSphereEyes {
         }
     }
 
+    /**
+     * Engine19: N-way blend for a weight vector (Σ w = 1). Weights are merged by Grok face,
+     * then folded pairwise in a stable name order with the same continuous capsule blend as
+     * [morphPair] — continuous in every weight, identical to [morphPair] for two faces.
+     */
+    fun morphWeighted(weights: List<Pair<String, Float>>, lid: Float): List<EyeState> {
+        val merged = java.util.TreeMap<String, Float>()
+        for ((n, w) in weights) if (w > 0f) merged.merge(grokNameFor(n), w, Float::plus)
+        if (merged.isEmpty()) return morphPair("Neutral", "Neutral", 1f, lid)
+        val shapes = merged.entries.map { (k, w) -> expressionPair(k, 1f) to w }
+        val l = lid.coerceIn(0.02f, 1.25f)
+        val n0 = shapes[0].first.size
+        return (0 until n0).map { i ->
+            var e = shapes[0].first[i]
+            var acc = shapes[0].second
+            var arc = (if (curved(e)) acc else 0f)
+            for (k in 1 until shapes.size) {
+                val (sh, w) = shapes[k]
+                val ek = sh.getOrElse(i) { sh.last() }
+                acc += w
+                e = cleanBlend(e, ek, (w / acc).coerceIn(0f, 1f))
+                if (curved(ek)) arc += w
+            }
+            arc = (arc / acc.coerceAtLeast(1e-6f)).coerceIn(0f, 1f)
+            val le = l + (1f - l).coerceAtLeast(0f) * arc * 0.8f
+            if (l >= 1f) e.copy(lidY = e.lidY * l) else e.copy(lidY = e.lidY * (1f + (le - 1f) * arc), closeK = ((1f - l) * (1f - arc)).coerceIn(0f, 1f))
+        }
+    }
+
     /** Spine bends (an arc eye) rather than running straight (a pill). */
     private fun curved(e: EyeState): Boolean {
         val p = e.pts; if (p.size < 3) return false

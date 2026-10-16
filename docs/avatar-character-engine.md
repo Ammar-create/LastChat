@@ -869,3 +869,93 @@ event → Perception (noticed after a mood-varying delay)
 
   It also checks the rare cooldowns over 45 idle minutes, perception, appraisal, memory and knobs, and the minutes-scale mood drift.
 - `MindFrameAuditTest` measures the same from rendered frames only, so it also runs unchanged on engine17.2 for before/after (`/workspace/lastchat-renders/engine18/{before,after}/frame_audit.csv`).
+
+## Engine19 — direct morphs, one execution layer
+
+Engine18's mind stays; what it drives was rebuilt (Critically's review, `engine19/critically_review.md`).
+Engine18 stepped: a face waited for the previous one to finish, passed back through Neutral,
+then animated; a poke during a look-around first recentred the head. Engine19 removes every
+such gate.
+
+**Face = weight vector.** `ExpressionDirector` is one critically damped spring per expression
+weight, shared ω, stepped in exact closed form (frame-rate invariant, Σw = 1). A new target is
+just a new goal: the face morphs from wherever it is, mid-transition included. Profiles: Snap ω16
+(blink alias), Soft 9 (static avatar), Gradual 4.5, Settle 3.4 (relax / baseline). Renderers
+blend the weights directly: `WhSphereEyes.morphWeighted` (Grok, merged by eye name, stable fold)
+and `GenericalSeatedEyes.outlineWeighted` (outlines aligned to Neutral, weighted mean).
+`MotionFrame.exprWeights` carries the vector whenever no single face has w > 0.999.
+When a reaction ends with a follow-up pending (queued face, train, stimuli) the face stays put
+instead of relaxing to Neutral first. `mapClipExpression("neutral")` no longer forces Neutral.
+
+**Arbiter (AvatarMind.faceSafe).** Reactive owners (≥ P_EVENT) retarget at once unless a
+stronger owner is inside its hold; spontaneous faces need 1.2 s dwell (3.2 s from Neutral) plus
+gaze lead. Owner flips are counted (gate ≤ 0.3/s).
+
+**Body.** Beat switches inertialize the base target (quintic, Bollo clamps) before the output
+spring. Gestures are additive layers (`Add(name, dur, fn)`): Spin (pre-spring, keeps the turn-rate
+cap), Hop, Nod, Recoil (stackable startle pops, 1 − 0.6·live), TurnAway/Tilt (side follows the
+current yaw — never swings back through centre), Attend, Droop. Busy nod/bob/spin are additive
+over the held pose. No crossfade / anticipation queue.
+
+**Poke reflex.** At the poke moment: base freeze 0.35 s (holds the spring's *current* position,
+not where it was heading), beats held, eyes-only saccade toward the touch (head doesn't join,
+pending head moves cancelled; bypasses lower-priority holds), Startled accent 0.3 s (0.18 s when
+habituated). Perception 0.04–0.1 s. Habituated/default branches no longer recentre the gaze.
+
+**Blinks.** One scheduler: refractory 1.8 s, max interval 7 s, log-normal (median 3 s, σ 0.65),
+spontaneous doubles p 0.04 (≥ 6 s apart), requested doubles ≤ 1 / 40 s, saccade-coupled p 0.75.
+A blink only starts when the held lid is ≥ 0.98 open, so it never overlaps a lid gesture.
+Lid = held-lid spring (ω 22, 30 in a startle) × (1 − blink).
+
+**Trace + CI.** `ChannelTrace` records every channel per tick (face weights, owner, cause,
+beat, blinks, pokes); `ChannelMetrics` derives neutral returns, stop-go (per channel and whole
+figure), jerk, reversals, owner flips, blink stats, poke reaction times and recentre-before-react.
+`ChannelMetricsTest` hard-fails on: neutral returns > 0, blink overlap > 0, gaze react > 120 ms,
+face react > 180 ms, any recentre before a poke reaction, owner flips > 0.3/s
+(scenarios pan_poke, rapid_pokes, idle12, session × seeds). `BaselineTraceTest` runs the same
+scenarios from frames only, so the numbers compare across engines.
+
+Later fixes found by the trace: the up-right ease-out was a first-order lag (it started at full
+speed — the biggest jerk spike left); it is now a smootherstep ramp and waits while attention is on
+a poke. A beat never switches while the poke freeze is still blending, the new beat's velocity is
+measured on the slowed clock, and the body drifts back in after a freeze (ω 2.6) instead of
+restarting. Stop-go counts a pause only when the figure is dead for 0.12–0.4 s (a smooth reversal
+through zero velocity is not a stop); jerk ignores spin-speed turns (> 120 °/s).
+
+Frame-only comparison (`BaselineTraceTest`, 8 seeds, means; E17.2 = ef1ea0d9, E18 = 317fd1fb):
+
+| scenario | metric | E17.2 | E18 | E19 |
+|---|---|---|---|---|
+| pan_poke | neutral dips / run | 0.88 | 0.25 | 0.00 |
+| pan_poke | stop-go, whole figure /min | 0.05 | 0.05 | 0.14 |
+| pan_poke | stop-go, face /min | 0.04 | 0.00 | 0.00 |
+| pan_poke | yaw jerk RMS °/s³ | 5318 | 5479 | 1487 |
+| pan_poke | pitch jerk RMS °/s³ | 17907 | 12988 | 11634 |
+| pan_poke | poke → gaze react, worst s | 9.00 | 9.00 | 0.00 |
+| pan_poke | recentre before poke react / run | 0.25 | 0.38 | 0.00 |
+| rapid_pokes | neutral dips / run | 0.75 | 0.12 | 0.00 |
+| rapid_pokes | stop-go, whole figure /min | 0.38 | 0.38 | 0.38 |
+| rapid_pokes | stop-go, face /min | 1.33 | 0.00 | 0.00 |
+| rapid_pokes | yaw jerk RMS °/s³ | 5266 | 4654 | 1828 |
+| rapid_pokes | pitch jerk RMS °/s³ | 31945 | 32716 | 32026 |
+| rapid_pokes | poke → gaze react, worst s | 9.00 | 9.00 | 0.00 |
+| rapid_pokes | recentre before poke react / run | 0.12 | 0.00 | 0.12 |
+| idle12 | neutral dips / run | 0.75 | 0.00 | 0.00 |
+| idle12 | stop-go, whole figure /min | 0.03 | 0.03 | 0.04 |
+| idle12 | stop-go, face /min | 0.02 | 0.00 | 0.00 |
+| idle12 | yaw jerk RMS °/s³ | 1972 | 1827 | 534 |
+| idle12 | pitch jerk RMS °/s³ | 3054 | 1630 | 1174 |
+| idle12 | poke → gaze react, worst s | 0.00 | 0.00 | 0.00 |
+| idle12 | recentre before poke react / run | 0.00 | 0.00 | 0.00 |
+| session | neutral dips / run | 5.12 | 2.00 | 0.00 |
+| session | stop-go, whole figure /min | 0.34 | 0.26 | 0.19 |
+| session | stop-go, face /min | 0.34 | 0.03 | 0.00 |
+| session | yaw jerk RMS °/s³ | 3782 | 4119 | 1809 |
+| session | pitch jerk RMS °/s³ | 12183 | 12356 | 13840 |
+| session | poke → gaze react, worst s | 9.00 | 9.00 | 0.00 |
+| session | recentre before poke react / run | 0.12 | 0.00 | 0.00 |
+
+Internal gate (`ChannelMetricsTest`, worst seed): neutral returns 0, blink overlaps 0, gaze and
+face react on the poke frame, recentres 0, owner flips ≤ 0.26/s. Known limits: whole-figure
+stop-go in `pan_poke` is ~0.14/min vs 0.05 (the brief, eased poke pause still counts once in a
+while); pitch jerk is unchanged (startle pops); blink rate under repeated pokes is ~24/min.

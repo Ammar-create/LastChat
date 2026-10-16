@@ -75,6 +75,19 @@ class GrokEyeGapTest {
         val tilted = listOf("Surprised", "Sad", "Worried", "confused", "Happy", "Angry", "angered or concentrated")
         for (x in tilted) for (y in tilted) if (x != y) for (t in listOf(0.15f, 0.5f, 0.85f))
             out += "$x>$y@$t yaw" to MotionFrame(exprFrom = x, exprTo = y, exprT = t, body = BodyPose(yaw = 8f, pitch = 4f, roll = 3f))
+        // Engine19: weighted in-betweens as the face spring renders them (every pair, plus
+        // three-way mixes from retargets mid-morph), face-on and turned.
+        for (a in exprs) for (b in exprs) if (a < b) for (w in listOf(0.08f, 0.25f, 0.42f, 0.58f, 0.75f, 0.92f))
+            out += "W $a|$b@$w" to MotionFrame(exprWeights = listOf(a to 1f - w, b to w).sortedBy { it.first },
+                body = if (w > 0.5f) BodyPose(yaw = 10f, pitch = 4f, roll = 2f) else BodyPose.REST)
+        val wr = Random(7)
+        repeat(90) {
+            val pick = exprs.shuffled(wr).take(3)
+            val raw = List(3) { 0.15f + wr.nextFloat() }
+            val sum = raw.sum()
+            out += "W3 ${pick.joinToString("|")}" to MotionFrame(exprWeights = pick.mapIndexed { i, n -> n to raw[i] / sum }.sortedBy { it.first },
+                body = BodyPose(yaw = (wr.nextFloat() - 0.5f) * 40f, pitch = 5f))
+        }
         val rig = FaceRig(Random(1))
         for (a in FaceAccent.entries) if (a != FaceAccent.None) for (e in listOf("Neutral", "Sad", "Happy"))
             out += "$e+$a" to MotionFrame(exprFrom = e, exprTo = e, exprT = 1f, face = rig.staticFace(a, 0.3f))

@@ -77,6 +77,9 @@ internal object MindRules {
     const val EYE_GAP = 0.42f
     /** The face follows a gaze shift by this much (gaze leads). */
     const val GAZE_LEAD = 0.16f
+    /** Engine19: minimum dwell before a self-started (spontaneous) face change. */
+    const val SPONT_DWELL = 1.2f
+    const val SPONT_DWELL_REST = 3.2f
     /** Priorities. */
     const val P_IDLE = 0      // spontaneous beats, episodes
     const val P_LIFE = 1      // lifecycle faces, returning to rest
@@ -205,6 +208,10 @@ internal class MindDirector {
     var blinksDeferred = 0; private set
     var maxQueue = 0; private set
     var budgetViolations = 0; private set
+    var ownerFlips = 0; private set
+    private val flipTimes = ArrayDeque<Float>()
+    val owner: String get() = ownerName
+    val ownerPriority: Int get() = ownerPrio
     var lastBusy = false
     var lastArousal = 0.5f
 
@@ -217,23 +224,32 @@ internal class MindDirector {
     fun update(dt: Float, morphing: Boolean, gazeBigShift: Boolean) {
         now += dt
         if (gazeBigShift) lastGazeShift = now
-        // A landed change starts its hold once its morph has settled.
-        if (wasMorphing && !morphing && pendingHold > 0f) { holdUntil = now + pendingHold; pendingHold = 0f }
+        // Engine19: the owner's hold runs from the moment it took the face (the morph runs
+        // concurrently); afterwards the face is free — it keeps its last target, never Neutral.
         wasMorphing = morphing
-        if (!morphing && pendingHold <= 0f && now >= holdUntil) ownerPrio = -1
+        if (now >= holdUntil) ownerPrio = -1
         while (acts.isNotEmpty() && now - acts.first().first > 60f) acts.removeFirst()
         val it = queue.iterator()
         while (it.hasNext()) if (it.next().expired(now)) { it.remove(); expired++ }
     }
 
     /** Is a face change at [priority] allowed this frame? */
-    fun faceSafe(priority: Int, morphing: Boolean): Boolean {
-        if (morphing || pendingHold > 0f) { if (morphing) interruptsPrevented++; return false }
-        if (now - lastEyeChange < MindRules.EYE_GAP) return false
-        // Gaze leads: the face follows a big eye move a beat later.
-        if (now - lastGazeShift < MindRules.GAZE_LEAD) return false
-        // The owner keeps the face through its hold unless something more important comes.
+    fun faceSafe(priority: Int, @Suppress("UNUSED_PARAMETER") morphing: Boolean): Boolean {
+        // Engine19 arbiter: one owner per channel, salience-weighted.
+        //  - reactive (≥ P_EVENT): retargets immediately, from the current in-between pose;
+        //    only a stronger owner still inside its hold keeps the face.
+        //  - spontaneous: waits for the owner's dwell, plus a minimum dwell (hysteresis).
+        if (priority >= MindRules.P_EVENT) {
+            if (now < holdUntil && priority < ownerPrio) { interruptsPrevented++; return false }
+            return true
+        }
         if (now < holdUntil && priority <= ownerPrio) return false
+        if (now - lastEyeChange < MindRules.SPONT_DWELL) return false
+        // A face that has relaxed to rest stays at rest a while before a self-started face
+        // (rest, then something new — never a blip of Neutral between two faces).
+        if (ownerName == "Neutral" && now - lastEyeChange < MindRules.SPONT_DWELL_REST) return false
+        // Gaze leads: a self-started face follows a big eye move a beat later.
+        if (now - lastGazeShift < MindRules.GAZE_LEAD) return false
         return true
     }
 
@@ -253,9 +269,10 @@ internal class MindDirector {
     /** A face change lands now: it owns the face, then holds for [hold] once settled. */
     fun landFace(name: String, priority: Int, cause: String, hold: Float, countBudget: Boolean = true) {
         lastEyeChange = now
+        if (name != ownerName) { ownerFlips++; flipTimes.addLast(now) }
+        while (flipTimes.isNotEmpty() && now - flipTimes.first() > 10f) flipTimes.removeFirst()
         ownerPrio = priority; ownerName = name
-        pendingHold = hold.coerceAtLeast(0.01f)
-        holdUntil = now + 0.6f + hold // until the morph reports settled
+        holdUntil = now + 0.35f + hold
         if (countBudget) count(priority)
         log += MindEvent(now, Lane.Face, name, priority, cause)
     }
