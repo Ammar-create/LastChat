@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
@@ -572,6 +574,26 @@ class AvatarRenderHarnessTest {
             }
         }
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
+    }
+
+    /** Engine16.2b: the onboarding (first-time setup) bottom buttons, for side-by-side with the editor bar. */
+    @Test
+    fun renderSetupButtons() {
+        assumeTrue(outDir != null)
+        for (dark in listOf(true, false)) capture("setup_buttons_${if (dark) "dark" else "light"}", 411, 140) {
+            androidx.compose.runtime.CompositionLocalProvider(me.rerere.rikkahub.ui.theme.LocalDarkMode provides dark) {
+                MaterialTheme(colorScheme = if (dark) darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
+                    Box(Modifier.fillMaxSize().background(if (dark) Color.Black else MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = 40.dp)) {
+                        // Same as onboarding TwoSetupButtons: 12 dp gap, outlined left, filled right.
+                        androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                            me.rerere.rikkahub.ui.pages.onboarding.SetupButtonFace(Modifier.weight(1f), text = "Back", filled = false, onClick = {})
+                            me.rerere.rikkahub.ui.pages.onboarding.SetupButtonFace(Modifier.weight(1f), text = "Continue",
+                                icon = androidx.compose.material.icons.Icons.AutoMirrored.Rounded.ArrowForward, filled = true, onClick = {})
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** Parametric looks on every shape, both eye modes (neutral + a few base expressions). */

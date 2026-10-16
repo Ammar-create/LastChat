@@ -309,7 +309,21 @@ internal class IdlePlanner(private val rng: Random) {
     }
     private fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
 
-    fun next(life: MarkLifecycle, t: Temperament, drowsy: Boolean): Fixation {
+    // Engine16.2b: "gaze-staying" moments (long holds, off-front rests, area exploration) are
+    // very rare specials - roughly one per 15-35 min of idle, behind a shared cooldown.
+    private var clock = 0f
+    private var lastSpecial = -rr(0f, 600f)
+    private var specialGap = rr(900f, 2100f)
+    private fun special(): Boolean {
+        if (clock - lastSpecial < specialGap || rng.nextFloat() >= 0.02f) return false
+        lastSpecial = clock; specialGap = rr(900f, 2100f)
+        return true
+    }
+
+    fun next(life: MarkLifecycle, t: Temperament, drowsy: Boolean): Fixation =
+        nextInner(life, t, drowsy).also { clock += it.hold + it.travel }
+
+    private fun nextInner(life: MarkLifecycle, t: Temperament, drowsy: Boolean): Fixation {
         val act = t.activity
         val med = 5.2f - 3.4f * act // 4.8 s calm … 2.5 s lively
         if (drowsy || t.state == Temperament.State.Tired) {
@@ -378,7 +392,7 @@ internal class IdlePlanner(private val rng: Random) {
                         withHead = true, kind = "pan")
                 }
             }
-            r < 0.62f -> {
+            r < 0.62f && special() -> {
                 // Engine16.2 area exploration: stay in this region a while, eyes wandering
                 // over a few nearby points (head holds), before moving on.
                 episodeName = "explore"
@@ -412,14 +426,17 @@ internal class IdlePlanner(private val rng: Random) {
      */
     private fun restFixation(t: Temperament, med: Float): Fixation {
         val s = if (rng.nextBoolean()) 1f else -1f
+        // Normal: roughly ahead. Only a rare special moment rests elsewhere / holds long.
+        if (!special()) return Fixation(rr(-0.07f, 0.07f), rr(-0.02f, 0.07f), logN(med * 1.5f, 0.35f, 4f, 12f),
+            travel = rr(0.9f, 1.6f) / t.tempo, withHead = true, kind = "rest")
         val r = rng.nextFloat()
-        val long = rng.nextFloat() < 0.2f
+        val long = rng.nextFloat() < 0.35f
         var hold = if (long) rr(12f, 24f) else logN(med * 1.5f, 0.35f, 4f, 12f)
         val (x, y, k) = when {
-            r < 0.4f -> Triple(rr(-0.07f, 0.07f), rr(-0.02f, 0.07f), "rest")
-            r < 0.72f -> Triple(s * rr(0.18f, 0.4f), rr(-0.04f, 0.1f), "rest-side")
-            r < 0.86f -> { hold = hold.coerceAtMost(9f); Triple(s * rr(0.12f, 0.35f), rr(0.12f, 0.2f), "rest-low") }
-            r < 0.96f -> { hold = hold.coerceAtMost(10f); Triple(-rr(0.15f, 0.35f), -rr(0.06f, 0.15f), "rest-upleft") }
+            r < 0.15f -> Triple(rr(-0.07f, 0.07f), rr(-0.02f, 0.07f), "rest")
+            r < 0.6f -> Triple(s * rr(0.18f, 0.4f), rr(-0.04f, 0.1f), "rest-side")
+            r < 0.78f -> { hold = hold.coerceAtMost(9f); Triple(s * rr(0.12f, 0.35f), rr(0.12f, 0.2f), "rest-low") }
+            r < 0.95f -> { hold = hold.coerceAtMost(10f); Triple(-rr(0.15f, 0.35f), -rr(0.06f, 0.15f), "rest-upleft") }
             else -> Triple(rr(-0.05f, 0.03f), -rr(0.04f, 0.09f), "rest-up")
         }
         return Fixation(x, y, hold, travel = rr(0.9f, 1.6f) / t.tempo, withHead = true, kind = if (long) "$k-long" else k)

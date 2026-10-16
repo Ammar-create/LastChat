@@ -681,3 +681,29 @@ changes = 0, low → bright cuts = 0. Writes `audit_summary.csv`, `audit_hour_ep
 - Debug logs: `fix <kind> → (x,y) hold`.
 
 Renders are in `/workspace/lastchat-renders/engine16.2/` (box).
+
+## Engine16.2b: gaze specials made very rare, setup-style editor buttons
+
+**Gaze.** The "gaze-staying" moments from 16.2 are now extremely rare special moments. These are:
+- long 12–24 s holds
+- resting anywhere other than roughly ahead (side, low-side, up-left, slightly up)
+- area exploration
+
+How it works:
+- `IdlePlanner.special()` puts all of them behind one shared cooldown of 15–35 min of idle time (counted as the sum of fixation time).
+- Once the cooldown has passed, each rest or interest decision has a 2% chance to spend it.
+- The first special can come 5–35 min into idle.
+- Otherwise rests are front/roughly ahead, as before 16.2.
+- When a special does happen, the old mix applies (35% of them are long holds).
+- `gazeSpecialsAudit` checks this over 60-min runs: planner awake on 8 seeds, plus the full engine on 4 seeds. It asserts ≤5 specials per hour.
+
+**Editor buttons.** Cancel/Save now belong to the first-time-setup button family:
+- 52 dp `AppShapes.ButtonPill` pills, side by side with a 12 dp gap
+- Cancel is outlined with a 3 dp soft ring; Save is filled `primary` with a check icon
+- bold `titleMedium` labels
+- spring press scale
+- a soft fade-to-sheet gradient behind them
+
+They are implemented in `EditorActionButton`.
+
+`SetupButton` in onboarding is split into a haptics wrapper plus `SetupButtonFace` (the visual only, internal). Onboarding behaviour is unchanged. The split lets `renderSetupButtons` draw the real setup look next to the editor.

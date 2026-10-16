@@ -40,6 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.Modifier
@@ -363,48 +365,66 @@ internal fun AnimatedAvatarEditorContent(
             }
         }
 
-        // Floating pill actions - the same floating pill as the Lorebooks/Skills settings bar
-        // (28 dp surfaceContainerHigh, tonal 6 / shadow 8, circular items, primaryContainer = main).
-        androidx.compose.material3.Surface(
+        // Actions in the first-time-setup family: soft fade from the sheet colour, two calm
+        // 52 dp pills (outlined secondary with a thick soft ring, filled primary), bold
+        // titleMedium labels, springy press.
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp)
-                .onSizeChanged { barHeight = with(density) { it.height.toDp() } },
-            shape = RoundedCornerShape(28.dp),
-            color = cs.surfaceContainerHigh,
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp,
+                .fillMaxWidth()
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(Color.Transparent, cs.surfaceContainerLow.copy(alpha = 0.92f), cs.surfaceContainerLow)
+                    )
+                )
+                .padding(horizontal = 20.dp)
+                .padding(top = 28.dp, bottom = 20.dp)
+                .onSizeChanged { barHeight = with(density) { it.height.toDp() } - 16.dp },
         ) {
             Row(
-                modifier = Modifier.padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .clip(CircleShape)
-                        .clickable { onDismiss() }
-                        .padding(horizontal = 20.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(stringResource(R.string.avatar_cancel), style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
-                }
-                Row(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .clip(CircleShape)
-                        .background(cs.primaryContainer)
-                        .clickable { onSave() }
-                        .padding(horizontal = 22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Rounded.Check, contentDescription = null, tint = cs.onPrimaryContainer, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.avatar_animated_save), style = MaterialTheme.typography.labelLarge, color = cs.onPrimaryContainer)
-                }
+                EditorActionButton(stringResource(R.string.avatar_cancel), primary = false, onClick = onDismiss, modifier = Modifier.weight(1f))
+                EditorActionButton(stringResource(R.string.avatar_animated_save), primary = true, icon = Icons.Rounded.Check, onClick = onSave, modifier = Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun EditorActionButton(
+    text: String,
+    primary: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+) {
+    val cs = MaterialTheme.colorScheme
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        if (pressed) 0.92f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "editorAction",
+    )
+    val shape = me.rerere.rikkahub.ui.theme.AppShapes.ButtonPill
+    val mod = modifier.height(52.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+    val label: @Composable () -> Unit = {
+        if (icon != null) { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)) }
+        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1)
+    }
+    if (primary) {
+        Button(onClick = onClick, interactionSource = interaction, shape = shape, modifier = mod,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = cs.primary, contentColor = cs.onPrimary),
+        ) { label() }
+    } else {
+        androidx.compose.material3.OutlinedButton(onClick = onClick, interactionSource = interaction, shape = shape, modifier = mod,
+            border = androidx.compose.foundation.BorderStroke(3.dp, cs.surfaceContainerHighest),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = cs.surfaceContainerLow, contentColor = cs.onSurface),
+        ) { label() }
     }
 }
 

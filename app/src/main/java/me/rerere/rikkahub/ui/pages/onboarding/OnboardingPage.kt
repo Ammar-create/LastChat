@@ -1216,6 +1216,23 @@ private fun SetupButton(
     onClick: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
+    SetupButtonFace(modifier, text, icon, filled, neutral, enabled) {
+        haptics.perform(HapticPattern.Pop)
+        onClick()
+    }
+}
+
+/** The setup button's look (no haptics); internal so render harnesses can show it. */
+@Composable
+internal fun SetupButtonFace(
+    modifier: Modifier = Modifier,
+    text: String? = null,
+    icon: ImageVector? = null,
+    filled: Boolean,
+    neutral: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1252,10 +1269,7 @@ private fun SetupButton(
     if (filled) {
         Button(
             enabled = enabled,
-            onClick = {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            },
+            onClick = onClick,
             interactionSource = interactionSource,
             shape = shape,
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -1275,10 +1289,7 @@ private fun SetupButton(
     } else {
         OutlinedButton(
             enabled = enabled,
-            onClick = {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            },
+            onClick = onClick,
             interactionSource = interactionSource,
             shape = shape,
             border = BorderStroke(3.dp, setupCardColor()),

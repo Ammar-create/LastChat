@@ -386,6 +386,52 @@ class AvatarMotionVideoTest {
         File(out, "draw_cost.csv").writeText(sb.toString())
     }
 
+    /** Engine16.2b: gaze-staying specials must be very rare (≈ one per 15-35 idle min). */
+    @Test
+    fun gazeSpecialsAudit() {
+        val out = File(System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() } ?: "build/audit").apply { mkdirs() }
+        fun isSpecial(k: String) = k.startsWith("rest-") || k.endsWith("-long")
+        val sb = StringBuilder("run,seed,minutes,longHolds,offFrontRests,exploreEpisodes,specialsTotal,tenMinWindowsWithNone\n")
+        // 1) Planner awake for 60 min (worst case: never dozes).
+        for (seed in listOf(1, 2, 3, 4, 5, 6, 7, 8)) {
+            val pl = IdlePlanner(Random(seed)); val tp = Temperament(Random(seed))
+            var t = 0f; var long = 0; var off = 0; var exp = 0; var prev = ""
+            val wins = IntArray(6)
+            while (t < 3600f) {
+                val f = pl.next(MarkLifecycle.Idle, tp, false)
+                val w = (t / 600f).toInt().coerceAtMost(5)
+                if (f.kind.endsWith("-long")) long++
+                if (f.kind.startsWith("rest-")) off++
+                if (f.kind == "explore" && prev != "explore") exp++
+                if (isSpecial(f.kind) || (f.kind == "explore" && prev != "explore")) wins[w]++
+                prev = f.kind; t += f.hold + f.travel
+            }
+            val tot = off + exp
+            sb.append("planner60,$seed,60,$long,$off,$exp,$tot,${wins.count { it == 0 }}/6\n")
+            org.junit.Assert.assertTrue("too many specials seed $seed: $tot", tot <= 5)
+        }
+        // 2) Full engine, 60 untouched minutes (dozes as it would in the app).
+        AvatarDebugMetrics.enabled = true
+        for (seed in listOf(3, 11, 19, 27)) {
+            simulate(Script("g$seed", 3600f, preRoll = 0f) { _, _, _, _ -> AvatarMotionHints() }, seed)
+            val fx = lastLog.filter { it.contains(",fix ") }.map { it.substringBefore(",").toFloat() to it.substringAfter(",fix ").substringBefore(" ") }
+            var prev = ""; var long = 0; var off = 0; var exp = 0; val wins = IntArray(6)
+            for ((t, k) in fx) {
+                val w = (t / 600f).toInt().coerceIn(0, 5)
+                if (k.endsWith("-long")) long++
+                if (k.startsWith("rest-")) off++
+                val ne = k == "explore" && prev != "explore"
+                if (ne) exp++
+                if (isSpecial(k) || ne) wins[w]++
+                prev = k
+            }
+            sb.append("engine60,$seed,60,$long,$off,$exp,${off + exp},${wins.count { it == 0 }}/6\n")
+        }
+        AvatarDebugMetrics.enabled = false
+        File(out, "gaze_specials.csv").writeText(sb.toString())
+        println(sb)
+    }
+
     @Test
     fun behaviourAudit() {
         val out = File(System.getProperty("lastchat.videoDir")?.takeIf { it.isNotBlank() } ?: "build/audit").apply { mkdirs() }
