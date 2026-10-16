@@ -959,3 +959,57 @@ Internal gate (`ChannelMetricsTest`, worst seed): neutral returns 0, blink overl
 face react on the poke frame, recentres 0, owner flips ≤ 0.26/s. Known limits: whole-figure
 stop-go in `pan_poke` is ~0.14/min vs 0.05 (the brief, eased poke pause still counts once in a
 while); pitch jerk is unchanged (startle pops); blink rate under repeated pokes is ~24/min.
+
+## Engine19.1 — review fixes (look-then-poke, chain)
+
+An outside video review of the E17/E18/E19 compares was checked against the labelled frames and
+the E19 trace. The chain clip was already on time and morphing directly (Happy at 0.0/3.6/7.2 s
+as scripted; the late Happy and the neutral snaps were in the E18 row). The look-then-poke
+findings were real and are fixed:
+
+- **Blink stall on a side look:** a story blink, a slow-blink response and a post-poke blink
+  landed within ~2.4 s. Requested blinks now keep ≥ 0.9 s apart, and a poke keeps the eyes open
+  for 0.7 s (`Blinker.inhibit`) so the startle is seen; the blink follows.
+- **Late side look:** salient peripheral events that are in view no longer get the ~1 s
+  "unseen" delay (0.1–0.6 s extra by salience); only out-of-view events are noticed late.
+- **Poke with no visible reaction:** a first poke appraised as *Startled* always gets the
+  surprised bounce and a 0.45 s Startled widen, whatever the picked response.
+- **Recentre under a poke:** the freeze grips the *visible* pose within 0.1 s (it used to ramp
+  in with the clock, so an idle clip heading back to centre carried the body there); an
+  eyes-only poke look also settles a head turn already under way, and ends any gaze glide.
+
+Compare videos now carry a header and boxed row labels (E17.2 / E18 / E19.1, top to bottom).
+
+| scenario | metric | E17.2 | E18 | E19.1 |
+|---|---|---|---|---|
+| pan_poke | neutral dips / run | 0.88 | 0.25 | 0.00 |
+| pan_poke | stop-go, whole figure /min | 0.05 | 0.05 | 0.19 |
+| pan_poke | stop-go, face /min | 0.04 | 0.00 | 0.00 |
+| pan_poke | yaw jerk RMS °/s³ | 5318 | 5479 | 1131 |
+| pan_poke | pitch jerk RMS °/s³ | 17907 | 12988 | 26038 |
+| pan_poke | poke → gaze react, worst s | 9.00 | 9.00 | 0.00 |
+| pan_poke | recentre before poke react / run | 0.25 | 0.38 | 0.00 |
+| rapid_pokes | neutral dips / run | 0.75 | 0.12 | 0.00 |
+| rapid_pokes | stop-go, whole figure /min | 0.38 | 0.38 | 0.22 |
+| rapid_pokes | stop-go, face /min | 1.33 | 0.00 | 0.00 |
+| rapid_pokes | yaw jerk RMS °/s³ | 5266 | 4654 | 1484 |
+| rapid_pokes | pitch jerk RMS °/s³ | 31945 | 32716 | 35614 |
+| rapid_pokes | poke → gaze react, worst s | 9.00 | 9.00 | 0.00 |
+| rapid_pokes | recentre before poke react / run | 0.12 | 0.00 | 0.00 |
+| idle12 | neutral dips / run | 0.75 | 0.00 | 0.00 |
+| idle12 | stop-go, whole figure /min | 0.03 | 0.03 | 0.08 |
+| idle12 | stop-go, face /min | 0.02 | 0.00 | 0.00 |
+| idle12 | yaw jerk RMS °/s³ | 1972 | 1827 | 317 |
+| idle12 | pitch jerk RMS °/s³ | 3054 | 1630 | 1517 |
+| idle12 | poke → gaze react, worst s | 0.00 | 0.00 | 0.00 |
+| idle12 | recentre before poke react / run | 0.00 | 0.00 | 0.00 |
+| session | neutral dips / run | 5.12 | 2.00 | 0.00 |
+| session | stop-go, whole figure /min | 0.34 | 0.26 | 0.36 |
+| session | stop-go, face /min | 0.34 | 0.03 | 0.00 |
+| session | yaw jerk RMS °/s³ | 3782 | 4119 | 2550 |
+| session | pitch jerk RMS °/s³ | 12183 | 12356 | 19381 |
+| session | poke → gaze react, worst s | 9.00 | 9.00 | 0.00 |
+| session | recentre before poke react / run | 0.12 | 0.00 | 0.00 |
+
+Pitch jerk is higher than before in poke scenarios: that is the startle bounce (now on every
+startling first poke). Whole-figure stop-go stays in the E17/E18 range except pan_poke.

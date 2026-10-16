@@ -256,14 +256,13 @@ class MotionDirector(
      * picks up again. Additive gestures (the startle pop, a nod) are not slowed.
      */
     fun freezeBase(sec: Float) {
-        // Hold where the body actually is (the spring's position), not where it was heading.
-        if (freezeLeft <= 0f && filterReady) frozenPose = BodyPose(
-            pitch = MarkClipEngine.wrap180(fx[0]), yaw = MarkClipEngine.wrap180(fx[1]), roll = MarkClipEngine.wrap180(fx[2]),
-            posY = fx[3], squashX = fx[4], squashY = fx[5], scale = fx[6], lidOpen = fx[7],
-        )
+        // Hold where the body actually is (the spring's position), not where its target is
+        // heading: mid-turn the target is ahead, and an idle clip may be on its way back to centre.
+        if (freezeLeft <= 0f && filterReady) { frozenPose = poseOf(fx); freezeW = 0f }
         freezeLeft = maxOf(freezeLeft, sec); holdBeats(sec + 0.3f)
     }
     private var frozenPose: BodyPose? = null
+    private var freezeW = 0f
     /** Poke freeze: the base clock slows to this rate… */
     private val FREEZE_GOAL = 0.4f
     /** …and the body holds this much of where it actually was (never a full stop-start). */
@@ -428,7 +427,9 @@ class MotionDirector(
         val top = layers.last()
         var pose = steer(top, dt, bdt)
         frozenPose?.let { fp ->
-            val fw = (FREEZE_HOLD * (1f - tScale) / (1f - FREEZE_GOAL).coerceAtLeast(1e-3f)).coerceIn(0f, FREEZE_HOLD)
+            // Grip in ~0.1 s (eased), let go as the clock recovers.
+            freezeW = if (freezeLeft > 0f) (freezeW + dt / 0.1f).coerceAtMost(1f) else minOf(freezeW, (1f - tScale) / (1f - FREEZE_GOAL).coerceAtLeast(1e-3f))
+            val fw = FREEZE_HOLD * freezeW * freezeW * (3f - 2f * freezeW)
             if (fw > 1e-3f) pose = pose.lerpTo(fp, fw) else if (freezeLeft <= 0f) frozenPose = null
         }
         clipExpression = top.source.expression(top.t)

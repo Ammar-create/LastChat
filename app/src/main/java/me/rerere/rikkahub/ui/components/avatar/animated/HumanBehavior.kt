@@ -211,7 +211,9 @@ internal class Attention(private val rng: Random) {
         val base = 0.15f + 0.3f * (1f - t.energy) + 0.15f * absorption + 0.12f * (off / 1.6f).coerceAtMost(1f)
         val jitter = 0.08f * (rng.nextFloat() * 2f - 1f)
         var delay = (base * (1.15f - 0.3f * sal) + jitter).coerceIn(0.15f, 0.6f)
-        if (late) delay += 0.55f + 0.8f * rng.nextFloat()
+        // Unseen ("behind") events are noticed late. Peripheral motion that is in view pops out
+        // quickly (more so the more salient it is) — a short extra beat, not a ~1 s stall.
+        if (late) delay += if (!s.inView) 0.55f + 0.8f * rng.nextFloat() else (0.1f + 0.35f * (1f - sal)) + 0.15f * rng.nextFloat()
         return Percept(s, delay, late, sal * (0.6f + 0.4f * cone))
     }
 }

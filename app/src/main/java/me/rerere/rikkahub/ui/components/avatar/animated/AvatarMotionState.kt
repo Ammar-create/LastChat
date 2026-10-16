@@ -181,13 +181,19 @@ internal class GazeDirector(
         val gy = y.coerceIn(-1f, 1f)
         val jump = hypot(gx - tx, gy - ty)
         returning = false // a new saccade ends any return glide (audit)
+        pursuitT = 1f // …and the glide itself (it would overwrite the new target next frame)
         if (jump > 0.4f) bigShift = true
         tx = gx; ty = gy
         // Eye–head coordination: small shifts are eyes only; bigger ones bring the head
         // ~75 % of the way, starting ~80–140 ms after the eyes.
         val headJoins = withHead || (jump > 0.45f && !eyesOnly)
         // An eyes-only snap of attention also cancels a head turn that had not started yet.
-        if (eyesOnly) { headDelay = 0f; pendingHx = htx; pendingHy = hty }
+        // …and a head turn already under way settles where it is (it does not carry on across
+        // centre while the eyes go to the finger).
+        if (eyesOnly) {
+            htx = headX + hvx * 0.06f; hty = headY + hvy * 0.06f
+            headDelay = 0f; pendingHx = htx; pendingHy = hty
+        }
         if (headJoins) {
             // Eyes lead, the head follows a beat later and carries most of a big turn.
             pendingHx = gx * 0.8f; pendingHy = gy * 0.72f
@@ -511,7 +517,12 @@ internal class Blinker(private val rng: Random) {
     var doubles = 0; private set
     var overlaps = 0; private set
 
+    /** Keep the eyes open for [sec] (a startle widens them; the blink comes after). */
+    fun inhibit(sec: Float) { quiet = maxOf(quiet, sec); if (next < sec) next = sec + 0.15f }
+    private var quiet = 0f
+
     fun request(double: Boolean = false, minGap: Float = 1.4f, @Suppress("UNUSED_PARAMETER") mask: Boolean = false) {
+        if (quiet > 0f) { deferred = maxOf(deferred, 0); return }
         if (phase >= 0f || gapLeft >= 0f || sinceLast < max(minGap, MIN_REQUEST_GAP)) return
         // Asked-for doubles (wake, recover, nodding off) are rationed too: at most one per
         // [REQUEST_DOUBLE_GAP] s, otherwise a single blink.
@@ -522,7 +533,7 @@ internal class Blinker(private val rng: Random) {
 
     /** A big saccade is starting: blink with it most of the time (p [SACCADE_P]). */
     fun saccade() {
-        if (rng.nextFloat() >= SACCADE_P) return
+        if (quiet > 0f || rng.nextFloat() >= SACCADE_P) return
         if (phase >= 0f || gapLeft >= 0f || sinceLast < 0.35f) return
         if (!allow()) return
         begin(0, drowsy = false)
@@ -546,8 +557,9 @@ internal class Blinker(private val rng: Random) {
         clock += dt
         sinceLast += dt
         sinceDouble += dt
+        quiet -= dt
         // A blink held back by another lid closer lands right after it lets go.
-        if (deferred >= 0 && phase < 0f && gapLeft < 0f && allow() && sinceLast >= MIN_REQUEST_GAP) { begin(if (sinceDouble >= REQUEST_DOUBLE_GAP) deferred else 0, drowsy); deferred = -1 }
+        if (deferred >= 0 && quiet <= 0f && phase < 0f && gapLeft < 0f && allow() && sinceLast >= MIN_REQUEST_GAP) { begin(if (sinceDouble >= REQUEST_DOUBLE_GAP) deferred else 0, drowsy); deferred = -1 }
         if (phase < 0f) {
             if (gapLeft >= 0f) {
                 gapLeft -= dt
@@ -606,7 +618,7 @@ internal class Blinker(private val rng: Random) {
         const val PI_F = 3.1415927f
         const val REFRACTORY = 1.8f
         const val MAX_INTERVAL = 7f
-        const val MIN_REQUEST_GAP = 0.6f
+        const val MIN_REQUEST_GAP = 0.9f
         const val DOUBLE_P = 0.04f
         const val DOUBLE_GAP = 6f
         const val SACCADE_P = 0.75f
@@ -911,6 +923,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 // wherever they are (no recenter); the head stays on what it was doing.
                 trace?.poke(time)
                 director.freezeBase(0.35f)
+                blink.inhibit(0.7f) // the startle is seen with open eyes
                 upRightPause = 1.5f // attention is on the finger; the up-right ease-out waits
                 val gx0 = (pokeX * 0.6f).coerceIn(-0.7f, 0.7f)
                 var gy0 = (0.18f + pokeY * 0.35f).coerceIn(-0.05f, 0.6f)
@@ -2411,7 +2424,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 Response.Smile -> { blink.request(minGap = 0f); accent(FaceAccent.Glee, 1.2f, force = true) }
                 Response.CuriousTilt -> { director.gesture(MotionDirector.Gesture.Tilt); accent(FaceAccent.Curious, 1.2f) }
                 Response.Acknowledge -> director.gesture(MotionDirector.Gesture.Nod)
-                else -> blink.request(minGap = 0f)
+                // A poke that startles always shows it: the surprised bounce, eyes wide, then a blink.
+                else -> if (meaning == Meaning.Startled) {
+                    director.gesture(MotionDirector.Gesture.Recoil)
+                    accent(FaceAccent.Startled, 0.45f, force = true)
+                } else blink.request(minGap = 0f)
             }
         }
     }
