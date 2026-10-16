@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,6 +63,10 @@ fun AnimatedMarkAvatar(
     debugPose: ClipSample? = null,
     /** Render-harness hook: full frame override (pose, gaze, lids, expression morph). */
     debugFrame: MotionFrame? = null,
+    /** Editor hook: the latest control change, so the avatar can notice it (engine16.2). */
+    editorCue: EditorCue? = null,
+    /** Harness hook: drive the shape/eye-style morph progress by hand (0…1); null = animate. */
+    debugMorph: Float? = null,
 ) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { AvatarPackData.ensureLoaded(context) }
@@ -82,7 +88,11 @@ fun AnimatedMarkAvatar(
         animationSpec = androidx.compose.animation.core.tween(380),
         label = "markBody",
     )
-    val eyeColor = MarkColors.eyeColor(eyeType, eyeColorHex, colorHex, colorPreset)
+    val eyeColor by androidx.compose.animation.animateColorAsState(
+        targetValue = MarkColors.eyeColor(eyeType, eyeColorHex, colorHex, colorPreset),
+        animationSpec = androidx.compose.animation.core.tween(380),
+        label = "markEye",
+    )
     val shadeStrength by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (eyeShade) 1f else 0f,
         animationSpec = androidx.compose.animation.core.tween(380),
@@ -90,15 +100,26 @@ fun AnimatedMarkAvatar(
     )
     val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor, shadeStrength)
 
-    // Shape swap (editor) gets a soft settle; first appearance never pops in size.
+    // Engine16.2: a shape or eye-style swap morphs the geometry from whatever was on screen
+    // (even mid-morph) to the new mark - no pop, no size snap.
     val morphAnim = remember { Animatable(1f) }
-    val lastShape = remember { mutableStateOf(shapeId) }
-    LaunchedEffect(shapeId) {
-        if (lastShape.value == shapeId || frozen) return@LaunchedEffect
-        lastShape.value = shapeId
-        morphAnim.snapTo(0.94f)
-        morphAnim.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
+    val morphHold = remember { MorphHolder() }
+    val lastSig = remember { mutableStateOf("$shapeId|${eyeType.lowercase()}") }
+    val sigNow = "$shapeId|${eyeType.lowercase()}"
+    if (lastSig.value != sigNow && !frozen) {
+        lastSig.value = sigNow
+        morphHold.last?.let { g -> morphHold.from = g; morphHold.fromPts = MorphPts.of(g) }
+        morphHold.pending = true
     }
+    LaunchedEffect(sigNow) {
+        if (!morphHold.pending) return@LaunchedEffect
+        morphHold.pending = false
+        if (morphHold.from == null) return@LaunchedEffect
+        morphAnim.snapTo(0f)
+        morphAnim.animateTo(1f, tween(560, easing = FastOutSlowInEasing))
+        morphHold.from = null
+    }
+    if (editorCue != null && !frozen) LaunchedEffect(editorCue.seq) { motionState.editorCue(editorCue) }
 
     // --- shared stage: where am I, so neighbours can glance at me ---
     val stage = LocalAvatarStage.current
@@ -162,13 +183,28 @@ fun AnimatedMarkAvatar(
                 else -> motionState.frame
             }
             val shape = MarkShapes.resolve(shapeId) ?: return@Canvas
+            val u = debugMorph ?: morphAnim.value
+            val from = morphHold.from
+            if (!frozen || debugMorph != null) {
+                val now = MarkGeom()
+                drawMark(shape, shapeId, isGrok, f, calmPreview, 1f, bodyColor, eyeColor, eyeFade, sink = now)
+                if (from != null && u < 1f) {
+                    val out = MarkGeom()
+                    drawMorph(from, morphHold.fromPts!!, now, u, out)
+                    morphHold.last = out
+                } else {
+                    drawMark(shape, shapeId, isGrok, f, calmPreview, 1f, bodyColor, eyeColor, eyeFade)
+                    morphHold.last = now
+                }
+                return@Canvas
+            }
             drawMark(
                 shape = shape,
                 shapeId = shapeId,
                 isGrok = isGrok,
                 f = f,
                 calm = calmPreview,
-                morph = if (frozen) 1f else morphAnim.value,
+                morph = 1f,
                 body = bodyColor,
                 eye = eyeColor,
                 eyeFade = eyeFade,
@@ -178,6 +214,18 @@ fun AnimatedMarkAvatar(
 }
 
 internal val CALM_FRAME = MotionFrame()
+
+internal class MorphHolder {
+    var last: MarkGeom? = null
+    var from: MarkGeom? = null
+    var fromPts: MorphPts? = null
+    var pending = false
+}
+
+/** A change made in the avatar editor. [at] = control centre in window px (null = unknown). */
+data class EditorCue(val seq: Int, val kind: Kind, val at: Offset? = null) {
+    enum class Kind { Shape, EyeStyle, BodyColor, EyeColor, Shade }
+}
 
 private val NEUTRAL_GAP_CACHE = HashMap<String, Float>()
 
@@ -221,8 +269,9 @@ internal fun DrawScope.drawMark(
     body: Color,
     eye: Color,
     eyeFade: Color,
+    sink: MarkGeom? = null,
 ) {
-    drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body, eye, eyeFade)
+    drawMarkInner(shape, shapeId, isGrok, f, calm, morph, body, eye, eyeFade, sink)
 }
 
 private fun DrawScope.drawMarkInner(
@@ -235,6 +284,7 @@ private fun DrawScope.drawMarkInner(
     body: Color,
     eye: Color,
     eyeFade: Color,
+    sink: MarkGeom? = null,
 ) {
     val he = AvatarPackData.grok.headCenter
     val bodyRaw = AvatarPackData.parseSvgPath(shape.pathData)
@@ -270,7 +320,11 @@ private fun DrawScope.drawMarkInner(
     val rollR = Math.toRadians(roll.toDouble()).toFloat()
     val projected = Soft3DMark.projectBody(bodyCentered, shape.solid, yawR, pitchR, rollR, he, shapeId = shape.id)
 
-    Soft3DMark.drawBody(
+    if (sink != null) {
+        sink.body = projected; sink.clip = clip; sink.sizePx = sizePx; sink.he = he
+        sink.bodyColor = body; sink.eyeColor = eye; sink.eyeFade = eyeFade; sink.isGrok = isGrok
+        sink.fit = WhEyeSeat.genericalFitScale(shapeId)
+    } else Soft3DMark.drawBody(
         drawScope = this,
         bodyPath = bodyCentered,
         fill = body,
@@ -400,6 +454,12 @@ private fun DrawScope.drawMarkInner(
             AvatarDebugMetrics.rows += "${AvatarDebugMetrics.label},grok,${shape.id},${f.exprFrom},${f.exprTo},${f.exprT}," +
                 "${GrokEyeGap.clearance(a, b) / he},${EyeSafeRegion.inset(safeBody, listOf(left, right), he * 0.5f) / he},${c.x / he},${c.y / he}"
         }
+        if (sink != null) {
+            sink.eyes = listOfNotNull(left.takeIf { ok(it) }, right.takeIf { ok(it) }).map { p ->
+                val b = p.getBounds(); MarkGeom.Eye(p, Offset(b.center.x, b.top), Offset(b.center.x, b.bottom))
+            }
+            return
+        }
         // While spinning, clip to the rotated silhouette so an eye rolling over the edge wraps away.
         if (spinning) Soft3DMark.withBodyClip(this, clip, projected, sizePx, he, morph, false) {
             if (ok(left)) drawPath(left, eye)
@@ -455,6 +515,10 @@ private fun DrawScope.drawMarkInner(
         AvatarDebugMetrics.rows += "${AvatarDebugMetrics.label},generical,${shape.id},${f.exprFrom},${f.exprTo},${f.exprT}," +
             "NaN,${EyeSafeRegion.inset(genBody, ps, he * 0.5f) / he},${c.x / he},${c.y / he}"
     }
+    if (sink != null) {
+        sink.eyes = listOfNotNull(le, re).map { MarkGeom.Eye(it.path, it.gradStart, it.gradEnd) }
+        return
+    }
     val drawEyes: DrawScope.() -> Unit = {
         le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit) }
         re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit) }
@@ -495,4 +559,116 @@ internal fun FaceParams.grokSymmetric(): FaceParams {
         upper = m(left.upper, right.upper), lower = m(left.lower, right.lower), slant = m(left.slant, right.slant), rot = rot,
     )
     return FaceParams(mk(left, -r), mk(right, r))
+}
+
+
+/**
+ * Engine16.2: geometry of one drawn mark in the body-transform space (body silhouette as
+ * projected, seated eye paths with their gradient axis, colours). Two of these blend into a
+ * seamless shape / eye-style morph (see [drawMorph]).
+ */
+internal class MarkGeom {
+    class Eye(val path: Path, val gradStart: Offset, val gradEnd: Offset)
+    var body: Path = Path()
+    var eyes: List<Eye> = emptyList()
+    var clip: ClipSample? = null
+    var sizePx = 0f
+    var he = 1f
+    var fit = 1f
+    var isGrok = false
+    var bodyColor = Color.Black
+    var eyeColor = Color.White
+    var eyeFade = Color.White
+}
+
+/** Sample the longest contour of [p] into [n] points, counter-clockwise, start at the topmost. */
+internal fun resamplePath(p: Path, n: Int = 120): List<Offset> {
+    // A turned body's projected hull can be several overlapping face contours; union them
+    // into the true silhouette first, then take the contour enclosing the most area.
+    val src = p.asAndroidPath()
+    val merged = android.graphics.Path()
+    val ok = runCatching { merged.op(src, android.graphics.Path(), android.graphics.Path.Op.UNION) }.getOrDefault(false)
+    val pm = android.graphics.PathMeasure(if (ok && !merged.isEmpty) merged else src, true)
+    var best = -1f
+    var bestPts: List<Offset> = emptyList()
+    val pos = FloatArray(2)
+    do {
+        val len = pm.length
+        if (len > 0f) {
+            val pts = List(n) { i -> pm.getPosTan(len * i / n, pos, null); Offset(pos[0], pos[1]) }
+            var a2 = 0f
+            for (i in pts.indices) { val a = pts[i]; val q = pts[(i + 1) % n]; a2 += a.x * q.y - q.x * a.y }
+            if (kotlin.math.abs(a2) > best) { best = kotlin.math.abs(a2); bestPts = pts }
+        }
+    } while (pm.nextContour())
+    if (bestPts.size < 3) return bestPts
+    var area = 0f
+    for (i in bestPts.indices) { val a = bestPts[i]; val b = bestPts[(i + 1) % n]; area += a.x * b.y - b.x * a.y }
+    val pts = if (area < 0f) bestPts.reversed() else bestPts
+    val top = pts.indices.minBy { pts[it].y }
+    return List(n) { pts[(top + it) % n] }
+}
+
+/** Point-wise blend of two resampled contours, with the start index aligned for least travel. */
+internal fun blendContours(a: List<Offset>, b: List<Offset>, u: Float): Path {
+    val n = minOf(a.size, b.size)
+    val out = Path()
+    if (n < 3) return out
+    var bestK = 0; var bestD = Float.MAX_VALUE
+    for (k in -n / 8..n / 8) {
+        var d = 0f
+        var i = 0
+        while (i < n) { val q = b[((i + k) % n + n) % n]; val dx = a[i].x - q.x; val dy = a[i].y - q.y; d += dx * dx + dy * dy; i += 4 }
+        if (d < bestD) { bestD = d; bestK = k }
+    }
+    for (i in 0 until n) {
+        val q = b[((i + bestK) % n + n) % n]
+        val x = a[i].x + (q.x - a[i].x) * u; val y = a[i].y + (q.y - a[i].y) * u
+        if (i == 0) out.moveTo(x, y) else out.lineTo(x, y)
+    }
+    out.close()
+    return out
+}
+
+private fun lerpC(a: Color, b: Color, u: Float) = androidx.compose.ui.graphics.lerp(a, b, u)
+
+/** Draw the blend of [from] → [to] at [u] (0…1). Generical/Grok eye looks cross-blend too. */
+internal fun DrawScope.drawMorph(from: MarkGeom, fromPts: MorphPts, to: MarkGeom, u: Float, out: MarkGeom) {
+    val clip = to.clip ?: return
+    val toPts = MorphPts.of(to)
+    val body = blendContours(fromPts.body, toPts.body, u)
+    val sizePx = from.sizePx + (to.sizePx - from.sizePx) * u
+    val he = to.he
+    val gW = (if (from.isGrok) 0f else 1f) * (1f - u) + (if (to.isGrok) 0f else 1f) * u
+    val bodyC = lerpC(from.bodyColor, to.bodyColor, u)
+    val top = lerpC(from.eyeColor, to.eyeColor, u)
+    val fromBottom = if (from.isGrok) from.eyeColor else from.eyeFade
+    val toBottom = if (to.isGrok) to.eyeColor else to.eyeFade
+    val bottom = lerpC(fromBottom, toBottom, u)
+    val eyes = if (fromPts.eyes.size == toPts.eyes.size) fromPts.eyes.indices.map { i ->
+        val ea = from.eyes[i]; val eb = to.eyes[i]
+        fun lo(a: Offset, b: Offset) = Offset(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u)
+        MarkGeom.Eye(blendContours(fromPts.eyes[i], toPts.eyes[i], u), lo(ea.gradStart, eb.gradStart), lo(ea.gradEnd, eb.gradEnd))
+    } else to.eyes
+    val fit = from.fit + (to.fit - from.fit) * u
+    Soft3DMark.withBodyTransform(this, clip, sizePx, he, 1f, false) {
+        drawPath(body, bodyC)
+        clipPath(body) {
+            for (e in eyes) {
+                drawPath(e.path, androidx.compose.ui.graphics.Brush.linearGradient(listOf(top, bottom), e.gradStart, e.gradEnd))
+                if (gW > 0.01f) drawPath(e.path, top.copy(alpha = top.alpha * gW),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 8f * fit * he / 250f,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            }
+        }
+    }
+    out.body = body; out.eyes = eyes; out.clip = clip; out.sizePx = sizePx; out.he = he; out.fit = fit
+    out.isGrok = gW < 0.5f; out.bodyColor = bodyC; out.eyeColor = top; out.eyeFade = bottom
+}
+
+/** Resampled contours of a [MarkGeom] (computed once for a frozen "from" snapshot). */
+internal class MorphPts(val body: List<Offset>, val eyes: List<List<Offset>>) {
+    companion object {
+        fun of(g: MarkGeom) = MorphPts(resamplePath(g.body), g.eyes.map { resamplePath(it.path, 64) })
+    }
 }

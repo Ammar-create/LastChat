@@ -347,8 +347,7 @@ internal class IdlePlanner(private val rng: Random) {
         // Between interests: a long, quiet rest near the front.
         if (episodeName != "rest") {
             episodeName = "rest"
-            return Fixation(rr(-0.07f, 0.07f), rr(-0.02f, 0.07f), logN(med * 1.5f, 0.35f, 4f, 12f),
-                travel = rr(0.9f, 1.5f) / t.tempo, withHead = true, kind = "rest")
+            return restFixation(t, med)
         }
         // Interest target: an imagined point anywhere (full range), biased to the sides/below.
         val side = if (rng.nextBoolean()) 1f else -1f
@@ -360,14 +359,14 @@ internal class IdlePlanner(private val rng: Random) {
             .copy(event = if (noticed) "notice" else null)
         val r = rng.nextFloat()
         when {
-            r < 0.4f -> {
+            r < 0.3f -> {
                 // Soft drift away from it, then rest.
                 episodeName = "drift"
                 val dx = x + side * rr(-0.3f, -0.12f); val dy = y + rr(-0.12f, 0.12f)
                 episode += Fixation(dx, dy, logN(1.4f, 0.3f, 0.8f, 2.4f), travel = rr(1.2f, 2.2f) / t.tempo,
                     withHead = true, kind = "drift")
             }
-            r < 0.65f -> {
+            r < 0.48f -> {
                 // Slow pan across 2–3 related points (one direction, pursuit between).
                 episodeName = "pan"
                 val n = 2 + rng.nextInt(2)
@@ -379,6 +378,23 @@ internal class IdlePlanner(private val rng: Random) {
                         withHead = true, kind = "pan")
                 }
             }
+            r < 0.62f -> {
+                // Engine16.2 area exploration: stay in this region a while, eyes wandering
+                // over a few nearby points (head holds), before moving on.
+                episodeName = "explore"
+                // The region is a comfortable one (not the far edge, not low), and the whole
+                // wander stays under ~9 s.
+                val n = 3 + rng.nextInt(3)
+                val rx = x.coerceIn(-0.5f, 0.5f)
+                val ry = y.coerceIn(-0.15f, 0.14f)
+                repeat(n) {
+                    var ex = (rx + rr(-0.12f, 0.12f)).coerceIn(-0.6f, 0.6f)
+                    var ey = (ry + rr(-0.08f, 0.08f)).coerceIn(-0.2f, 0.2f)
+                    if (ex > 0.15f && ey < -0.08f) ey = rr(-0.04f, 0.06f)
+                    episode += Fixation(ex, ey, logN(1.5f, 0.35f, 0.6f, 3.2f), travel = if (rng.nextFloat() < 0.3f) rr(0.35f, 0.7f) else 0f,
+                        withHead = false, kind = "explore")
+                }
+            }
             r < 0.85f -> {
                 // Acknowledge it: a small nod + blink, then away.
                 episodeName = "ack"
@@ -387,6 +403,26 @@ internal class IdlePlanner(private val rng: Random) {
             else -> episodeName = "look"
         }
         return first
+    }
+
+    /**
+     * Engine16.2: where it rests is not always straight ahead. Front is most common, then a
+     * little to one side, slightly low to one side, or up-left; never up-right, and low rests
+     * stay short so it doesn't look droopy. Now and then a really long hold (12–24 s).
+     */
+    private fun restFixation(t: Temperament, med: Float): Fixation {
+        val s = if (rng.nextBoolean()) 1f else -1f
+        val r = rng.nextFloat()
+        val long = rng.nextFloat() < 0.2f
+        var hold = if (long) rr(12f, 24f) else logN(med * 1.5f, 0.35f, 4f, 12f)
+        val (x, y, k) = when {
+            r < 0.4f -> Triple(rr(-0.07f, 0.07f), rr(-0.02f, 0.07f), "rest")
+            r < 0.72f -> Triple(s * rr(0.18f, 0.4f), rr(-0.04f, 0.1f), "rest-side")
+            r < 0.86f -> { hold = hold.coerceAtMost(9f); Triple(s * rr(0.12f, 0.35f), rr(0.12f, 0.2f), "rest-low") }
+            r < 0.96f -> { hold = hold.coerceAtMost(10f); Triple(-rr(0.15f, 0.35f), -rr(0.06f, 0.15f), "rest-upleft") }
+            else -> Triple(rr(-0.05f, 0.03f), -rr(0.04f, 0.09f), "rest-up")
+        }
+        return Fixation(x, y, hold, travel = rr(0.9f, 1.6f) / t.tempo, withHead = true, kind = if (long) "$k-long" else k)
     }
 
     private fun fix(x: Float, y: Float, hold: Float, kind: String, head: Boolean = true): Fixation {

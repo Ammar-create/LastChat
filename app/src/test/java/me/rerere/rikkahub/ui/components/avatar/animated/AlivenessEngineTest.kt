@@ -91,7 +91,7 @@ class ToneAndHobbyTest {
         val interest = fx.filter { it.kind == "interest" }
         val quadrants = interest.map { (if (it.x > 0f) 1 else 0) + (if (it.y < 0f) 2 else 0) }.toSet()
         assertTrue("quadrants=$quadrants", quadrants.size >= 3)
-        val restTime = fx.filter { it.kind == "rest" }.sumOf { it.hold.toDouble() }
+        val restTime = fx.filter { it.kind.startsWith("rest") }.sumOf { it.hold.toDouble() }
         assertTrue("rest should dominate", restTime > 0.45 * fx.sumOf { it.hold.toDouble() })
     }
 }

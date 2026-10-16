@@ -636,3 +636,48 @@ changes = 0, low → bright cuts = 0. Writes `audit_summary.csv`, `audit_hour_ep
   Curious / Puzzled / Dizzy / Worried no longer make one eye crooked.
 - Grok eyes that are already closed (`sleepy`, `happy` arcs) ignore blinks / lid in proportion
   to how far the morph is into them — closed eyes never "blink".
+
+## Engine16.2: live editor, seamless morphs, gaze holds
+
+**Editor layout** (`AnimatedAvatarEditor.kt`)
+- Everything is centred on the phone-width column: the preview, caption, section titles, and the shape grid and colour/eye swatches (centred wrapping `FlowRow`s with no hidden horizontal scroll), plus the eye toggle and the shade row.
+- The Shape section has no card; the shapes sit on the sheet background. Colour and Eyes keep their cards.
+- The preview stage has no glow (a plain `surfaceContainer` card).
+- Cancel/Save is a floating pill. It reuses the floating bar style of the Lorebooks/Skills settings screens: `Surface` with 28 dp corners, `surfaceContainerHigh`, tonal elevation 6, shadow 8, 4 dp padding, and circular items. The primary item (Save) is `primaryContainer`.
+- The preview is the live engine. `livePreview=false` exists only for the static Robolectric harness.
+
+**Seamless morphs** (`AnimatedMarkAvatar.kt`)
+- `drawMark(..., sink = MarkGeom())` captures the geometry instead of drawing it: the projected body silhouette, the seated eye paths with their gradient axes, the size, and the colours.
+- On a shape or eye-style change, the last drawn geometry is frozen as the "from" state. `drawMorph` then blends it toward the live target over 560 ms:
+  - contours are resampled (`resamplePath` first union-simplifies multi-contour 3D hulls, then takes the largest-area contour) and blended point by point
+  - start points are aligned for the least travel
+  - the Generical outline fades in or out, and the eye gradient and colours tween
+- Body colour, eye colour and the shade tween over 380 ms.
+- Interrupting a morph starts from what is on screen, so there is no pop.
+- The old 0.94 size "settle" is gone.
+- `MorphSeamTest` checks that the morph endpoints cover exactly what `drawMark` draws, for all shapes, both eye styles and turned poses.
+
+**Editor reactions** (`AvatarMotionState.editorCue`)
+- Each control change sends an `EditorCue(kind, at = control centre)`. It is perceived after 0.25–0.5 s.
+- About 55% of changes get a glance with a real head turn toward that control, rate-limited to one per 1.6 s.
+- Three or more changes within 4 s count as browsing: the avatar gets a curious look, with an 8 s cooldown.
+- An eye-style swap sometimes carries a blink.
+- About 1.3 s after the last change, at most one after-beat plays:
+  - after a shape change, a look down at itself (30%)
+  - pleased Glee
+  - a nod
+  - or it just settles
+
+**Idle gaze** (`IdlePlanner.restFixation` and the `explore` branch)
+- Rest directions vary:
+  - front 40%
+  - side 32%
+  - low-side 14%, held at most 9 s
+  - up-left 10%, held at most 10 s
+  - slightly up 4%
+- It never rests up-right.
+- 20% of rests are long holds of 12–24 s (kind `*-long`).
+- Area exploration: 3–5 eye-only fixations within ±0.12/±0.08 of a comfortable region (|x| ≤ 0.5, not low), each held 0.6–3.2 s.
+- Debug logs: `fix <kind> → (x,y) hold`.
+
+Renders are in `/workspace/lastchat-renders/engine16.2/` (box).

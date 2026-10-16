@@ -565,6 +565,7 @@ class AvatarRenderHarnessTest {
                             onSave = {},
                             modifier = Modifier.fillMaxSize(),
                             scrollState = scroll,
+                            livePreview = false,
                         )
                     }
                 }

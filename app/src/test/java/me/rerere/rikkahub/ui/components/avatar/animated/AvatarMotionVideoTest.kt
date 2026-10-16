@@ -116,6 +116,7 @@ class AvatarMotionVideoTest {
         },
         // ---------------- engine16 previews
         Script("idle60", 60f, preRoll = 20f, seed = 9) { _, _, _, _ -> AvatarMotionHints() },
+        Script("idle_gaze", 90f, preRoll = 15f, seed = 23) { _, _, _, _ -> AvatarMotionHints() },
         Script("idle180", 180f, preRoll = 20f, seed = 5) { _, _, _, _ -> AvatarMotionHints() },
         Script("ep_attention", 40f, preRoll = 10f, seed = 31) { s, _, t, _ ->
             ep(s, t, 1f to Episode.CuriousLR, 6f to Episode.CheckOnYou, 11f to Episode.TiltChain, 17f to Episode.FollowSomething,
@@ -452,5 +453,105 @@ class AvatarMotionVideoTest {
         AvatarDebugMetrics.enabled = false
         File(out, "metrics.csv").writeText("scenario,mode,shape,exprFrom,exprTo,exprT,gap_over_he,inset_over_he,eye_cx,eye_cy\n" +
             AvatarDebugMetrics.rows.joinToString("\n"))
+    }
+
+    // ------------------------------------------------------------ engine16.2 editor clip
+    private data class Cfg(val shape: String, val eye: String, val body: String, val preset: String?, val eyeHex: String?, val shade: Boolean)
+    private data class Change(val t: Float, val kind: EditorCue.Kind, val cfg: Cfg)
+
+    private val editorTimeline: List<Change> = run {
+        var c = Cfg("blob", "generical", "#2A92FE", "blue", null, true)
+        val out = ArrayList<Change>()
+        fun at(t: Float, k: EditorCue.Kind, f: (Cfg) -> Cfg) { c = f(c); out += Change(t, k, c) }
+        at(1.5f, EditorCue.Kind.Shape) { it.copy(shape = "heart") }
+        at(5.0f, EditorCue.Kind.Shape) { it.copy(shape = "square") }
+        at(8.5f, EditorCue.Kind.EyeStyle) { it.copy(eye = "grok") }
+        at(12f, EditorCue.Kind.BodyColor) { it.copy(body = "#FF781C", preset = "orange") }
+        at(15f, EditorCue.Kind.EyeColor) { it.copy(eyeHex = "#1A1A1A") }
+        at(18f, EditorCue.Kind.EyeStyle) { it.copy(eye = "generical", eyeHex = null) }
+        at(21f, EditorCue.Kind.Shade) { it.copy(shade = false) }
+        at(23.5f, EditorCue.Kind.Shade) { it.copy(shade = true) }
+        // browsing quickly through shapes
+        for ((k, sh) in listOf("cloud", "sparkle", "clover", "flower", "star").withIndex()) at(27f + k * 0.7f, EditorCue.Kind.Shape) { it.copy(shape = sh) }
+        at(31f, EditorCue.Kind.BodyColor) { it.copy(body = "#2A92FE", preset = "blue") }
+        out
+    }
+    private val cueSpot = mapOf(
+        EditorCue.Kind.Shape to Offset(540f, 1500f), EditorCue.Kind.BodyColor to Offset(540f, 1850f),
+        EditorCue.Kind.EyeStyle to Offset(540f, 2000f), EditorCue.Kind.EyeColor to Offset(540f, 2150f), EditorCue.Kind.Shade to Offset(540f, 2250f),
+    )
+
+    @Test
+    fun renderEditorMorph() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "editor_morph" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        AvatarDebugMetrics.enabled = true
+        val start = Cfg("blob", "generical", "#2A92FE", "blue", null, true)
+        var seq = 0
+        val sc = Script("editor_morph", 42f, preRoll = 6f, seed = 61) { st, _, t, _ ->
+            for (ch in editorTimeline) if (t >= ch.t && fired.add(ch.t)) st.editorCue(EditorCue(++seq, ch.kind, cueSpot[ch.kind]))
+            AvatarMotionHints()
+        }
+        val frames = simulate(sc, sc.seed)
+        File(out, "editor_morph_behavior.csv").writeText("t,event\n" + lastLog.joinToString("\n") + "\n")
+        fun cfgAt(t: Float): Triple<Cfg, Cfg, Float> {
+            var prev = start; var cur = start; var since = 99f
+            for (ch in editorTimeline) if (t >= ch.t) { prev = cur; cur = ch.cfg; since = t - ch.t }
+            return Triple(prev, cur, since)
+        }
+        val labels = ArrayList<String>()
+        val dir = File(out, "editor_morph_editor_live").apply { mkdirs() }
+        frames.withIndex().chunked(perStrip).forEachIndexed { k, chunk ->
+            captureEditorStrip(File(dir, "strip%03d.png".format(k)), chunk.map { (i, f) -> val t = i.toFloat() / fps; val c = cfgAt(t); labels += "${c.second.shape} ${c.second.eye}"; Triple(f, c, t) })
+        }
+        File(out, "editor_morph.csv").writeText("t\n" + labels.withIndex().joinToString("\n") { (i, l) -> "%.3f,,,,,,,,,,%s,,".format(i.toFloat() / fps, l) } + "\n")
+        AvatarDebugMetrics.enabled = false
+    }
+
+    private fun ease(x: Float): Float { val u = x.coerceIn(0f, 1f); return u * u * (3f - 2f * u) }
+
+    private fun captureEditorStrip(file: File, frames: List<Triple<MotionFrame, Triple<Cfg, Cfg, Float>, Float>>) {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        activity.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                Box(Modifier.requiredSize((cellDp * frames.size).dp, cellDp.dp)) {
+                    Row(Modifier.background(Color(0xFF14171C))) {
+                        for ((f, c, _) in frames) Box(Modifier.size(cellDp.dp), contentAlignment = Alignment.Center) {
+                            androidx.compose.foundation.Canvas(Modifier.size((cellDp * 0.72f).dp)) {
+                                val (a, b, since) = c
+                                val cu = ease(since / 0.38f)
+                                fun cols(x: Cfg): Triple<Color, Color, Float> = Triple(
+                                    MarkColors.bodyColor(x.body, x.preset, x.eye), MarkColors.eyeColor(x.eye, x.eyeHex, x.body, x.preset), if (x.shade) 1f else 0f)
+                                val (ba, ea, sa) = cols(a); val (bb, eb, sb) = cols(b)
+                                val body = androidx.compose.ui.graphics.lerp(ba, bb, cu)
+                                val eye = androidx.compose.ui.graphics.lerp(ea, eb, cu)
+                                val fade = MarkColors.genericalEyeFade(body, eye, sa + (sb - sa) * cu)
+                                val geo = a.shape != b.shape || a.eye != b.eye
+                                val u = if (geo) ease(since / 0.56f) else 1f
+                                fun mk(x: Cfg, sink: MarkGeom?) { val sh = MarkShapes.resolve(x.shape) ?: return
+                                    drawMark(sh, x.shape, x.eye == "grok", f, false, 1f, body, eye, fade, sink) }
+                                if (u < 1f) {
+                                    val ga = MarkGeom().also { mk(a, it) }; val gb = MarkGeom().also { mk(b, it) }
+                                    drawMorph(ga, MorphPts.of(ga), gb, u, MarkGeom())
+                                } else mk(b, null)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        repeat(3) { shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(200)) }
+        val d = activity.resources.displayMetrics.density
+        val w = (cellDp * frames.size * d).toInt(); val h = (cellDp * d).toInt()
+        val view: View = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
+        view.layout(0, 0, w, h)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(50))
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bmp))
+        file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        controller.pause().stop().destroy()
     }
 }

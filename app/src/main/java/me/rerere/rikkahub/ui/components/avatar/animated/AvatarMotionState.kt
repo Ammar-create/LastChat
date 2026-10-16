@@ -75,6 +75,9 @@ internal class GazeDirector(
 ) {
     private var tx = 0f
     private var ty = 0f
+    /** Debug: counts planner fixations (one log line each). */
+    var fixSeq = 0; private set
+    var lastFix: Fixation? = null; private set
     var eyeX = 0f; private set
     var eyeY = 0f; private set
     var evx = 0f; private set
@@ -222,6 +225,7 @@ internal class GazeDirector(
         }
         val f = planner.next(life, temper, drowsy)
         kind = f.kind
+        fixSeq++; lastFix = f
         if (f.event != null) event = f.event
         holdLeft = f.hold + f.travel
         if (f.thenCenter) returnToCenter = true
@@ -529,6 +533,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var lastSpinAgo = 20f
     private var nextSpinAt = -1f
     private var lastShownTarget = "Neutral"
+    private var lastFixSeq = 0
     private var lastGazeKind = ""
     private var lastReactionShown: String? = null
     private var socialIn = 8f + rng.nextFloat() * 12f
@@ -577,6 +582,71 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     )
     private var social: Social? = null
 
+    // ------------------------------------------------ editor cues (engine16.2)
+    private class CueFire(var at: Float, val cue: EditorCue)
+    private val cueQueue = ArrayList<CueFire>()
+    private val cueTimes = ArrayDeque<Float>()
+    private var lastCueAt = -99f
+    private var lastCueKind: EditorCue.Kind? = null
+    private var lastGlanceAt = -99f
+    private var curiousAt = -99f
+    private var afterDone = true
+
+    /** The editor changed something: notice it after a human latency, not on every tap. */
+    fun editorCue(cue: EditorCue) {
+        if (!animate) return
+        cueQueue += CueFire(0.25f + rng.nextFloat() * 0.25f, cue)
+    }
+
+    private fun editorUpdate(dt: Float): Boolean {
+        var any = false
+        val it = cueQueue.iterator()
+        while (it.hasNext()) {
+            val c = it.next()
+            c.at -= dt
+            if (c.at > 0f) continue
+            it.remove(); any = true
+            onEditorCue(c.cue)
+        }
+        if (!afterDone && time - lastCueAt > 1.3f) {
+            afterDone = true
+            val r = rng.nextFloat()
+            when {
+                lastCueKind == EditorCue.Kind.Shape && r < 0.3f -> {
+                    log("editor after-shape: looks down at itself")
+                    gaze.focus(rr(-0.08f, 0.08f), rr(0.38f, 0.46f), rr(1.0f, 1.5f), priority = 2)
+                }
+                r < 0.5f -> { log("editor after: pleased"); accent(FaceAccent.Glee, rr(0.9f, 1.3f)) }
+                r < 0.65f -> { log("editor after: nod"); director.gesture(MotionDirector.Gesture.Nod) }
+                else -> log("editor after: just settles")
+            }
+        }
+        return any
+    }
+
+    private fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+
+    private fun onEditorCue(cue: EditorCue) {
+        sinceStimulus = 0f
+        lastCueAt = time; lastCueKind = cue.kind; afterDone = false
+        cueTimes.addLast(time); while (cueTimes.isNotEmpty() && time - cueTimes.first() > 4f) cueTimes.removeFirst()
+        val (gx, gy) = cue.at?.let { lookAt(it) } ?: (0f to 0.4f)
+        if (cue.kind == EditorCue.Kind.EyeStyle && rng.nextFloat() < 0.5f) blink.request()
+        if (cueTimes.size >= 3 && time - curiousAt > 8f) {
+            curiousAt = time
+            log("editor: browsing fast → curious")
+            accent(FaceAccent.Curious, rr(1.3f, 1.9f))
+            gaze.focus(gx, gy, rr(1.2f, 1.8f), priority = 2)
+            lastGlanceAt = time
+            return
+        }
+        if (time - lastGlanceAt > 1.6f && rng.nextFloat() < 0.55f) {
+            lastGlanceAt = time
+            log("editor: glance at ${cue.kind}")
+            gaze.focus(gx, gy, rr(0.8f, 1.5f), priority = 2)
+        } else log("editor: ${cue.kind} noticed, no move")
+    }
+
     /** Called from the pointer handler (main thread). */
     fun poke() {
         if (animate) pendingPokes++
@@ -598,6 +668,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (live && prev != null && hints.isTyping && !prev.isTyping) stimulus(Stimulus("typing", 0f, 0.85f, 0.45f), { r -> if (r != Response.None) onTypingStarted() })
         prevHints = hints
         stimulus = processStageEvents(live) || stimulus
+        if (live) stimulus = editorUpdate(dt) || stimulus
         if (live) typingUpdate(dt, hints, nowMs)
         if (pendingPokes > 0) {
             if (live) {
@@ -664,6 +735,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         // Big eye jumps often carry a blink (people blink as they look somewhere new).
         if (gaze.bigShift && rng.nextFloat() < 0.4f) blink.request(minGap = 0.9f)
         gaze.takeEvent()?.let { ev -> if (live) attentionEvent(ev) }
+        if (gaze.fixSeq != lastFixSeq) {
+            lastFixSeq = gaze.fixSeq
+            gaze.lastFix?.let { f -> log("fix ${f.kind} → (%.2f,%.2f) hold %.1fs".format(f.x, f.y, f.hold)) }
+        }
         if (gaze.kind != lastGazeKind) {
             lastGazeKind = gaze.kind
             log("gaze ${gaze.kind} (%.2f,%.2f)".format(gaze.eyeX, gaze.eyeY))

@@ -40,6 +40,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -179,19 +181,27 @@ internal fun AnimatedAvatarEditorContent(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
     scrollState: androidx.compose.foundation.ScrollState = rememberScrollState(),
+    /** False only in the static render harness (Robolectric can't idle a live frame loop). */
+    livePreview: Boolean = true,
 ) {
     val density = LocalDensity.current
     var barHeight by remember { mutableStateOf(80.dp) }
     val cs = MaterialTheme.colorScheme
     val bodyColor = MarkColors.hexToColor(colorHex)
     val isGenerical = eyeType.equals("generical", ignoreCase = true)
+    // Engine16.2: every change becomes a cue the live preview may notice (it glances at the
+    // control's position, sometimes reacts after you stop).
+    var cue by remember { mutableStateOf<EditorCue?>(null) }
+    val spots = remember { HashMap<EditorCue.Kind, androidx.compose.ui.geometry.Offset>() }
+    fun spot(k: EditorCue.Kind) = Modifier.onGloballyPositioned { spots[k] = it.boundsInWindow().center }
+    fun fire(k: EditorCue.Kind) { cue = EditorCue((cue?.seq ?: 0) + 1, k, spots[k]) }
     Box(modifier = modifier) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
-                .padding(top = 4.dp, bottom = barHeight + 12.dp),
+                .padding(top = 4.dp, bottom = barHeight + 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -201,12 +211,7 @@ internal fun AnimatedAvatarEditorContent(
                     .fillMaxWidth()
                     .height(232.dp)
                     .clip(RoundedCornerShape(28.dp))
-                    .background(cs.surfaceContainerHigh)
-                    .background(
-                        androidx.compose.ui.graphics.Brush.radialGradient(
-                            listOf(bodyColor.copy(alpha = 0.22f), Color.Transparent),
-                        )
-                    ),
+                    .background(cs.surfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
                 AnimatedMarkAvatar(
@@ -218,7 +223,8 @@ internal fun AnimatedAvatarEditorContent(
                     eyeShade = eyeShade,
                     personality = Personality.resolve(eyeType, traits),
                     isLoading = false,
-                    calmPreview = true,
+                    calmPreview = !livePreview,
+                    editorCue = cue,
                     modifier = Modifier.size(164.dp),
                 )
                 Text(
@@ -236,10 +242,10 @@ internal fun AnimatedAvatarEditorContent(
             }
 
             // ---- Shape
-            EditorSection(stringResource(R.string.avatar_animated_shape)) {
+            EditorSection(stringResource(R.string.avatar_animated_shape), card = false) {
                 FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().then(spot(EditorCue.Kind.Shape)),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     MarkShapes.SHAPES.forEach { s ->
@@ -248,9 +254,9 @@ internal fun AnimatedAvatarEditorContent(
                             modifier = Modifier
                                 .size(54.dp)
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(if (sel) bodyColor.copy(alpha = 0.16f) else cs.surfaceContainerHighest)
+                                .background(if (sel) bodyColor.copy(alpha = 0.16f) else cs.surfaceContainer)
                                 .then(if (sel) Modifier.border(2.dp, bodyColor, RoundedCornerShape(16.dp)) else Modifier)
-                                .clickable { onShape(s) },
+                                .clickable { if (!sel) { onShape(s); fire(EditorCue.Kind.Shape) } },
                             contentAlignment = Alignment.Center,
                         ) {
                             AnimatedMarkAvatar(
@@ -271,9 +277,9 @@ internal fun AnimatedAvatarEditorContent(
 
             // ---- Body colour
             EditorSection(stringResource(R.string.avatar_animated_color)) {
-                SwatchRow {
+                SwatchRow(spot(EditorCue.Kind.BodyColor)) {
                     MarkColors.PRESETS.forEach { (name, hex) ->
-                        Swatch(MarkColors.hexToColor(hex), selected = colorPreset == name) { onColor(hex, name) }
+                        Swatch(MarkColors.hexToColor(hex), selected = colorPreset == name) { onColor(hex, name); fire(EditorCue.Kind.BodyColor) }
                     }
                     CustomSwatch(current = if (colorPreset == null) bodyColor else null, contentDescription = stringResource(R.string.avatar_animated_color), onClick = onPickColor)
                 }
@@ -284,6 +290,7 @@ internal fun AnimatedAvatarEditorContent(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(spot(EditorCue.Kind.EyeStyle))
                         .clip(RoundedCornerShape(16.dp))
                         .background(cs.surfaceContainerHighest)
                         .padding(4.dp),
@@ -296,7 +303,7 @@ internal fun AnimatedAvatarEditorContent(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(if (sel) cs.surfaceContainerLow else Color.Transparent)
-                                .clickable { onEyeType(id) }
+                                .clickable { if (!sel) { onEyeType(id); fire(EditorCue.Kind.EyeStyle) } }
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
@@ -315,18 +322,19 @@ internal fun AnimatedAvatarEditorContent(
                     }
                 }
                 Spacer(Modifier.height(14.dp))
-                Text(stringResource(R.string.avatar_animated_eye_color), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                Text(stringResource(R.string.avatar_animated_eye_color), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 val def = defaultEyeHex(eyeType)
                 val current = MarkColors.normalizeHex(eyeColorHex?.takeIf { it.isNotBlank() } ?: def)
                 val swatches = eyeSwatches(eyeType)
-                SwatchRow {
+                SwatchRow(spot(EditorCue.Kind.EyeColor)) {
                     swatches.forEach { hex ->
                         val isDefault = hex.equals(def, ignoreCase = true)
                         // Picking the mode default stores null so it tracks the mode.
                         Swatch(MarkColors.hexToColor(hex), selected = current.equals(hex, ignoreCase = true),
                             contentDescription = if (isDefault) stringResource(R.string.avatar_animated_eye_color_default) else null,
-                        ) { onEyeColor(if (isDefault) null else hex) }
+                        ) { onEyeColor(if (isDefault) null else hex); fire(EditorCue.Kind.EyeColor) }
                     }
                     val custom = eyeColorHex?.takeIf { h -> swatches.none { it.equals(MarkColors.normalizeHex(h), ignoreCase = true) } }
                     CustomSwatch(current = custom?.let { MarkColors.hexToColor(it) }, contentDescription = stringResource(R.string.avatar_animated_eye_color), onClick = onPickEyeColor)
@@ -336,52 +344,64 @@ internal fun AnimatedAvatarEditorContent(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(spot(EditorCue.Kind.Shade))
                             .clip(RoundedCornerShape(14.dp))
-                            .clickable { onEyeShade(!eyeShade) }
+                            .clickable { onEyeShade(!eyeShade); fire(EditorCue.Kind.Shade) }
                             .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             stringResource(R.string.avatar_animated_eye_shade),
                             style = MaterialTheme.typography.bodyMedium,
                             color = cs.onSurface,
-                            modifier = Modifier.weight(1f),
                         )
-                        androidx.compose.material3.Switch(checked = eyeShade, onCheckedChange = onEyeShade)
+                        Spacer(Modifier.width(16.dp))
+                        androidx.compose.material3.Switch(checked = eyeShade, onCheckedChange = { onEyeShade(it); fire(EditorCue.Kind.Shade) })
                     }
                 }
             }
         }
 
-        // Pinned actions; scroll content is padded by their measured height.
-        Column(
+        // Floating pill actions - the same floating pill as the Lorebooks/Skills settings bar
+        // (28 dp surfaceContainerHigh, tonal 6 / shadow 8, circular items, primaryContainer = main).
+        androidx.compose.material3.Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(cs.surfaceContainerLow)
+                .padding(bottom = 16.dp)
                 .onSizeChanged { barHeight = with(density) { it.height.toDp() } },
+            shape = RoundedCornerShape(28.dp),
+            color = cs.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
         ) {
-            androidx.compose.material3.HorizontalDivider(color = cs.outlineVariant.copy(alpha = 0.4f))
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) {
-                    Text(stringResource(R.string.avatar_cancel))
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Button(
-                    onClick = onSave,
-                    shape = RoundedCornerShape(16.dp),
+                Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
+                        .height(48.dp)
+                        .clip(CircleShape)
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 20.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(stringResource(R.string.avatar_cancel), style = MaterialTheme.typography.labelLarge, color = cs.onSurfaceVariant)
+                }
+                Row(
+                    modifier = Modifier
+                        .height(48.dp)
+                        .clip(CircleShape)
+                        .background(cs.primaryContainer)
+                        .clickable { onSave() }
+                        .padding(horizontal = 22.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, tint = cs.onPrimaryContainer, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.avatar_animated_save), style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.avatar_animated_save), style = MaterialTheme.typography.labelLarge, color = cs.onPrimaryContainer)
                 }
             }
         }
@@ -389,13 +409,18 @@ internal fun AnimatedAvatarEditorContent(
 }
 
 @Composable
-private fun EditorSection(title: String, content: @Composable () -> Unit) {
+private fun EditorSection(title: String, card: Boolean = true, content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .then(
+                if (card) Modifier
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                else Modifier.padding(vertical = 4.dp)
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             title,
@@ -407,15 +432,14 @@ private fun EditorSection(title: String, content: @Composable () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SwatchRow(content: @Composable () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun SwatchRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    // Centred rows that wrap (nothing hides off-screen behind a scroll).
+    FlowRow(
+        modifier = Modifier.fillMaxWidth().then(modifier).padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) { content() }
 }
 
