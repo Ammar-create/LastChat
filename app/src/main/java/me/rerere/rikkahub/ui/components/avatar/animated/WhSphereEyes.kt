@@ -177,6 +177,11 @@ object WhSphereEyes {
                 en(UR, 0.6f, 0f, 0f),
                 en(UR, 0.58f, -18f, 0f),
             )
+            // Engine16.1: symmetric, slightly shorter pills — a quiet "hm".
+            "hm" -> {
+                val e = en(UR, 0.46f, 0f, 0f)
+                listOf(e, e)
+            }
             // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
             // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
             "angry" -> {
@@ -242,11 +247,11 @@ object WhSphereEyes {
         "Sad", "Worried" -> "sad"
         "Sleeping", "Eyes closed" -> "sleepy"
         "Bored", "pouty", "angered or concentrated" -> "squinted"
-        "confused" -> "confused"
-        "hurt or cute" -> "wink"
+        // Engine16.1 (Julian): no lopsided Grok faces. Confused = a symmetric "hm" (both pills
+        // a little shorter); wink / playful fall back to the clean ^ ^ happy arcs.
+        "confused", "confused left" -> "hm"
+        "hurt or cute", "Group 3" -> "happy"
         "Angry" -> "angry"
-        "Group 3" -> "playful"
-        "confused left" -> "confused"
         else -> "neutral"
     }
 

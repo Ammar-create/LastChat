@@ -624,3 +624,15 @@ Generical/Grok control with tiny live previews; full-width Save with a pinned ba
 ### Audit (AvatarMotionVideoTest.behaviourAudit)
 5 seeds × 10 min untouched idle + one untouched hour. Asserts: spins = 0, uncaused face
 changes = 0, low → bright cuts = 0. Writes `audit_summary.csv`, `audit_hour_episodes.csv`.
+
+### Engine16.1 (Julian's review)
+- Spin paths reduced to **Turn 0.45 · Top 0.33 · Flip 0.22**. Removed Barrel (flat clock-hand
+  rotation), Tumble (too wild, upside down) and Cartwheel (pure screen-plane roll — also reads as
+  clock rotation). Test: no path rolls in the screen plane by more than the Top lean (16°).
+- Grok expression shapes (Generical untouched): no lopsided faces. `confused` / `confused left`
+  → new symmetric `hm` (both pills a little shorter); `hurt or cute` (wink) and `Group 3`
+  (playful) → the clean `happy` ^ ^ arcs. Face accents on Grok are symmetrised
+  (`FaceParams.grokSymmetric`: sizes / lids averaged, only the mirrored rotation kept), so
+  Curious / Puzzled / Dizzy / Worried no longer make one eye crooked.
+- Grok eyes that are already closed (`sleepy`, `happy` arcs) ignore blinks / lid in proportion
+  to how far the morph is into them — closed eyes never "blink".

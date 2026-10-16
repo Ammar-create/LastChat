@@ -115,6 +115,7 @@ class AvatarMotionVideoTest {
             AvatarMotionHints()
         },
         // ---------------- engine16 previews
+        Script("idle60", 60f, preRoll = 20f, seed = 9) { _, _, _, _ -> AvatarMotionHints() },
         Script("idle180", 180f, preRoll = 20f, seed = 5) { _, _, _, _ -> AvatarMotionHints() },
         Script("ep_attention", 40f, preRoll = 10f, seed = 31) { s, _, t, _ ->
             ep(s, t, 1f to Episode.CuriousLR, 6f to Episode.CheckOnYou, 11f to Episode.TiltChain, 17f to Episode.FollowSomething,
@@ -144,9 +145,9 @@ class AvatarMotionVideoTest {
             AvatarMotionHints()
         },
         // Spins only happen in lively contexts: here while answering (generating/streaming).
-        Script("spin_paths", 34f, preRoll = 6f, seed = 45) { s, _, t, _ ->
+        Script("spin_paths", 33f, preRoll = 6f, seed = 45) { s, _, t, _ ->
             val ps = SpinPath.entries
-            ps.forEachIndexed { i, p -> val at = 1f + i * 5.3f; if (t >= at && fired.add(at)) s.debugSpin(null, null, p) }
+            (ps + ps).forEachIndexed { i, p -> val at = 1f + i * 5.3f; if (t >= at && fired.add(at)) s.debugSpin(null, null, p) }
             AvatarMotionHints(isGenerating = true, hasStreamedTokens = t > 3f)
         },
         Script("busy_think", 40f, preRoll = 5f, seed = 47) { _, _, t, _ ->
@@ -283,6 +284,24 @@ class AvatarMotionVideoTest {
             File(out, "eyecolors_${body.drop(1)}_shade${if (shade) "On" else "Off"}.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             controller.pause().stop().destroy()
         }
+    }
+
+    /** Engine16.1: every Grok expression id + every face accent (and a half-closed lid), circle + heart. */
+    @Test
+    fun renderGrokAudit() {
+        val out = outDir
+        assumeTrue(out != null && (only == null || "grokaudit" in only))
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "confused left", "Surprised", "Worried",
+            "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3")
+        val rig = FaceRig(Random(3))
+        val acc = FaceAccent.entries.filter { it != FaceAccent.None }
+        for (sh in listOf("blob", "heart")) {
+            captureStrip(File(out, "grok_expr_$sh.png"), sh, "grok", ids.map { MotionFrame(exprFrom = it, exprTo = it) })
+            captureStrip(File(out, "grok_accent_$sh.png"), sh, "grok", acc.map { MotionFrame(face = rig.staticFace(it, 0.3f)) })
+            captureStrip(File(out, "grok_blinkclosed_$sh.png"), sh, "grok", listOf("Eyes closed", "Sleeping").flatMap { e -> listOf(1f, 0.5f, 0f).map { MotionFrame(exprFrom = e, exprTo = e, lid = it) } })
+        }
+        File(out, "grok_ids.txt").writeText(ids.joinToString("\n") + "\n--\n" + acc.joinToString("\n"))
     }
 
     /** Engine16: non-horizontal spin paths, 0…355° (10° steps). */

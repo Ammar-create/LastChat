@@ -292,9 +292,15 @@ private fun DrawScope.drawMarkInner(
         // A closed Grok eye is a thin slit, never nothing: the eyes must not vanish
         // (and pop back) during blinks or blink-masked expression changes.
         val lidG = lid.coerceAtLeast(GROK_SLIT)
-        val lidForPair = if (bodyKind == "sphere") lidG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidG
+        // Engine16.1: eyes that are already closed (sleepy arcs, ^ ^ happy arcs) never blink —
+        // the lid is ignored in proportion to how far the face is into a closed shape.
+        val closedW = (if (WhSphereEyes.grokNameFor(f.exprFrom) in GROK_CLOSED) 1f - f.exprT else 0f) +
+            (if (WhSphereEyes.grokNameFor(f.exprTo) in GROK_CLOSED) f.exprT else 0f)
+        val lidOpenG = lidG + (1f - lidG) * closedW.coerceIn(0f, 1f)
+        val lidForPair = if (bodyKind == "sphere") lidOpenG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidOpenG
+        val symFace = f.face.grokSymmetric()
         val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair)
-            .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, f.face.eye(i)) }
+            .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, symFace.eye(i)) }
         val safeBody = EyeSafeRegion.Body(projected)
         // The turn applied to the eyes is scaled down only as far as needed to keep
         // them inside the silhouette (body turn itself is untouched).
@@ -319,7 +325,7 @@ private fun DrawScope.drawMarkInner(
             he = he,
             gazeX = 0f,
             gazeY = 0f,
-            lid = lidG,
+            lid = lidOpenG,
             eyeGap = f.eyeGap * 0.92f * WhEyeSeat.grokGapFix(shapeId),
             eyeScale = f.eyeScale,
             timeSec = f.timeSec,
@@ -470,3 +476,23 @@ internal fun turnCapFor(shapeId: String, bodyKind: String): Pair<Float, Float> =
 }
 
 internal fun softCap(v: Float, cap: Float): Float = cap * kotlin.math.tanh(v / cap)
+
+
+/** Grok eye shapes that are already closed: blinks don't apply to them. */
+private val GROK_CLOSED = setOf("sleepy", "happy")
+
+/**
+ * Engine16.1: Grok faces stay mirror-symmetric. Size / lid / height are averaged across the
+ * two eyes and only the mirrored part of the rotation is kept, so no accent makes one eye
+ * crooked. [EyeShape.dx] is left alone (it carries gaze translation, not shape).
+ */
+internal fun FaceParams.grokSymmetric(): FaceParams {
+    if (left == right && left.rot == 0f) return this
+    fun m(a: Float, b: Float) = (a + b) / 2f
+    val r = (right.rot - left.rot) / 2f
+    fun mk(e: EyeShape, rot: Float) = e.copy(
+        sx = m(left.sx, right.sx), sy = m(left.sy, right.sy), dy = m(left.dy, right.dy),
+        upper = m(left.upper, right.upper), lower = m(left.lower, right.lower), slant = m(left.slant, right.slant), rot = rot,
+    )
+    return FaceParams(mk(left, -r), mk(right, r))
+}

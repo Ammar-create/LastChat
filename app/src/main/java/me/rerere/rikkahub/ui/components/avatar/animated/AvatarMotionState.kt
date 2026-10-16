@@ -978,7 +978,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         spLastPath = spPath; spPathHist.addLast(spPath); while (spPathHist.size > 3) spPathHist.removeFirst()
         forcePath = null
         // Flips and cartwheels carry more visible mass: a touch slower.
-        if (spPath == SpinPath.Flip || spPath == SpinPath.Tumble || spPath == SpinPath.Barrel) spMain *= rr(0.94f, 1.0f).let { 1f / it }.coerceAtMost(1.06f)
+        if (spPath == SpinPath.Flip) spMain *= rr(0.94f, 1.0f).let { 1f / it }.coerceAtMost(1.06f)
         spLastRun = spRun > 0f; spLastShake = spShake
         forceRun = null; forceShake = null
         spT = 0f

@@ -16,8 +16,9 @@ class Engine16Test {
             fun m(a: Float) = abs(((a % 360f) + 540f) % 360f - 180f)
             assertTrue("$p end ($y1,$p1,$r1)", m(y1) < 0.5f && m(p1) < 0.5f && m(r1) < 0.5f)
         }
-        // At least four paths actually leave the horizontal plane.
-        assertTrue(SpinPath.entries.count { val (_, pp, rr) = it.angles(0.5f, 1f); abs(pp) > 20f || abs(rr) > 20f } >= 4)
+        // Flip leaves the horizontal plane; nothing rotates flat in the screen plane by more than a lean.
+        assertTrue(SpinPath.entries.any { abs(it.angles(0.5f, 1f).second) > 90f })
+        assertTrue(SpinPath.entries.all { (0..20).all { k -> abs(it.angles(k / 20f, 1f).third) <= 16.01f } })
     }
 
     @Test

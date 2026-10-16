@@ -483,17 +483,13 @@ internal class MomentPlanner(private val rng: Random) {
  */
 internal enum class SpinPath(val weight: Float, val why: String) {
     /** Classic turn about the vertical axis. */
-    Turn(0.28f, "turn around on the spot"),
+    Turn(0.45f, "turn around on the spot"),
     /** Turn about an axis tipped toward the viewer: leans into it like a spinning top. */
-    Top(0.2f, "lean into a turn like a top"),
+    Top(0.33f, "lean into a turn like a top"),
     /** Forward (or backward) somersault about the horizontal axis. */
-    Flip(0.16f, "forward/back flip"),
-    /** In-plane roll, a cartwheel. */
-    Cartwheel(0.18f, "cartwheel"),
-    /** Diagonal axis: yaw and pitch together, a tumbling somersault-turn. */
-    Tumble(0.1f, "diagonal tumble"),
-    /** Roll with a quarter yaw out and back: a twisting barrel roll. */
-    Barrel(0.08f, "twisting barrel roll");
+    Flip(0.22f, "forward/back flip");
+    // Engine16.1 (Julian): removed Barrel (reads as a flat clock-hand rotation), Tumble (too
+    // crazy, goes upside down) and Cartwheel (pure screen-plane roll = also clock-like).
 
     fun angles(c: Float, dir: Float): Triple<Float, Float, Float> {
         val full = 360f * c * dir
@@ -502,9 +498,6 @@ internal enum class SpinPath(val weight: Float, val why: String) {
             Turn -> Triple(full, 0f, 0f)
             Top -> Triple(full, 0f, -16f * dir * s)
             Flip -> Triple(0f, full, 0f)
-            Cartwheel -> Triple(0f, 0f, full)
-            Tumble -> Triple(full, full * 0.999f, 0f)
-            Barrel -> Triple(28f * dir * s, 0f, full)
         }
     }
 }
