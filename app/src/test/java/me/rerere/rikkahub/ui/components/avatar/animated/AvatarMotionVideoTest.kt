@@ -346,7 +346,7 @@ class AvatarMotionVideoTest {
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val ids = listOf("Neutral", "Bored", "Sad", "Happy", "Eyes closed", "confused", "Surprised", "Worried",
             "angered or concentrated", "Angry", "pouty", "hurt or cute", "Sleeping", "Group 3", "confused left")
-        val shapes = listOf("blob", "cloud", "square", "sparkle", "clover", "heart", "flower", "teardrop", "tablet", "wedge", "house", "star", "hex")
+        val shapes = listOf("blob", "cloud", "square", "sparkle", "clover", "heart", "flower", "tablet", "star", "hex")
         val modes = (System.getProperty("lastchat.gridModes")?.takeIf { it.isNotBlank() }?.split(",")) ?: listOf("grok", "generical")
         for (mode in modes) for (sh in shapes)
             captureStrip(File(out, "grid_${mode}_$sh.png"), sh, mode, ids.map { MotionFrame(exprFrom = it, exprTo = it) })

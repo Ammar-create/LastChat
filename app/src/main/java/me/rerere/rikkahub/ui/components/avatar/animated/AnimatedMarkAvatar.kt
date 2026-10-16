@@ -68,6 +68,8 @@ fun AnimatedMarkAvatar(
     /** Harness hook: drive the shape/eye-style morph progress by hand (0…1); null = animate. */
     debugMorph: Float? = null,
 ) {
+    // Engine17.2: retired shapes (house, wedge) migrate to the blob.
+    val shapeIdM = MarkShapes.migrate(shapeId)
     val context = LocalContext.current
     LaunchedEffect(Unit) { AvatarPackData.ensureLoaded(context) }
     runCatching { AvatarPackData.ensureLoaded(context) }
@@ -104,8 +106,8 @@ fun AnimatedMarkAvatar(
     // (even mid-morph) to the new mark - no pop, no size snap.
     val morphAnim = remember { Animatable(1f) }
     val morphHold = remember { MorphHolder() }
-    val lastSig = remember { mutableStateOf("$shapeId|${eyeType.lowercase()}") }
-    val sigNow = "$shapeId|${eyeType.lowercase()}"
+    val lastSig = remember { mutableStateOf("$shapeIdM|${eyeType.lowercase()}") }
+    val sigNow = "$shapeIdM|${eyeType.lowercase()}"
     if (lastSig.value != sigNow && !frozen) {
         lastSig.value = sigNow
         // Engine16.2c flicker fix: the animation can only snap to 0 in the effect, which
@@ -137,7 +139,7 @@ fun AnimatedMarkAvatar(
             onDispose { stage.remove(stageId) }
         }
     }
-    val signature = "$shapeId|${eyeType.lowercase()}"
+    val signature = "$shapeIdM|${eyeType.lowercase()}"
     val lastBounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
     fun register() {
         val b = lastBounds[0]
@@ -176,6 +178,7 @@ fun AnimatedMarkAvatar(
             }
     }
 
+    val backdrop = ContrastGuard.LocalAvatarBackdrop.current ?: androidx.compose.material3.MaterialTheme.colorScheme.background
     Box(modifier = boxModifier) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (!AvatarPackData.isLoaded()) return@Canvas
@@ -185,17 +188,19 @@ fun AnimatedMarkAvatar(
                 debugPose != null -> frameFromClip(debugPose)
                 else -> motionState.frame
             }
-            val shape = MarkShapes.resolve(shapeId) ?: return@Canvas
+            val shape = MarkShapes.resolve(shapeIdM) ?: return@Canvas
             val bodyColor = bodyColorS.value
             val eyeColor = eyeColorS.value
             val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor, shadeS.value)
+            ContrastGuard.set(bodyColor, eyeColor, backdrop)
             if (!frozen) {
-                drawLive(morphHold, shape, shapeId, isGrok, f, calmPreview, bodyColor, eyeColor, eyeFade, morphAnim.value)
+                drawLive(morphHold, shape, shapeIdM, isGrok, f, calmPreview, bodyColor, eyeColor, eyeFade, morphAnim.value)
+                ContrastGuard.reset()
                 return@Canvas
             }
             drawMark(
                 shape = shape,
-                shapeId = shapeId,
+                shapeId = shapeIdM,
                 isGrok = isGrok,
                 f = f,
                 calm = calmPreview,
@@ -204,6 +209,7 @@ fun AnimatedMarkAvatar(
                 eye = eyeColor,
                 eyeFade = eyeFade,
             )
+            ContrastGuard.reset()
         }
     }
 }
@@ -374,6 +380,12 @@ private fun DrawScope.drawMarkInner(
         allowXBob = false,
         shapeId = shape.id,
     )
+    if (sink == null) with(ContrastGuard) {
+        if (bodyK >= 0.01f) Soft3DMark.withBodyTransform(this@drawMarkInner, clip, sizePx, he, morph, false) {
+            // Outer silhouette only: the projected body can carry inner facet edges mid-spin.
+            val sil = radialSilhouette(projected); bodyOutline(radialPath(sil, sil, 1f, Path()), he)
+        }
+    }
 
     val lid = f.lid.coerceIn(0f, 1f)
     if (isGrok) {
@@ -499,11 +511,11 @@ private fun DrawScope.drawMarkInner(
         }
         // While spinning, clip to the rotated silhouette so an eye rolling over the edge wraps away.
         if (spinning) Soft3DMark.withBodyClip(this, clip, projected, sizePx, he, morph, false) {
-            if (ok(left)) drawPath(left, eye)
-            if (ok(right)) drawPath(right, eye)
+            if (ok(left)) { drawPath(left, eye); with(ContrastGuard) { eyeOutline(left, he) } }
+            if (ok(right)) { drawPath(right, eye); with(ContrastGuard) { eyeOutline(right, he) } }
         } else Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false) {
-            if (ok(left)) drawPath(left, eye)
-            if (ok(right)) drawPath(right, eye)
+            if (ok(left)) { drawPath(left, eye); with(ContrastGuard) { eyeOutline(left, he) } }
+            if (ok(right)) { drawPath(right, eye); with(ContrastGuard) { eyeOutline(right, he) } }
         }
         return
     }
@@ -557,8 +569,8 @@ private fun DrawScope.drawMarkInner(
         return
     }
     val drawEyes: DrawScope.() -> Unit = {
-        le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit) }
-        re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit) }
+        le?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit); with(ContrastGuard) { eyeOutline(it.path, he) } }
+        re?.let { GenericalSeat.draw(this, it, eye, eyeFade, he, fit); with(ContrastGuard) { eyeOutline(it.path, he) } }
     }
     if (calm) {
         Soft3DMark.withBodyTransform(this, clip, sizePx, he, morph, false, drawEyes)
@@ -650,22 +662,56 @@ internal fun resamplePath(p: Path, n: Int = 120): List<Offset> {
  * (max radius per angle bin), and two radial samplings blend without any alignment search.
  */
 internal fun radialSilhouette(p: Path, n: Int = RADIAL_N, out: FloatArray = FloatArray(n)): FloatArray {
+    // Engine17.2: the radius is interpolated exactly at each bin-centre angle along the
+    // sampled segments (outermost wins), instead of the per-bin max drawn at the bin centre —
+    // that quantised staircase is what made morph frames look low-res. Accurate enough to
+    // sample at twice the step, so it costs no more than before.
     java.util.Arrays.fill(out, 0f)
     val pm = android.graphics.PathMeasure(p.asAndroidPath(), true)
     val pos = FloatArray(2)
     val twoPi = (2.0 * Math.PI).toFloat()
+    val binW = twoPi / n
     do {
         val len = pm.length
         if (len <= 0f) continue
         val steps = (len / RADIAL_STEP).toInt().coerceIn(3, 400)
-        for (i in 0 until steps) {
-            pm.getPosTan(len * i / steps, pos, null)
-            val dx = pos[0]; val dy = pos[1]
-            var a = kotlin.math.atan2(dx, -dy)
-            if (a < 0f) a += twoPi
-            val k = ((a / twoPi) * n).toInt() % n
-            val r = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (r > out[k]) out[k] = r
+        pm.getPosTan(0f, pos, null)
+        val fx = pos[0]; val fy = pos[1]
+        var px = fx; var py = fy
+        var pa = kotlin.math.atan2(px, -py).let { if (it < 0f) it + twoPi else it }
+        var crossed = false
+        for (i in 1..steps) {
+            val qx: Float; val qy: Float
+            if (i == steps) { qx = fx; qy = fy } else { pm.getPosTan(len * i / steps, pos, null); qx = pos[0]; qy = pos[1] }
+            val qa = kotlin.math.atan2(qx, -qy).let { if (it < 0f) it + twoPi else it }
+            var d = qa - pa
+            if (d > Math.PI) d -= twoPi else if (d < -Math.PI) d += twoPi
+            if (kotlin.math.abs(d) > 1e-7f) {
+                // Bin centres (k + 0.5)·binW strictly inside (pa, pa + d].
+                val lo = minOf(pa, pa + d); val hi = maxOf(pa, pa + d)
+                var k = kotlin.math.ceil(lo / binW - 0.5f).toInt()
+                while ((k + 0.5f) * binW <= hi) {
+                    val c = (k + 0.5f) * binW
+                    val f = ((c - pa) / d).coerceIn(0f, 1f)
+                    val x = px + (qx - px) * f; val y = py + (qy - py) * f
+                    val r = kotlin.math.sqrt(x * x + y * y)
+                    val kk = ((k % n) + n) % n
+                    if (r > out[kk]) out[kk] = r
+                    crossed = true
+                    k++
+                }
+            }
+            px = qx; py = qy; pa = qa
+        }
+        if (!crossed) {
+            // A contour too small to cross a bin centre: per-bin max of its samples.
+            for (i in 0 until steps) {
+                pm.getPosTan(len * i / steps, pos, null)
+                var a = kotlin.math.atan2(pos[0], -pos[1]); if (a < 0f) a += twoPi
+                val k = ((a / twoPi) * n).toInt() % n
+                val r = kotlin.math.sqrt(pos[0] * pos[0] + pos[1] * pos[1])
+                if (r > out[k]) out[k] = r
+            }
         }
     } while (pm.nextContour())
     // Fill any empty bins from neighbours.
@@ -674,7 +720,7 @@ internal fun radialSilhouette(p: Path, n: Int = RADIAL_N, out: FloatArray = Floa
 }
 
 internal const val RADIAL_N = 288
-private const val RADIAL_STEP = 1.5f
+private const val RADIAL_STEP = 3f // engine17.2: exact interpolation allows twice the step
 
 internal fun radialPath(a: FloatArray, b: FloatArray, u: Float, into: Path): Path {
     into.reset()
@@ -724,12 +770,14 @@ internal fun DrawScope.drawMorph(from: MarkGeom, fromPts: MorphPts, to: MarkGeom
     val fit = from.fit + (to.fit - from.fit) * u
     Soft3DMark.withBodyTransform(this, clip, sizePx, he, 1f, false) {
         drawPath(body, bodyC)
+        with(ContrastGuard) { bodyOutline(body, he) }
         clipPath(body) {
             for (e in eyes) {
                 drawPath(e.path, androidx.compose.ui.graphics.Brush.linearGradient(listOf(top, bottom), e.gradStart, e.gradEnd))
                 if (gW > 0.01f) drawPath(e.path, top.copy(alpha = top.alpha * gW),
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = 8f * fit * he / 250f,
                         cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                with(ContrastGuard) { eyeOutline(e.path, he) }
             }
         }
     }
@@ -740,6 +788,6 @@ internal fun DrawScope.drawMorph(from: MarkGeom, fromPts: MorphPts, to: MarkGeom
 /** Resampled contours of a [MarkGeom] (computed once for a frozen "from" snapshot). */
 internal class MorphPts(val body: FloatArray, val eyes: List<List<Offset>>) {
     companion object {
-        fun of(g: MarkGeom) = MorphPts(radialSilhouette(g.body), g.eyes.map { resamplePath(it.path, 64) })
+        fun of(g: MarkGeom) = MorphPts(radialSilhouette(g.body), g.eyes.map { resamplePath(it.path, 96) }) // engine17.2: same density as static eyes
     }
 }

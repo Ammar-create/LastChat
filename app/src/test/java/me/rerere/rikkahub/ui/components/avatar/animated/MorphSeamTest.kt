@@ -73,7 +73,7 @@ class MorphSeamTest {
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val B = Color(0xFF2A92FE); val W = Color.White; val G = Color.Gray
         val f = MotionFrame(body = BodyPose(pitch = 3f, yaw = -10f, roll = 2f), headLookX = 0.2f)
-        val pairs = listOf("square" to "cloud", "blob" to "heart", "star" to "house", "heart" to "square")
+        val pairs = listOf("square" to "cloud", "blob" to "heart", "star" to "hex", "heart" to "square")
         for ((a, b) in pairs) for (grok in listOf(false, true)) {
             val sa = MarkShapes.resolve(a)!!; val sb = MarkShapes.resolve(b)!!
             val h = MorphHolder()
@@ -115,7 +115,7 @@ class MorphSeamTest {
         val outDir = System.getProperty("lastchat.renderDir")?.takeIf { it.isNotBlank() } ?: return
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
         val B = Color(0xFF2A92FE); val W = Color.White; val G = Color.Gray
-        for ((a, b, grok) in listOf(Triple("square", "cloud", false), Triple("blob", "heart", true), Triple("star", "house", false))) {
+        for ((a, b, grok) in listOf(Triple("square", "cloud", false), Triple("blob", "heart", true), Triple("star", "hex", false))) {
             val sa = MarkShapes.resolve(a)!!; val sb = MarkShapes.resolve(b)!!
             val cells = 14; val c = 160
             val img = ImageBitmap(c * cells, c)

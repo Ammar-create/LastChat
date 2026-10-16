@@ -139,7 +139,7 @@ object AvatarPackData {
         val pickerIds = (root["pickerShapeIds"]?.jsonArray?.mapNotNull {
             it.jsonPrimitive.contentOrNull
         } ?: MarkShapes.PICKER_IDS)
-            .filter { it != "teardrop" && it != "droplet" }
+            .filter { it !in MarkShapes.RETIRED }
             .ifEmpty { MarkShapes.PICKER_IDS }
         val shapesObj = root.getValue("shapes").jsonObject
         val shapes = linkedMapOf<String, GrokShape>()

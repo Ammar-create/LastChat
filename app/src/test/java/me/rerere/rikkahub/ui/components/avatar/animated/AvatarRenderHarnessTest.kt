@@ -245,7 +245,7 @@ class AvatarRenderHarnessTest {
     fun renderClipTransitionStrips() {
         assumeTrue(outDir != null)
         AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
-        for ((mode, shape) in listOf("grok" to "blob", "generical" to "square", "generical" to "heart", "grok" to "wedge")) {
+        for ((mode, shape) in listOf("grok" to "blob", "generical" to "square", "generical" to "heart", "grok" to "tablet")) {
             val st = AvatarMotionState(Random(7))
             val dt = 1f / 60f
             var t = 0f

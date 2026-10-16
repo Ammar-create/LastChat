@@ -68,8 +68,7 @@ fun AnimatedAvatarEditor(
     val initialShape = start.shape
     var shape by remember {
         mutableStateOf(
-            if (initialShape == "teardrop" || initialShape == "droplet") "blob"
-            else initialShape
+            MarkShapes.migrate(initialShape)
         )
     }
     var eyeType by remember { mutableStateOf(start.eyeType) }
@@ -200,6 +199,8 @@ internal fun AnimatedAvatarEditorContent(
     val spots = remember { HashMap<EditorCue.Kind, androidx.compose.ui.geometry.Offset>() }
     fun spot(k: EditorCue.Kind) = Modifier.onGloballyPositioned { spots[k] = it.boundsInWindow().center }
     fun fire(k: EditorCue.Kind) { cue = EditorCue((cue?.seq ?: 0) + 1, k, spots[k]) }
+    // Engine17.2: avatars here sit on the editor container surface (contrast guard backdrop).
+    androidx.compose.runtime.CompositionLocalProvider(ContrastGuard.LocalAvatarBackdrop provides softSurface(0f)) {
     Box(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -393,6 +394,7 @@ internal fun AnimatedAvatarEditorContent(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -437,8 +439,11 @@ private fun EditorActionButton(
  */
 @Composable
 private fun softSurface(k: Float): Color {
-    val cs = MaterialTheme.colorScheme
-    return androidx.compose.ui.graphics.lerp(cs.surfaceContainerLow, cs.surfaceContainerHigh, k)
+    // Engine17.2: editor containers use the exact surface the drawer search bar
+    // (LastChatDrawerSearch -> TextFieldDefaults.colors() filled container) uses:
+    // colorScheme.surfaceContainerHighest, in both themes. `k` kept for call sites.
+    @Suppress("UNUSED_PARAMETER") val unused = k
+    return MaterialTheme.colorScheme.surfaceContainerHighest
 }
 
 @Composable

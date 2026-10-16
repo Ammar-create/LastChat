@@ -1422,9 +1422,18 @@ internal fun streamingSettleMillis(charsPerSecond: Float): Long {
     } else {
         ((charsPerSecond - STREAMING_SPEED_SLOW_THRESHOLD) / span).coerceIn(0f, 1f)
     }
-    return (STREAMING_SETTLE_MAX_MILLIS +
-        (STREAMING_SETTLE_MIN_MILLIS - STREAMING_SETTLE_MAX_MILLIS) * speedProgress).toLong()
+    return ((STREAMING_SETTLE_MAX_MILLIS +
+        (STREAMING_SETTLE_MIN_MILLIS - STREAMING_SETTLE_MAX_MILLIS) * speedProgress) * STREAMING_ALPHA_STRETCH).toLong()
 }
+
+/**
+ * Opacity settles over this much longer than the blur: the settle time above is the
+ * opacity span; the blur clears after 1/STREAMING_ALPHA_STRETCH of it (its old timing),
+ * while the glyph is still finishing its fade-in.
+ */
+internal const val STREAMING_ALPHA_STRETCH = 1.4f
+/** > 1 = new glyphs start fainter and stay faint a little longer (stronger fade-in). */
+private const val STREAMING_ALPHA_EASE_POWER = 1.6f
 
 internal const val STREAMING_BLUR_ANNOTATION = "lastchat-stream-blur"
 
@@ -2892,10 +2901,13 @@ internal fun streamingRevealVisuals(
     // still invisible, so the fade showed up and the blur never did. Halfway
     // through, the glyph is half opaque and still half blurred.
     val t = progress.coerceIn(0f, 1f)
-    val eased = t * t * (3f - 2f * t)
-    // Opacity and focus ease together on the same smoothstep, so across a run
-    // the newest glyphs read as both the faintest and the softest.
-    val easedAlpha = eased
+    // Blur runs on the first 1/STRETCH of the settle (unchanged timing) …
+    val tb = (t * STREAMING_ALPHA_STRETCH).coerceIn(0f, 1f)
+    val eased = tb * tb * (3f - 2f * tb)
+    // … opacity on all of it, with a stronger ease-in: the newest glyphs are clearly
+    // fainter, and the fade is still finishing just after the blur has cleared.
+    val ea = t * t * (3f - 2f * t)
+    val easedAlpha = Math.pow(ea.toDouble(), STREAMING_ALPHA_EASE_POWER.toDouble()).toFloat()
     val alpha = startAlpha.coerceIn(0f, 1f) +
         (1f - startAlpha.coerceIn(0f, 1f)) * easedAlpha
     return StreamingRevealVisuals(

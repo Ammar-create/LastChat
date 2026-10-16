@@ -205,7 +205,7 @@ class StreamingTextPresentationStateTest {
             blurEnabled = true,
         )
 
-        assertEquals(0.494f, visuals.alpha, 0.02f)
+        assertEquals(0.431f, visuals.alpha, 0.02f) // stronger fade-in (17.2)
         assertTrue(visuals.blurRadius > 8f)
     }
 
@@ -217,7 +217,7 @@ class StreamingTextPresentationStateTest {
             blurEnabled = false,
         )
 
-        assertEquals(0.494f, visuals.alpha, 0.02f)
+        assertEquals(0.431f, visuals.alpha, 0.02f) // stronger fade-in (17.2)
         assertEquals(0f, visuals.blurRadius, 0.001f)
     }
 
@@ -234,12 +234,21 @@ class StreamingTextPresentationStateTest {
     }
 
     @Test
+    fun opacityKeepsRampingAfterBlurClears() {
+        val atBlurEnd = streamingRevealVisuals(1f / STREAMING_ALPHA_STRETCH, 0f, true)
+        assertEquals(0f, atBlurEnd.blurRadius, 0.001f)
+        assertTrue("alpha still ramping: ${atBlurEnd.alpha}", atBlurEnd.alpha in 0.6f..0.95f)
+        val newest = streamingRevealVisuals(0.1f, 0f, true)
+        assertTrue("new tokens start very transparent: ${newest.alpha}", newest.alpha < 0.03f)
+    }
+
+    @Test
     fun fastTokensCompressTheSameSettle() {
         val slow = streamingSettleMillis(20f)
         val fast = streamingSettleMillis(200f)
         val mid = streamingSettleMillis(90f)
-        assertEquals(340L, slow)
-        assertEquals(170L, fast)
+        assertEquals(476L, slow) // 340 × 1.4: opacity outlasts the blur
+        assertEquals(238L, fast)
         assertTrue(mid in (fast + 1) until slow)
     }
 
@@ -251,8 +260,9 @@ class StreamingTextPresentationStateTest {
             blurEnabled = true,
         )
 
-        assertEquals(0.5f, visuals.alpha, 0.02f)
-        assertTrue(visuals.blurRadius >= STREAMING_SETTLE_MAX_BLUR_RADIUS * 0.45f)
+        // 17.2: opacity lags the blur (stronger fade-in); some blur is still left.
+        assertEquals(0.33f, visuals.alpha, 0.02f)
+        assertTrue(visuals.blurRadius > 1f)
     }
 
     @Test
@@ -269,7 +279,7 @@ class StreamingTextPresentationStateTest {
         )
         assertEquals(0f, slow.alpha, 0.001f)
         assertTrue(slow.blurRadius > fast.blurRadius)
-        assertTrue(fast.alpha in 0.4f..0.6f)
+        assertTrue(fast.alpha in 0.25f..0.45f)
         assertTrue(fast.blurRadius > 0f)
     }
 }
