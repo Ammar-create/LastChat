@@ -83,22 +83,22 @@ fun AnimatedMarkAvatar(
     val isGrok = eyeType.equals("grok", ignoreCase = true)
     // Swatch colour == rendered colour (see MarkColors).
     // Body colour glides on a change; the eye shade below follows it live.
-    val bodyColor by androidx.compose.animation.animateColorAsState(
+    // Engine16.2c: the tweens are read in the draw phase only (no recomposition per frame).
+    val bodyColorS = androidx.compose.animation.animateColorAsState(
         targetValue = MarkColors.bodyColor(colorHex, colorPreset, eyeType),
         animationSpec = androidx.compose.animation.core.tween(380),
         label = "markBody",
     )
-    val eyeColor by androidx.compose.animation.animateColorAsState(
+    val eyeColorS = androidx.compose.animation.animateColorAsState(
         targetValue = MarkColors.eyeColor(eyeType, eyeColorHex, colorHex, colorPreset),
         animationSpec = androidx.compose.animation.core.tween(380),
         label = "markEye",
     )
-    val shadeStrength by androidx.compose.animation.core.animateFloatAsState(
+    val shadeS = androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (eyeShade) 1f else 0f,
         animationSpec = androidx.compose.animation.core.tween(380),
         label = "eyeShade",
     )
-    val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor, shadeStrength)
 
     // Engine16.2: a shape or eye-style swap morphs the geometry from whatever was on screen
     // (even mid-morph) to the new mark - no pop, no size snap.
@@ -108,16 +108,19 @@ fun AnimatedMarkAvatar(
     val sigNow = "$shapeId|${eyeType.lowercase()}"
     if (lastSig.value != sigNow && !frozen) {
         lastSig.value = sigNow
-        morphHold.last?.let { g -> morphHold.from = g; morphHold.fromPts = MorphPts.of(g) }
-        morphHold.pending = true
+        // Engine16.2c flicker fix: the animation can only snap to 0 in the effect, which
+        // runs after this frame is drawn; until then the draw pins progress at 0 so the
+        // first transition frame is exactly what was on screen (not the target).
+        morphHold.signatureChanged()
     }
     LaunchedEffect(sigNow) {
         if (!morphHold.pending) return@LaunchedEffect
         morphHold.pending = false
-        if (morphHold.from == null) return@LaunchedEffect
         morphAnim.snapTo(0f)
+        morphHold.forceZero = false
         morphAnim.animateTo(1f, tween(560, easing = FastOutSlowInEasing))
         morphHold.from = null
+        morphHold.lastBlend = null
     }
     if (editorCue != null && !frozen) LaunchedEffect(editorCue.seq) { motionState.editorCue(editorCue) }
 
@@ -183,19 +186,11 @@ fun AnimatedMarkAvatar(
                 else -> motionState.frame
             }
             val shape = MarkShapes.resolve(shapeId) ?: return@Canvas
-            val u = debugMorph ?: morphAnim.value
-            val from = morphHold.from
-            if (!frozen || debugMorph != null) {
-                val now = MarkGeom()
-                drawMark(shape, shapeId, isGrok, f, calmPreview, 1f, bodyColor, eyeColor, eyeFade, sink = now)
-                if (from != null && u < 1f) {
-                    val out = MarkGeom()
-                    drawMorph(from, morphHold.fromPts!!, now, u, out)
-                    morphHold.last = out
-                } else {
-                    drawMark(shape, shapeId, isGrok, f, calmPreview, 1f, bodyColor, eyeColor, eyeFade)
-                    morphHold.last = now
-                }
+            val bodyColor = bodyColorS.value
+            val eyeColor = eyeColorS.value
+            val eyeFade = MarkColors.genericalEyeFade(bodyColor, eyeColor, shadeS.value)
+            if (!frozen) {
+                drawLive(morphHold, shape, shapeId, isGrok, f, calmPreview, bodyColor, eyeColor, eyeFade, morphAnim.value)
                 return@Canvas
             }
             drawMark(
@@ -215,10 +210,49 @@ fun AnimatedMarkAvatar(
 
 internal val CALM_FRAME = MotionFrame()
 
+/** Mark a shape / eye-style change: the next frame starts the morph from what is on screen. */
+internal fun MorphHolder.signatureChanged() { needFrom = true; forceZero = true; pending = true }
+
+/**
+ * Live draw with the seamless morph (engine16.2c). [animValue] is the morph animation's
+ * value, which is stale (1) on the change frame; [MorphHolder.forceZero] pins it to 0.
+ */
+internal fun DrawScope.drawLive(
+    h: MorphHolder, shape: GrokShape, shapeId: String, isGrok: Boolean, f: MotionFrame, calm: Boolean,
+    bodyColor: Color, eyeColor: Color, eyeFade: Color, animValue: Float,
+) {
+    if (h.needFrom) {
+        h.needFrom = false
+        // From = what is on screen: the current blend mid-morph, else the mark as last drawn
+        // (captured once, here, at this pose).
+        val g = h.lastBlend ?: h.drawnShape?.let { ps ->
+            MarkShapes.resolve(ps)?.let { psh -> MarkGeom().also { drawMark(psh, ps, h.drawnGrok, f, false, 1f, bodyColor, eyeColor, eyeFade, sink = it) } }
+        }
+        h.from = g; h.fromPts = g?.let { MorphPts.of(it) }
+    }
+    val u = if (h.forceZero) 0f else animValue
+    val from = h.from
+    if (from != null && u < 1f) {
+        val now = h.target
+        drawMark(shape, shapeId, isGrok, f, calm, 1f, bodyColor, eyeColor, eyeFade, sink = now)
+        val out = MarkGeom()
+        drawMorph(from, h.fromPts!!, now, u, out)
+        h.lastBlend = out
+    } else {
+        drawMark(shape, shapeId, isGrok, f, calm, 1f, bodyColor, eyeColor, eyeFade)
+    }
+    h.drawnShape = shapeId; h.drawnGrok = isGrok
+}
+
 internal class MorphHolder {
-    var last: MarkGeom? = null
+    var drawnShape: String? = null
+    var drawnGrok = false
+    var lastBlend: MarkGeom? = null
     var from: MarkGeom? = null
     var fromPts: MorphPts? = null
+    val target = MarkGeom()
+    var needFrom = false
+    var forceZero = false
     var pending = false
 }
 
@@ -585,10 +619,7 @@ internal class MarkGeom {
 internal fun resamplePath(p: Path, n: Int = 120): List<Offset> {
     // A turned body's projected hull can be several overlapping face contours; union them
     // into the true silhouette first, then take the contour enclosing the most area.
-    val src = p.asAndroidPath()
-    val merged = android.graphics.Path()
-    val ok = runCatching { merged.op(src, android.graphics.Path(), android.graphics.Path.Op.UNION) }.getOrDefault(false)
-    val pm = android.graphics.PathMeasure(if (ok && !merged.isEmpty) merged else src, true)
+    val pm = android.graphics.PathMeasure(p.asAndroidPath(), true)
     var best = -1f
     var bestPts: List<Offset> = emptyList()
     val pos = FloatArray(2)
@@ -607,6 +638,52 @@ internal fun resamplePath(p: Path, n: Int = 120): List<Offset> {
     val pts = if (area < 0f) bestPts.reversed() else bestPts
     val top = pts.indices.minBy { pts[it].y }
     return List(n) { pts[(top + it) % n] }
+}
+
+/**
+ * Engine16.2c: silhouette of a (possibly many-contour) body path as [n] radii at fixed
+ * angles around [c], angle 0 = straight up, clockwise. A turned mesh hull is ~770 face
+ * contours; the old union + PathMeasure took ~460 ms. This is one pass over sampled points
+ * (max radius per angle bin), and two radial samplings blend without any alignment search.
+ */
+internal fun radialSilhouette(p: Path, n: Int = RADIAL_N, out: FloatArray = FloatArray(n)): FloatArray {
+    java.util.Arrays.fill(out, 0f)
+    val pm = android.graphics.PathMeasure(p.asAndroidPath(), true)
+    val pos = FloatArray(2)
+    val twoPi = (2.0 * Math.PI).toFloat()
+    do {
+        val len = pm.length
+        if (len <= 0f) continue
+        val steps = (len / RADIAL_STEP).toInt().coerceIn(3, 400)
+        for (i in 0 until steps) {
+            pm.getPosTan(len * i / steps, pos, null)
+            val dx = pos[0]; val dy = pos[1]
+            var a = kotlin.math.atan2(dx, -dy)
+            if (a < 0f) a += twoPi
+            val k = ((a / twoPi) * n).toInt() % n
+            val r = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (r > out[k]) out[k] = r
+        }
+    } while (pm.nextContour())
+    // Fill any empty bins from neighbours.
+    for (pass in 0 until 3) for (k in 0 until n) if (out[k] == 0f) out[k] = maxOf(out[(k + n - 1) % n], out[(k + 1) % n])
+    return out
+}
+
+internal const val RADIAL_N = 288
+private const val RADIAL_STEP = 1.5f
+
+internal fun radialPath(a: FloatArray, b: FloatArray, u: Float, into: Path): Path {
+    into.reset()
+    val n = a.size
+    for (k in 0 until n) {
+        val ang = (k + 0.5f) / n * (2.0 * Math.PI).toFloat()
+        val r = a[k] + (b[k] - a[k]) * u
+        val x = kotlin.math.sin(ang) * r; val y = -kotlin.math.cos(ang) * r
+        if (k == 0) into.moveTo(x, y) else into.lineTo(x, y)
+    }
+    into.close()
+    return into
 }
 
 /** Point-wise blend of two resampled contours, with the start index aligned for least travel. */
@@ -636,7 +713,7 @@ private fun lerpC(a: Color, b: Color, u: Float) = androidx.compose.ui.graphics.l
 internal fun DrawScope.drawMorph(from: MarkGeom, fromPts: MorphPts, to: MarkGeom, u: Float, out: MarkGeom) {
     val clip = to.clip ?: return
     val toPts = MorphPts.of(to)
-    val body = blendContours(fromPts.body, toPts.body, u)
+    val body = radialPath(fromPts.body, toPts.body, u, Path())
     val sizePx = from.sizePx + (to.sizePx - from.sizePx) * u
     val he = to.he
     val gW = (if (from.isGrok) 0f else 1f) * (1f - u) + (if (to.isGrok) 0f else 1f) * u
@@ -667,8 +744,8 @@ internal fun DrawScope.drawMorph(from: MarkGeom, fromPts: MorphPts, to: MarkGeom
 }
 
 /** Resampled contours of a [MarkGeom] (computed once for a frozen "from" snapshot). */
-internal class MorphPts(val body: List<Offset>, val eyes: List<List<Offset>>) {
+internal class MorphPts(val body: FloatArray, val eyes: List<List<Offset>>) {
     companion object {
-        fun of(g: MarkGeom) = MorphPts(resamplePath(g.body), g.eyes.map { resamplePath(it.path, 64) })
+        fun of(g: MarkGeom) = MorphPts(radialSilhouette(g.body), g.eyes.map { resamplePath(it.path, 64) })
     }
 }

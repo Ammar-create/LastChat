@@ -707,3 +707,25 @@ How it works:
 They are implemented in `EditorActionButton`.
 
 `SetupButton` in onboarding is split into a haptics wrapper plus `SetupButtonFace` (the visual only, internal). Onboarding behaviour is unchanged. The split lets `renderSetupButtons` draw the real setup look next to the editor.
+
+## Engine16.2c: editor fixes (dismiss, surfaces, white eyes, flicker, morph cost)
+
+**Scroll closed the editor.** Root cause: `ModalBottomSheet` drag-to-dismiss. When the scrolled content reached its top, the leftover downward drag/fling went to the sheet through nested scroll, and the sheet hid.
+- Fix: `sheetGesturesEnabled = false`. Content scrolling can no longer move the sheet.
+- Dismissal is explicit: Cancel, system back, or tapping the scrim.
+
+**Surfaces.** Cards, shape tiles, the eye-style track, the caption pill and the Cancel ring use `softSurface(k)`, a small step from the sheet colour (`surfaceContainerLow`) toward `surfaceContainerHigh`. The steps are 0.2–0.55, so the surfaces are low contrast in light and dark themes.
+
+**Eye defaults.** Both Grok and Generical default to white (`DEFAULT_GROK_EYE_HEX = #FFFFFF`). The near-white-body → ink auto-switch is removed. The swatch order is identical for both styles: white (default) first, then ink, then the colours.
+
+**Morph first-frame flash.** Root cause: on the change frame the morph animation still read 1. It can only snap to 0 inside the `LaunchedEffect`, which runs after that frame is drawn, so the target shape was drawn for one frame.
+- Fix: `MorphHolder.signatureChanged()` sets `forceZero`, which pins progress at 0 until the effect has snapped.
+- The "from" geometry is captured in that same draw, from the last drawn shape (or from the current blend, if a morph is interrupted).
+- The draw logic lives in `drawLive()`, the code path the app uses.
+- `MorphSeamTest.firstMorphFrameIsPreviousShape` checks that frame 0 matches the previous shape. Only a ≤1 px outline ring may differ, and frame 0 must be far from the target.
+
+**Morph cost.** Root cause of the lag: a turned mesh body's projected hull is about 770 face contours. The resample union-simplified it with `Path.op` every frame, about 460 ms per call, roughly 100 ms per eye-style morph frame on a turned square. The fixes:
+- The body is now a radial silhouette: `radialSilhouette`, the max radius in 288 fixed angle bins, a single pass. Blending is per-angle, so the alignment search is gone too.
+- In steady state nothing is captured per frame; capture happens only on the change frame.
+- Colour, eye-colour and shade tweens are read in the draw phase, so there is no recomposition per tween frame.
+- `MorphBenchTest` logs the per-frame costs.

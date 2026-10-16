@@ -90,7 +90,8 @@ class GrokEyeGapTest {
                     // White page so only the (dark) eyes are dark pixels.
                     Row(Modifier.background(Color.White)) {
                         for (f in fs) Box(Modifier.size(cellDp.dp), contentAlignment = Alignment.Center) {
-                            AnimatedMarkAvatar(shape, "grok", "#2A92FE", false, colorPreset = "blue",
+                            // Ink eyes pinned: this measures geometry (eyes default to white since 16.2c).
+                            AnimatedMarkAvatar(shape, "grok", "#2A92FE", false, colorPreset = "blue", eyeColorHex = "#1A1A1A",
                                 modifier = Modifier.size((cellDp * markFrac).dp), debugFrame = f)
                         }
                     }

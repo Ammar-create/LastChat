@@ -110,7 +110,10 @@ fun AnimatedAvatarEditor(
     // Open fully expanded: a half-expanded sheet hid the lower shape rows.
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    // Engine16.2c: sheet drag gestures off. With them on, a downward drag/fling at the top of
+    // the scrolled content was handed to the sheet through nested scroll and dismissed the
+    // editor. Dismiss stays explicit: Cancel, system back, or tapping the scrim.
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState, sheetGesturesEnabled = false) {
         AnimatedAvatarEditorContent(
             shape = shape,
             onShape = { shape = it },
@@ -152,8 +155,8 @@ fun AnimatedAvatarEditor(
 internal fun defaultEyeHex(eyeType: String): String = MarkColors.defaultEyeHex(eyeType)
 
 /**
- * Eye-colour swatches, mode default first, no duplicates (Generical default = white,
- * Grok default = ink; both are presets too).
+ * Eye-colour swatches: identical order for both eye styles (white = the default first,
+ * then ink and the colours).
  */
 internal fun eyeSwatches(eyeType: String): List<String> {
     val def = defaultEyeHex(eyeType).uppercase()
@@ -213,7 +216,7 @@ internal fun AnimatedAvatarEditorContent(
                     .fillMaxWidth()
                     .height(232.dp)
                     .clip(RoundedCornerShape(28.dp))
-                    .background(cs.surfaceContainer),
+                    .background(softSurface(0.22f)),
                 contentAlignment = Alignment.Center,
             ) {
                 AnimatedMarkAvatar(
@@ -238,7 +241,7 @@ internal fun AnimatedAvatarEditorContent(
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 12.dp)
                         .clip(CircleShape)
-                        .background(cs.surfaceContainerHighest.copy(alpha = 0.7f))
+                        .background(softSurface(0.5f))
                         .padding(horizontal = 12.dp, vertical = 4.dp),
                 )
             }
@@ -256,7 +259,7 @@ internal fun AnimatedAvatarEditorContent(
                             modifier = Modifier
                                 .size(54.dp)
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(if (sel) bodyColor.copy(alpha = 0.16f) else cs.surfaceContainer)
+                                .background(if (sel) bodyColor.copy(alpha = 0.16f) else softSurface(0.2f))
                                 .then(if (sel) Modifier.border(2.dp, bodyColor, RoundedCornerShape(16.dp)) else Modifier)
                                 .clickable { if (!sel) { onShape(s); fire(EditorCue.Kind.Shape) } },
                             contentAlignment = Alignment.Center,
@@ -294,7 +297,7 @@ internal fun AnimatedAvatarEditorContent(
                         .fillMaxWidth()
                         .then(spot(EditorCue.Kind.EyeStyle))
                         .clip(RoundedCornerShape(16.dp))
-                        .background(cs.surfaceContainerHighest)
+                        .background(softSurface(0.42f))
                         .padding(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
@@ -421,11 +424,21 @@ private fun EditorActionButton(
         ) { label() }
     } else {
         androidx.compose.material3.OutlinedButton(onClick = onClick, interactionSource = interaction, shape = shape, modifier = mod,
-            border = androidx.compose.foundation.BorderStroke(3.dp, cs.surfaceContainerHighest),
+            border = androidx.compose.foundation.BorderStroke(3.dp, softSurface(0.55f)),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
             colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(containerColor = cs.surfaceContainerLow, contentColor = cs.onSurface),
         ) { label() }
     }
+}
+
+/**
+ * Engine16.2c: low-contrast editor surfaces - a small step from the sheet colour toward
+ * surfaceContainerHigh ([k] 0…1), so cards read as gentle tints in light and dark themes.
+ */
+@Composable
+private fun softSurface(k: Float): Color {
+    val cs = MaterialTheme.colorScheme
+    return androidx.compose.ui.graphics.lerp(cs.surfaceContainerLow, cs.surfaceContainerHigh, k)
 }
 
 @Composable
@@ -436,7 +449,7 @@ private fun EditorSection(title: String, card: Boolean = true, content: @Composa
             .then(
                 if (card) Modifier
                     .clip(RoundedCornerShape(22.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .background(softSurface(0.22f))
                     .padding(horizontal = 16.dp, vertical = 14.dp)
                 else Modifier.padding(vertical = 4.dp)
             ),

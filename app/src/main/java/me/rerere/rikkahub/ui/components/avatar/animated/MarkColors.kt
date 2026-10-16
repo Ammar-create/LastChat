@@ -39,12 +39,13 @@ object MarkColors {
 
     /** Mode default eye colours (what `eyeColorHex == null` renders as). */
     const val DEFAULT_GENERICAL_EYE_HEX = "#FFFFFF"
-    const val DEFAULT_GROK_EYE_HEX = "#1A1A1A"
+    // Engine16.2c: both styles default to white eyes.
+    const val DEFAULT_GROK_EYE_HEX = "#FFFFFF"
 
     /** Eye swatches shared by Grok + Generical (mode default is listed first by the editor). */
     val EYE_PRESETS = linkedMapOf(
-        "ink" to "#1A1A1A",
         "white" to "#FFFFFF",
+        "ink" to "#1A1A1A",
         "sky" to "#87D2E9",
         "mint" to "#7EE0C8",
         "gold" to "#FFD27A",
@@ -99,14 +100,8 @@ object MarkColors {
     /** The colour the eyes are drawn with (custom pick or the mode default). */
     fun eyeColor(eyeType: String, eyeColorHex: String?, colorHex: String?, colorPreset: String?): Color {
         eyeColorHex?.takeIf { it.isNotBlank() }?.let { return hexToColor(it) }
-        return if (eyeType.equals("grok", true)) {
-            grokEyeFill(canonicalBody(colorHex, colorPreset, eyeType).second, colorHex.orEmpty())
-        } else {
-            // Engine16: the default white eye would vanish on a near-white body; use ink there.
-            val b = bodyColor(colorHex, colorPreset, eyeType)
-            val lum = 0.2126f * b.red + 0.7152f * b.green + 0.0722f * b.blue
-            if (lum > 0.82f) Color(0xFF1C1C1E) else hexToColor(DEFAULT_GENERICAL_EYE_HEX)
-        }
+        // Engine16.2c: white by default in both styles, whatever the body colour.
+        return hexToColor(defaultEyeHex(eyeType))
     }
 
     /** Pastel of the body colour: light bouncing off the surface into the eye. */

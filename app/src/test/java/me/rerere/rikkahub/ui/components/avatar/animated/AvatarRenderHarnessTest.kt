@@ -573,6 +573,18 @@ class AvatarRenderHarnessTest {
                 }
             }
         }
+        // Engine16.2c: light theme too (soft surfaces must read in both).
+        for (mode in listOf("generical", "grok")) capture("editor_${mode}_blob_top_411x820_light", 411, 820) {
+            MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme()) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    AnimatedAvatarEditorContent(
+                        shape = "blob", onShape = {}, eyeType = mode, onEyeType = {}, colorHex = "#2A92FE", colorPreset = "blue",
+                        onColor = { _, _ -> }, eyeColorHex = null, onEyeColor = {}, onPickColor = {}, onPickEyeColor = {},
+                        onDismiss = {}, onSave = {}, modifier = Modifier.fillMaxSize(), livePreview = false,
+                    )
+                }
+            }
+        }
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
     }
 
