@@ -1013,3 +1013,83 @@ Compare videos now carry a header and boxed row labels (E17.2 / E18 / E19.1, top
 
 Pitch jerk is higher than before in poke scenarios: that is the startle bounce (now on every
 startling first poke). Whole-figure stop-go stays in the E17/E18 range except pan_poke.
+
+## Engine20 — snappier, springier, intentional
+
+Julian's 19.1 review asked for a broad sweep ("don't overdo, don't underdo"), followed by a
+second note on idle emotions, gaze steps and aliveness. The design premise for everything
+below is: **the figure is a body with mass that is driven by a mind with reasons.** Motion
+comes from physics (springs, inertia, anticipation, follow-through, overlapping action), and
+any change of feeling comes from a cause that the viewer could name.
+
+### Behaviour design rationale
+
+* **Feelings have causes and durations, not random rolls.** A real person does not flash
+  sadness for one second while resting. Negative feelings come from appraising an event (a
+  poke, the tone of a reply, an error). They build, hold and fade over seconds. Surprise is
+  the one emotion that is brief by nature. In code:
+  * `MindRules.APPRAISED_NEGATIVE` (Angry, Sad, pouty) and `APPRAISED_NEGATIVE_ACCENTS`
+    (Sad, Annoyed, Worried) are dropped unless `hasEventCause(prio, cause)` holds, that is,
+    priority ≥ P_EVENT or a cause such as poke, tone appraisal, reply or error.
+  * `MindRules.minDwell(face)` sets the shortest time each face is held: Surprised 0.4 s;
+    concentration and confusion 1.6 s; Happy and others 1.4 s; Drowsy 2.2 s; Bored 3 s;
+    negative faces 3.5 s. Spontaneous faces and accents (below P_EVENT) are stretched to
+    this dwell. A **dwell guard** at the face target stops another spontaneous change from
+    replacing a face early; real events still pre-empt it.
+  * Tone reactions are tagged `appraised` and log "tone appraisal". The busy rotation no
+    longer pouts as filler and is not bored while its own reply streams, and every busy face
+    holds at least its dwell.
+* **A look is one act.** The eyes start first and the head sets off 20–45 ms later (it
+  used to start 120–220 ms later). The two overlap and travel A → B in one go, and the eyes
+  counter-roll as the head arrives. The eye spring has ζ 0.8: a fast start, an eased landing
+  and an overshoot-and-settle of about 1.5 %. An *intersaccadic refractory* period (0.24 s)
+  keeps a new self-paced look waiting until the current shift lands, so a look is never
+  redirected half-way. The planner also waits for the head to finish its last move before
+  starting a new look. A poke reflex is never delayed.
+* **Secondary motion everywhere, small.** The body rides a soft under-damped spring
+  (ω 24, ζ 0.42). Closing lids give it a tiny squash and a big look gives it a small bob,
+  so a blink or glance carries through the figure.
+* **Anticipation → action → follow-through.** Every spin now has a run-up bounce: a crouch
+  that springs out into a short stretch as the turn launches. The turn starts from rest,
+  peaks early and decelerates smoothly. While the body brakes, the eyes carry on in the spin
+  direction; that lead builds through the deceleration, continues past the stop, then
+  springs home slightly past rest.
+* **Pokes always land in the body.** The Recoil pop plays on every poke. The eyes vary:
+  a full widen about 45 % of the time, a small one about 27 %, or none ("body only"). Once
+  the avatar is used to being poked, it widens its eyes less often.
+* **Faces change faster, sometimes behind a blink.** The ω profiles are faster: Snap 20,
+  Soft 13, Gradual 6.5 and Settle 5.2 (previously 16, 9, 4.5 and 3.4). A calm, non-snap
+  change has a 30–40 % chance of starting a blink (`Blinker.tryNow`), and the new face is
+  swapped in once the lids reach 90 % closed (`ExpressionDirector.wantBehindBlink`, waiting
+  up to 0.16 s). Closed-eye faces never use this.
+* **Blink.** The curve was identical from E17 to E19.1. Its reopen used `r(2−r)` on a
+  reversed clock, so it started slowly and *landed at full speed*, which read as a stiff
+  snap-open. The lids now reopen with an ease-out cubic (fast off the mark, gentle landing),
+  `openT` is 0.13–0.21 s, and the body spring adds the squash.
+
+### Editor
+
+* Shape options have no tile behind them. The selection is a true contour offset: a wide
+  stroke of the silhouette with the shape and a 3 dp gap band cleared in a layer. It is the
+  same 2.5 dp weight as the colour rings and fades and grows in with a spring.
+* The colour ring takes the selected colour itself. A colour too close to the card colour
+  gets a faint contrast mix.
+* The eye-type control's track uses the sheet colour, and its sliding indicator uses the
+  card colour (spring). Per-type options animate only when the option set changes
+  (AnimatedContent). The eye-shade row expands and collapses.
+* The scroll content has 72 dp of padding past the floating buttons.
+* `AvatarRenderHarnessTest.renderEditorRecording` records 30 fps frames of real
+  composition with live animations. Robolectric needs `ShadowChoreographer.setPaused(true)`
+  with a 16 ms frame delay, otherwise every animation snaps.
+
+### New CI gates (ChannelMetricsTest)
+
+| gate | meaning |
+|---|---|
+| `emo_short == 0` | no spontaneous face is replaced by an equal-or-weaker non-event cause before 0.85 × its dwell |
+| `neg_uncaused == 0` | no negative face without an appraised cause |
+| `gaze_stepgo == 0` | no shift lands, nearly stops (< 15 % of peak) and sets off again the same way within 0.15 s |
+| `gaze_reversal == 0` | no shift falls back > 10 % of its distance before landing (flight ≤ 0.4 s; poke-interrupted shifts excluded) |
+
+These gates catch the old behaviour: E19.1's head timing fails `gaze_stepgo` in every
+scenario (for example idle12 4–6 of 7–10 shifts, session 18–19 of about 31).

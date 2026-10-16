@@ -203,6 +203,11 @@ class AvatarMotionVideoTest {
             if (i < seq.size && fired.add(100f + i)) s.debugReact(seq[i], 1.2f)
             AvatarMotionHints()
         },
+        // Engine20: eight single pokes, 2 s apart — body bounce every time, eyes varied.
+        Script("pokes8", 17f, preRoll = 10f, seed = 71) { s, _, t, _ ->
+            for (k in 0 until 8) { val p = 1f + 2f * k; if (t >= p && fired.add(p)) s.poke() }
+            AvatarMotionHints()
+        },
         Script("pokes", 16f, preRoll = 10f, seed = 49) { s, _, t, _ ->
             for (p in listOf(1f, 4f, 5f, 5.6f, 6.2f, 6.8f, 7.4f)) if (t >= p && fired.add(p)) s.poke()
             AvatarMotionHints()

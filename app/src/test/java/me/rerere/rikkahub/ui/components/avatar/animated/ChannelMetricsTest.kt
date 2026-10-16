@@ -50,13 +50,18 @@ class ChannelMetricsTest {
                 need(m["react_gaze_max"] <= 0.12f, "gaze react ${m["react_gaze_max"]} s")
                 need(m["react_face_max"] <= 0.18f, "face react ${m["react_face_max"]} s")
             }
+            // Engine20: feelings dwell; negative ones need a cause; looks travel in one go.
+            need(m["emo_short"] == 0f, "spontaneous face shorter than its dwell ${m["emo_short"]}")
+            need(m["neg_uncaused"] == 0f, "negative face without an appraised cause ${m["neg_uncaused"]}")
+            need(m["gaze_stepgo"] == 0f, "gaze stop-go within a shift ${m["gaze_stepgo"]}/${m["gaze_shifts"]}")
+            need(m["gaze_reversal"] == 0f, "gaze reversal within a shift ${m["gaze_reversal"]}/${m["gaze_shifts"]}")
             need(m["blink_max_gap"] <= Blinker.MAX_INTERVAL + 1.5f, "blink gap ${m["blink_max_gap"]}")
             need(m["stopgo_expr_min"] <= 0.5f * (E18_STOPGO_EXPR[sc] ?: 99f), "stop-go expr ${m["stopgo_expr_min"]}/min")
             need(m["stopgo_yaw_min"] <= 0.5f * (E18_STOPGO_YAW[sc] ?: 99f), "stop-go yaw ${m["stopgo_yaw_min"]}/min")
             if (sc == "idle12") {
                 need(m["rev_yaw_s"] <= 0.5f, "idle yaw reversals ${m["rev_yaw_s"]}/s")
                 need(m["double_rate"] <= 0.08f, "double blinks ${m["double_rate"]}")
-                need(m["sacc_blink"].isNaN() || m["sacc_blink"] in 0.4f..0.9f, "saccade-blink coupling ${m["sacc_blink"]}")
+                need(m["sacc_blink"].isNaN() || m["sacc_blink"] in (if (m["saccades"] >= 20f) 0.4f..0.9f else 0.3f..0.95f) /* Engine20: fewer, whole shifts → small samples */, "saccade-blink coupling ${m["sacc_blink"]}")
             }
         }
         println(sb)

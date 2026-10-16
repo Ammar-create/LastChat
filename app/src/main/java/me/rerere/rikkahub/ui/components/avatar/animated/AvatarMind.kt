@@ -101,6 +101,26 @@ internal object MindRules {
     val NEGATIVE_FACES = setOf("Angry", "angered or concentrated", "Sad", "pouty", "Bored", "hurt or cute")
     val NEGATIVE_ACCENTS = setOf(FaceAccent.Annoyed)
 
+    /**
+     * Engine20 emotional dwell. A feeling is not a flicker: once shown it holds for a time that
+     * fits it (surprise is brief by nature; sadness and anger build and linger), and negative
+     * feelings arise only from an appraisal of something that happened, never at random.
+     */
+    val APPRAISED_NEGATIVE = setOf("Angry", "Sad", "pouty")
+    val APPRAISED_NEGATIVE_ACCENTS = setOf("Sad", "Annoyed", "Worried")
+    fun minDwell(face: String): Float = when (face) {
+        "Neutral", "None", "" -> 0f
+        "Surprised", "Startled" -> 0.4f
+        "Angry", "Sad", "pouty", "Annoyed", "Worried" -> 3.5f
+        "Bored" -> 3f
+        "Drowsy", "Sleeping" -> 2.2f
+        "angered or concentrated", "Focused", "confused", "confused left", "Puzzled" -> 1.6f
+        "WakeSquint", "Dizzy" -> 0.6f
+        else -> 1.4f
+    }
+    private val EVENT_CAUSE = Regex("poke|tone|apprais|reply|user|error|message|editor|event|touch|fling|spin|neighbour", RegexOption.IGNORE_CASE)
+    fun hasEventCause(prio: Int, cause: String): Boolean = prio >= P_EVENT || EVENT_CAUSE.containsMatchIn(cause)
+
     /** Perception delay scaling by state: alert = quicker, tired / drowsy = slower. */
     fun perceptionScale(arousal: Float, energy: Float, drowsy: Boolean, k: MindKnobs): Float =
         ((1.4f - 0.55f * arousal - 0.25f * energy) * (if (drowsy) 1.5f else 1f) * (1.12f - 0.24f * k.curiosity)).coerceIn(0.6f, 2.2f)

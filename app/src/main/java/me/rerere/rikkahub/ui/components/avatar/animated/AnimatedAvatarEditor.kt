@@ -2,6 +2,10 @@ package me.rerere.rikkahub.ui.components.avatar.animated
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -207,7 +211,7 @@ internal fun AnimatedAvatarEditorContent(
                 .fillMaxWidth()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp)
-                .padding(top = 4.dp, bottom = barHeight + 24.dp),
+                .padding(top = 4.dp, bottom = barHeight + 72.dp), // Engine20: the end scrolls well clear of the buttons
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -256,12 +260,36 @@ internal fun AnimatedAvatarEditorContent(
                 ) {
                     MarkShapes.SHAPES.forEach { s ->
                         val sel = shape == s
+                        // Engine20: no tile behind the shapes; the selection is a ring that follows
+                        // the shape's own contour with a small gap, fading in.
+                        val ringK by androidx.compose.animation.core.animateFloatAsState(if (sel) 1f else 0f,
+                            androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 500f), label = "shapeRing")
                         Box(
                             modifier = Modifier
                                 .size(54.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (sel) bodyColor.copy(alpha = 0.16f) else softSurface(0.2f))
-                                .then(if (sel) Modifier.border(2.dp, bodyColor, RoundedCornerShape(16.dp)) else Modifier)
+                                .drawBehind {
+                                    if (ringK > 0.01f) {
+                                        // A true contour offset: a wide stroke of the silhouette in the
+                                        // ring colour, with the silhouette and its gap band cleared.
+                                        val raw = MarkShapes.getShapePath(s, androidx.compose.ui.geometry.Size(100f, 100f))
+                                        val b = raw.getBounds()
+                                        val bodyPx = SHAPE_BODY.toPx()
+                                        val k = bodyPx / maxOf(b.width, b.height)
+                                        val gap = SEL_GAP.toPx(); val sw = SEL_STROKE.toPx() * (0.6f + 0.4f * ringK)
+                                        val layer = androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height)
+                                        drawContext.canvas.saveLayer(layer, androidx.compose.ui.graphics.Paint())
+                                        withTransform({
+                                            translate(center.x - b.center.x * k, center.y - b.center.y * k)
+                                            scale(k, k, androidx.compose.ui.geometry.Offset.Zero)
+                                        }) {
+                                            drawPath(raw, bodyColor.copy(alpha = ringK), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f * (gap + sw) / k, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+                                            drawPath(raw, Color.Black, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f * gap / k, join = androidx.compose.ui.graphics.StrokeJoin.Round), blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+                                            drawPath(raw, Color.Black, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+                                        }
+                                        drawContext.canvas.restore()
+                                    }
+                                }
+                                .clip(CircleShape)
                                 .clickable { if (!sel) { onShape(s); fire(EditorCue.Kind.Shape) } },
                             contentAlignment = Alignment.Center,
                         ) {
@@ -293,22 +321,36 @@ internal fun AnimatedAvatarEditorContent(
 
             // ---- Eyes: style, colour, shade
             EditorSection(stringResource(R.string.avatar_animated_eyes)) {
-                Row(
+                // Engine20: the track is the sheet (screen) colour, the sliding indicator the
+                // colour of this card.
+                val eyeIds = listOf("generical" to R.string.avatar_animated_eye_generical, "grok" to R.string.avatar_animated_eye_grok)
+                val selIdx = eyeIds.indexOfFirst { eyeType.equals(it.first, ignoreCase = true) }.coerceAtLeast(0)
+                val slide by androidx.compose.animation.core.animateFloatAsState(selIdx.toFloat(),
+                    androidx.compose.animation.core.spring(dampingRatio = 0.78f, stiffness = 420f), label = "eyeSeg")
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .then(spot(EditorCue.Kind.EyeStyle))
                         .clip(RoundedCornerShape(16.dp))
-                        .background(softSurface(0.42f))
+                        .background(cs.surfaceContainerLow)
                         .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    for ((id, label) in listOf("generical" to R.string.avatar_animated_eye_generical, "grok" to R.string.avatar_animated_eye_grok)) {
+                    val segW = (maxWidth - 4.dp) / 2
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .padding(end = segW + 4.dp)
+                            .graphicsLayer { translationX = slide * (segW + 4.dp).toPx() }
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(softSurface(0f)),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for ((id, label) in eyeIds) {
                         val sel = eyeType.equals(id, ignoreCase = true)
                         Row(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(if (sel) cs.surfaceContainerLow else Color.Transparent)
                                 .clickable { if (!sel) { onEyeType(id); fire(EditorCue.Kind.EyeStyle) } }
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.Center,
@@ -326,6 +368,7 @@ internal fun AnimatedAvatarEditorContent(
                             )
                         }
                     }
+                    }
                 }
                 Spacer(Modifier.height(14.dp))
                 Text(stringResource(R.string.avatar_animated_eye_color), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant,
@@ -334,6 +377,19 @@ internal fun AnimatedAvatarEditorContent(
                 val def = defaultEyeHex(eyeType)
                 val current = MarkColors.normalizeHex(eyeColorHex?.takeIf { it.isNotBlank() } ?: def)
                 val swatches = eyeSwatches(eyeType)
+                // Engine20: the per-type options animate in and out when the eye type changes.
+                androidx.compose.animation.AnimatedContent(
+                    // Keyed on the option set: animates only when the options really change.
+                    targetState = swatches.joinToString(),
+                    transitionSpec = {
+                        (androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220, 60)) +
+                            androidx.compose.animation.scaleIn(androidx.compose.animation.core.spring(0.7f, 500f), initialScale = 0.85f))
+                            .togetherWith(androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) +
+                                androidx.compose.animation.scaleOut(androidx.compose.animation.core.tween(140), targetScale = 0.9f))
+                            .using(androidx.compose.animation.SizeTransform(clip = false))
+                    },
+                    label = "eyeSwatches",
+                ) { _ ->
                 SwatchRow(spot(EditorCue.Kind.EyeColor)) {
                     swatches.forEach { hex ->
                         val isDefault = hex.equals(def, ignoreCase = true)
@@ -345,7 +401,13 @@ internal fun AnimatedAvatarEditorContent(
                     val custom = eyeColorHex?.takeIf { h -> swatches.none { it.equals(MarkColors.normalizeHex(h), ignoreCase = true) } }
                     CustomSwatch(current = custom?.let { MarkColors.hexToColor(it) }, contentDescription = stringResource(R.string.avatar_animated_eye_color), onClick = onPickEyeColor)
                 }
-                if (isGenerical) {
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isGenerical,
+                    enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.spring(0.85f, 420f)) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200, 80)),
+                    exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(200)) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
+                ) {
+                Column {
                     Spacer(Modifier.height(10.dp))
                     Row(
                         modifier = Modifier
@@ -365,6 +427,7 @@ internal fun AnimatedAvatarEditorContent(
                         Spacer(Modifier.width(16.dp))
                         androidx.compose.material3.Switch(checked = eyeShade, onCheckedChange = { onEyeShade(it); fire(EditorCue.Kind.Shade) })
                     }
+                }
                 }
             }
         }
@@ -396,6 +459,12 @@ internal fun AnimatedAvatarEditorContent(
     }
     }
 }
+
+/** Engine20: one selection-ring weight and gap for shapes and swatches. */
+private val SEL_STROKE = 2.5.dp
+private val SEL_GAP = 3.dp
+/** Drawn silhouette extent of a 36 dp shape preview (the body sits inside its box). */
+private val SHAPE_BODY = 31.5.dp
 
 @Composable
 private fun EditorActionButton(
@@ -484,14 +553,20 @@ private fun SwatchRow(modifier: Modifier = Modifier, content: @Composable () -> 
 /** Colour dot; selection is a ring with a gap (no check glyph over the colour). */
 @Composable
 private fun Swatch(color: Color, selected: Boolean, contentDescription: String? = null, onClick: () -> Unit) {
-    val ring = MaterialTheme.colorScheme.onSurface
+    // Engine20: the ring is the selected colour itself, as thick as the shape ring
+    // (a faint edge keeps a near-background colour's ring visible).
+    val bg = MaterialTheme.colorScheme.surfaceContainerHighest
+    val weak = kotlin.math.abs(color.luminance() - bg.luminance()) < 0.08f
+    val ring = if (weak) androidx.compose.ui.graphics.lerp(color, MaterialTheme.colorScheme.onSurface, 0.35f) else color
+    val k by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.7f, stiffness = 500f), label = "swatchRing")
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .then(if (selected) Modifier.border(2.dp, ring, CircleShape) else Modifier)
+            .then(if (k > 0.01f) Modifier.border(SEL_STROKE, ring.copy(alpha = k), CircleShape) else Modifier)
             .clickable(onClickLabel = contentDescription) { onClick() }
-            .padding(if (selected) 5.dp else 3.dp)
+            .padding(3.dp + (SEL_STROKE - 0.5.dp + SEL_GAP - 3.dp) * k)
             .clip(CircleShape)
             .background(color)
             .then(

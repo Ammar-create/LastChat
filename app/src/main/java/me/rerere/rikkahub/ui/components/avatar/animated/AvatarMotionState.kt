@@ -97,6 +97,7 @@ internal class GazeDirector(
     private var pendingHx = 0f
     private var pendingHy = 0f
     private var headDelay = 0f
+    private var postponed = 0f
     var headX = 0f; private set
     var headY = 0f; private set
     private var hvx = 0f
@@ -149,7 +150,7 @@ internal class GazeDirector(
         if (travel > 0f) {
             // Smooth pursuit (a pan), the head following along.
             p0x = tx; p0y = ty; p1x = gx.coerceIn(-1f, 1f); p1y = gy.coerceIn(-1f, 1f)
-            pursuitDur = travel; pursuitT = 0f
+            pursuitDur = travel; pursuitT = 0f; pending = false
             focusLeft += travel
         } else {
             pursuitT = 1f
@@ -176,7 +177,17 @@ internal class GazeDirector(
 
     val focused: Boolean get() = focusLeft > 0f
 
+    // Engine20: intersaccadic refractory. A new self-paced look that arrives while the last
+    // shift is still in flight waits for it to land (≥ 0.24 s), so a look is never redirected
+    // mid-way (a visible step / reversal). An eyes-only reflex (poke) is never delayed.
+    private var sinceShift = 9f
+    private var pendX = 0f; private var pendY = 0f; private var pendHead = false; private var pending = false
     private fun setTarget(x: Float, y: Float, withHead: Boolean) {
+        if (!eyesOnly && sinceShift < SHIFT_REFRACTORY && hypot(x - tx, y - ty) > 0.06f) {
+            pendX = x; pendY = y; pendHead = withHead; pending = true; return
+        }
+        pending = false
+        sinceShift = 0f
         val gx = x.coerceIn(-1f, 1f)
         val gy = y.coerceIn(-1f, 1f)
         val jump = hypot(gx - tx, gy - ty)
@@ -195,14 +206,18 @@ internal class GazeDirector(
             headDelay = 0f; pendingHx = htx; pendingHy = hty
         }
         if (headJoins) {
-            // Eyes lead, the head follows a beat later and carries most of a big turn.
+            // Engine20: one coordinated shift — the eyes flick first but the head sets off
+            // almost with them (20–45 ms), so the look travels A → B in one go instead of
+            // eye-step, pause, head-step. The eyes then counter-roll as the head arrives.
             pendingHx = gx * 0.8f; pendingHy = gy * 0.72f
-            headDelay = 0.12f + rng.nextFloat() * 0.1f
+            headDelay = 0.02f + rng.nextFloat() * 0.025f
         }
     }
 
     fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean) {
         bigShift = false
+        sinceShift += dt
+        if (pending && sinceShift >= SHIFT_REFRACTORY && pursuitT >= 1f) setTarget(pendX, pendY, pendHead)
         if (focusLeft > 0f) {
             focusLeft -= dt
             if (focusLeft <= 0f) {
@@ -250,8 +265,9 @@ internal class GazeDirector(
         var rem = dt
         while (rem > 1e-6f) {
             val h = min(rem, 1f / 120f)
-            val ax = eyeW * eyeW * (tx + mx + dex - eyeX) - 2f * eyeW * evx
-            val ay = eyeW * eyeW * (ty + my + dey - eyeY) - 2f * eyeW * evy
+            // Engine20: ζ 0.8 — fast start, eased landing with a ~1.5 % overshoot-and-settle.
+            val ax = eyeW * eyeW * (tx + mx + dex - eyeX) - 1.6f * eyeW * evx
+            val ay = eyeW * eyeW * (ty + my + dey - eyeY) - 1.6f * eyeW * evy
             evx += ax * h; evy += ay * h
             eyeX += evx * h; eyeY += evy * h
             val bx = headW * headW * (htx + dhx - headX) - 2f * headZ * headW * hvx
@@ -280,12 +296,17 @@ internal class GazeDirector(
         val d = hypot(x - tx, y - ty)
         if (d < 0.06f) { setTarget(x, y, true); return }
         p0x = tx; p0y = ty; p1x = x; p1y = y
-        pursuitDur = 0.55f + 1.1f * d.coerceAtMost(0.55f); pursuitT = 0f
+        pursuitDur = 0.55f + 1.1f * d.coerceAtMost(0.55f); pursuitT = 0f; pending = false
         returning = true; auditReturns++
     }
 
     private fun chooseFixation(life: MarkLifecycle, drowsy: Boolean) {
         fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
+        // Engine20: a self-started look waits for the head to finish its last move (a person
+        // doesn't start a new look while still turning); otherwise the head's momentum drags
+        // the new look backwards first.
+        if (hypot(hvx, hvy) > 0.12f && postponed < 0.4f) { postponed += 0.05f; holdLeft = 0.05f; return }
+        postponed = 0f
         if (returnToCenter) {
             returnToCenter = false
             kind = "return"
@@ -333,7 +354,7 @@ internal class GazeDirector(
             holdLeft = f.hold + pursuitDur
         } else if (f.travel > 0f) {
             p0x = tx; p0y = ty; p1x = f.x; p1y = f.y
-            pursuitDur = f.travel; pursuitT = 0f
+            pursuitDur = f.travel; pursuitT = 0f; pending = false
             holdLeft = f.hold + f.travel
         } else {
             pursuitT = 1f
@@ -357,6 +378,7 @@ internal class GazeDirector(
 /** Engine17.1 gaze rules. */
 private val GLANCE_KINDS = setOf("interest", "explore", "think", "ack", "pan")
 private const val MIN_GLANCE = 0.24f
+private const val SHIFT_REFRACTORY = 0.24f
 private const val REST_X = 0f
 private const val REST_Y = 0.02f
 
@@ -405,10 +427,33 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
         names += t; x += 1f; v += 0f; target = t
     }
 
+    /**
+     * Engine20: swap the face while the lids are shut. The change waits (up to [SWAP_WAIT] s) for
+     * the blink that was just started to close, then lands in one step behind the lids; if the
+     * lids never close it simply morphs.
+     */
+    fun wantBehindBlink(raw: String) {
+        val before = target
+        want(raw)
+        if (target != before) swapLeft = SWAP_WAIT
+    }
+    private var swapLeft = 0f
+    var swaps = 0; private set
+
     /** Advance the springs. Returns false (Engine19 never asks for a masking blink). */
-    @Suppress("UNUSED_PARAMETER")
     fun update(dt: Float, lidsClosed: Float = 0f): Boolean {
         if (dt <= 0f) return false
+        if (swapLeft > 0f) {
+            swapLeft -= dt
+            if (lidsClosed >= 0.9f) {
+                // Lids shut: the new face is simply there when they open.
+                val t = target
+                names.clear(); x.clear(); v.clear(); names += t; x += 1f; v += 0f
+                swapLeft = 0f; swaps++
+                return false
+            }
+            if (swapLeft > 0f) return false // hold the old face a moment for the lids
+        }
         val w = omega
         val k = exp(-w * dt)
         for (i in names.indices) {
@@ -459,10 +504,12 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
 
     companion object {
         const val MIN_DWELL = 0.25f
-        const val OMEGA_SNAP = 16f
-        const val OMEGA_SOFT = 9f
-        const val OMEGA_GRADUAL = 4.5f
-        const val OMEGA_SETTLE = 3.4f
+        const val SWAP_WAIT = 0.16f
+        // Engine20: snappier — people change faces quickly (≈ 90 % in 0.2 / 0.3 / 0.6 / 0.75 s).
+        const val OMEGA_SNAP = 20f
+        const val OMEGA_SOFT = 13f
+        const val OMEGA_GRADUAL = 6.5f
+        const val OMEGA_SETTLE = 5.2f
 
         fun omegaFor(s: Style) = when (s) {
             Style.Snap, Style.Blink -> OMEGA_SNAP
@@ -521,6 +568,13 @@ internal class Blinker(private val rng: Random) {
     fun inhibit(sec: Float) { quiet = maxOf(quiet, sec); if (next < sec) next = sec + 0.15f }
     private var quiet = 0f
 
+    /** Start a blink right now if one may start (no deferral). True when it started. */
+    fun tryNow(minGap: Float = 1.2f): Boolean {
+        if (quiet > 0f || phase >= 0f || gapLeft >= 0f || sinceLast < max(minGap, MIN_REQUEST_GAP) || !allow()) return false
+        begin(0, drowsy = false)
+        return true
+    }
+
     fun request(double: Boolean = false, minGap: Float = 1.4f, @Suppress("UNUSED_PARAMETER") mask: Boolean = false) {
         if (quiet > 0f) { deferred = maxOf(deferred, 0); return }
         if (phase >= 0f || gapLeft >= 0f || sinceLast < max(minGap, MIN_REQUEST_GAP)) return
@@ -548,7 +602,7 @@ internal class Blinker(private val rng: Random) {
         val speed = 0.8f + rng.nextFloat() * 0.5f // per-blink tempo
         closeT = if (drowsy) 0.15f + rng.nextFloat() * 0.08f else (0.05f + rng.nextFloat() * 0.03f) * speed
         holdT = if (drowsy) 0.1f + rng.nextFloat() * 0.12f else (0.01f + rng.nextFloat() * 0.05f) * speed
-        openT = if (drowsy) 0.25f + rng.nextFloat() * 0.12f else (0.1f + rng.nextFloat() * 0.07f) * speed
+        openT = if (drowsy) 0.25f + rng.nextFloat() * 0.12f else (0.13f + rng.nextFloat() * 0.08f) * speed // eased tail
         // ~1 in 8 blinks is a lazy half-blink.
         depth = if (!drowsy && rng.nextFloat() < 0.12f) 0.65f + rng.nextFloat() * 0.25f else 1f
     }
@@ -580,7 +634,10 @@ internal class Blinker(private val rng: Random) {
             closed = depth * when {
                 phase < closeT -> (phase / closeT).let { it * it }
                 phase < closeT + holdT -> 1f
-                phase < total -> ((total - phase) / openT).let { it * (2f - it) }
+                // Engine20: the lids spring open — fast off the mark, easing into place (the old
+                // it·(2−it) on the reversed clock started slow and *landed* at full speed,
+                // which read as a stiff snap-open).
+                phase < total -> 1f - ((phase - closeT - holdT) / openT).let { u -> 1f - (1f - u) * (1f - u) * (1f - u) }
                 else -> 0f
             }
             if (phase >= total) {
@@ -933,8 +990,16 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     0.9f + rng.nextFloat() * 0.4f, priority = 3, withHead = false, force = true)
                 // …and the eyes register the touch at once (a quick widen — only a flicker once it
                 // is used to being poked); the appraised reaction then morphs on from there.
+                // Engine20: the body always bounces (the springy pop); the eyes vary — a full widen,
+                // a small one, or none (they just look) — less often once it is used to pokes.
+                director.gesture(MotionDirector.Gesture.Recoil)
                 val usedToIt = stm.pokeFamiliar > 5.5f && pokeWindow <= 0f
-                because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, if (usedToIt) 0.18f else 0.3f, force = true) }
+                val er = rng.nextFloat() * (if (usedToIt) 1.4f else 1f)
+                when {
+                    er < 0.45f -> because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, if (usedToIt) 0.2f else 0.32f, force = true) }
+                    er < 0.72f -> because("poke reflex", MindRules.P_USER) { accent(FaceAccent.Startled, 0.14f, force = true) }
+                    else -> log("poke reflex: body only")
+                }
                 repeat(pendingPokes) { stimulus(Stimulus("poke", 0f, 0f, 0.9f, direct = true), { r -> because("poke", MindRules.P_USER) { onPoke(r) } }, allowNone = false) }
             }
             pendingPokes = 0
@@ -1044,8 +1109,12 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 }
                 val baseline = !isReaction && ExpressionDirector.normalize(target) == "Neutral"
                 val blockedBySpin = spinFace && negativeName(target)
-                if (!blockedBySpin && mind.faceSafe(prio, expr.morphing) &&
-                    mind.budgetOk(prio, MotionDirector.isBusy(director.lifecycle), mood.arousal, settle = baseline || relax)
+                // Engine20 emotional dwell: a spontaneous face is not replaced by another
+                // spontaneous change before it has been felt for its minimum dwell.
+                val dwellHold = animate && prio < MindRules.P_EVENT && shownPrio < MindRules.P_EVENT &&
+                    time - shownAt < MindRules.minDwell(expr.to) && !MindRules.hasEventCause(prio, cause)
+                if (!blockedBySpin && !dwellHold && (!animate || mind.faceSafe(prio, expr.morphing) &&
+                    mind.budgetOk(prio, MotionDirector.isBusy(director.lifecycle), mood.arousal, settle = baseline || relax))
                 ) {
                     expr.hint = when {
                         !animate -> ExpressionDirector.Style.Soft
@@ -1054,7 +1123,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                         drowsy || temper.state == Temperament.State.Tired -> ExpressionDirector.Style.Gradual
                         else -> null
                     }
-                    expr.want(target)
+                    // Engine20: now and then the face changes behind a blink (the lids close on
+                    // one face and open on the next) — when it fits: a calm, not-snapped change
+                    // with the eyes open and free to blink.
+                    val closedFace = ExpressionDirector.normalize(target) in BLINKLESS_FACES || expr.to in BLINKLESS_FACES
+                    val hideP = if (relax || baseline) 0.4f else 0.3f
+                    val hide = animate && !closedFace && expr.hint != ExpressionDirector.Style.Snap && !drowsy && spT < 0f &&
+                        rng.nextFloat() < hideP && blink.tryNow()
+                    if (hide) { expr.wantBehindBlink(target); log("face change behind a blink → $target") } else expr.want(target)
+                    shownAt = time; shownPrio = prio
                     faceCause = cause
                     mind.landFace(target, prio, cause, MindRules.hold(mood.arousal, knobs), countBudget = !(baseline || relax))
                 }
@@ -1070,7 +1147,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         mind.pump(Lane.Spin) { !negativeNow() && spT < 0f && !drowsy }
         if (negativeName(expr.to) || negativeName(expr.from) || rig.accent in MindRules.NEGATIVE_ACCENTS) lastNegativeAt = time
         if (MotionDirector.isBusy(director.lifecycle)) busySec += dt
-        expr.update(dt)
+        expr.update(dt, blink.closed)
         director.exprMorphing = expr.morphing
 
         // ---- blink + lids ----
@@ -1159,10 +1236,21 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             roll = bodyBase0.roll + (fidgetRoll + peekRoll + wig) * keep,
             pitch = bodyBase0.pitch + (4f * sighK + driftDepth * drK - 3f * stK - 7f * yawnK() + 5f * restK) * keep,
         )
+        // Engine20 secondary motion: a soft under-damped spring the body rides — the lids
+        // closing give it a tiny squash, a big look gives it a small bob — so blinks and
+        // glances carry through the figure instead of living only in the eyes.
+        run {
+            if (gaze.bigShift && live) lifeV += 0.12f
+            val om = 24f; val z = 0.42f
+            val tgt = if (live) 0.010f * blink.closed else 0f
+            val h = dt.coerceAtMost(1f / 30f)
+            lifeV += (om * om * (tgt - lifeX) - 2f * z * om * lifeV) * h; lifeX += lifeV * h
+        }
+        val lifeK = lifeX * keep
         var bodyOut = bodyBase.copy(
-            posY = bodyBase.posY - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep + 0.4f * spinCrouchK - 0.02f * yawnK() * keep + 0.012f * restK * keep,
-            squashX = bodyBase.squashX * (1f - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep + 0.6f * spinCrouchK - 0.04f * yawnK() * keep + 0.012f * restK * keep),
-            squashY = bodyBase.squashY * (1f + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep - spinCrouchK + 0.07f * yawnK() * keep - 0.015f * restK * keep),
+            posY = bodyBase.posY + 0.3f * lifeK - 0.008f * br + 0.012f * sighK - 0.03f * stK * keep + 0.4f * spinCrouchK - 0.02f * yawnK() * keep + 0.012f * restK * keep,
+            squashX = bodyBase.squashX * (1f + 0.5f * lifeK - 0.008f * br + 0.018f * sighK - 0.06f * stK * keep + 0.6f * spinCrouchK - 0.04f * yawnK() * keep + 0.012f * restK * keep),
+            squashY = bodyBase.squashY * (1f - 0.8f * lifeK + 0.012f * br - 0.03f * sighK + 0.1f * stK * keep - spinCrouchK + 0.07f * yawnK() * keep - 0.015f * restK * keep),
         )
         momentLid = (1f - 0.75f * stK.coerceAtLeast(0f) - 0.45f * drK - 0.85f * yawnK()).coerceIn(0f, 1f)
         var hx = (gaze.headX * keep).coerceIn(-1f, 1f)
@@ -1327,6 +1415,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var spDirRun = 0
     private var spinCrouchK = 0f
     private var spinFollowX = 0f
+    private val FOLLOW_PRE = 0.5f
     private var shakeYaw = 0f
     private var forceRun: Boolean? = null; private var forceShake: Boolean? = null
     private var forcePath: SpinPath? = null
@@ -1358,13 +1447,15 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         spDir = dir
         // History-aware variant choice: what happened last time is less likely now.
         val pRun = (if (playful) 0.6f else 0.45f) * (if (spLastRun) 0.55f else 1.25f)
+        // Engine20: every spin winds up — a small counter-turn and crouch (anticipation), then a
+        // springy launch. Only its size varies (bigger when it is a deliberate run-up).
         val run = forceRun ?: (rng.nextFloat() < pRun)
-        spRun = if (run) rr(0.3f, 0.44f) else 0f
-        spRunDeg = if (run) rr(3f, 7f) else 0f
-        spCrouch = if (run) rr(0.015f, 0.035f) else 0f
+        spRun = if (run) rr(0.3f, 0.42f) else rr(0.22f, 0.3f)
+        spRunDeg = if (run) rr(4f, 7f) else rr(2.5f, 4f)
+        spCrouch = if (run) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
         // engine14.1: weighty spin, 360° in ~1.8–1.98s, peak ~280–320°/s.
         spMain = if (playful) rr(2.05f, 2.15f) else rr(2.1f, 2.3f) // engine17: longer glide, same weight
-        spFollow = rr(0.045f, 0.08f) * (1.6f - 0.3f * spMain) // faster spin → a bit more drift
+        spFollow = rr(0.075f, 0.11f) * (1.6f - 0.3f * spMain) // eyes carry on past the stop (faster spin → more)
         spFollowOut = rr(0.2f, 0.3f); spFollowBack = rr(0.5f, 0.75f)
         val pShake = (0.18f + 0.22f * (if (playful) 1f else 0f) + 0.15f * (1f - temper.energy)) * (if (spLastShake) 0.45f else 1.2f)
         spShake = forceShake ?: (rng.nextFloat() < pShake)
@@ -1373,7 +1464,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (forceRun == null && forceShake == null && run == spLastRun && spShake == spLastShake && rng.nextFloat() < 0.8f) {
             if (rng.nextBoolean()) { spShake = !spShake } else {
                 val r2 = !run
-                spRun = if (r2) rr(0.3f, 0.44f) else 0f; spRunDeg = if (r2) rr(3f, 7f) else 0f; spCrouch = if (r2) rr(0.015f, 0.035f) else 0f
+                spRun = if (r2) rr(0.3f, 0.42f) else rr(0.22f, 0.3f); spRunDeg = if (r2) rr(4f, 7f) else rr(2.5f, 4f); spCrouch = if (r2) rr(0.022f, 0.035f) else rr(0.014f, 0.022f)
             }
         }
         spPeakAt = rr(0.24f, 0.36f)
@@ -1443,14 +1534,23 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     val from = -spDir * spRunDeg
                     spinYaw = from + (spDir * 360f - from) * c
                     // Crouch releases quickly as the turn begins.
-                    spinCrouchK = spCrouch * (1f - MotionVocab.easeOutCubic(((spT - tRun) / 0.15f).coerceIn(0f, 1f)))
+                    // Launch: the crouch springs out into a brief stretch (the bounce), then settles.
+                    val lk = ((spT - tRun) / 0.32f).coerceIn(0f, 1f)
+                    spinCrouchK = spCrouch * (1f - MotionVocab.easeOutCubic((lk / 0.45f).coerceAtMost(1f))) -
+                        spCrouch * 0.7f * sin(PI.toFloat() * lk) * (1f - lk)
+                    // Engine20 follow-through: as the body brakes, the eyes carry on (inertia) —
+                    // the lead builds through the deceleration and continues past the stop.
+                    val q = ((u - 0.55f) / 0.45f).coerceIn(0f, 1f)
+                    spinFollowX = spDir * spFollow * FOLLOW_PRE * q * q * (1.5f - 0.5f * q) // still rising at the stop (no flat spot)
                 }
                 else -> {
                     if (abs(spinYaw) > 1f) { spinYaw = 0f; prev = 0f; log("spin stop") } // 360° ≡ rest pose
                     val ft = spT - tMain
                     spinFollowX = spDir * spFollow * when {
-                        ft < spFollowOut -> MotionVocab.easeOutCubic(ft / spFollowOut)
-                        ft < spFollowOut + spFollowBack -> 1f - MotionVocab.easeInOutSine((ft - spFollowOut) / spFollowBack)
+                        ft < spFollowOut -> FOLLOW_PRE + (1f - FOLLOW_PRE) * sin(0.5f * PI.toFloat() * (ft / spFollowOut))
+                        // Back with a soft spring: a hair past rest, then home.
+                        ft < spFollowOut + spFollowBack -> ((ft - spFollowOut) / spFollowBack).let { q ->
+                            1f - MotionVocab.easeInOutSine(q) - 0.12f * sin(PI.toFloat() * q) * q }
                         else -> 0f
                     }
                     // Engine17.1: the shake-off is the one shared head shake.
@@ -1473,6 +1573,11 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private var scanT = 0f
     private var upRightT = 0f
     private var upRamp = 0f
+    private var shownAt = -99f
+    private var shownPrio = -1
+    private var lifeX = 0f
+    private var lifeV = 0f
+    private val BLINKLESS_FACES = setOf("Eyes closed", "Sleeping", "Bored")
     private var upRightPause = 0f
     private var upK = 0f
 
@@ -1765,6 +1870,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         val cause = why
         val busy = MotionDirector.isBusy(director.lifecycle)
         if (spinningFace && a in MindRules.NEGATIVE_ACCENTS) return false
+        if (a.name in MindRules.APPRAISED_NEGATIVE_ACCENTS && !MindRules.hasEventCause(prio, cause)) { log("accent $a dropped: no appraised cause ($cause)"); return false }
+        @Suppress("NAME_SHADOWING") val sec = if (prio >= MindRules.P_EVENT) sec else max(sec, MindRules.minDwell(a.name)) // spontaneous: full dwell
         if (!mind.faceSafe(prio, expr.morphing) || (!force && !mind.budgetOk(prio, busy, mood.arousal))) {
             mind.propose(Intention(Lane.Face, "accent:$a", prio, cause, mind.now, if (force) 2.5f else 1.2f) {
                 rig.play(a, sec); mind.landAccent(a.name, prio, cause, sec); log("accent $a cause=$cause (after waiting)")
@@ -1773,7 +1880,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             return true
         }
         mind.landAccent(a.name, prio, cause, sec)
-        log("accent $a cause=$cause")
+        log("accent $a cause=$cause sec=${"%.2f".format(sec)}")
         rig.play(a, sec)
         accentCooldown = sec + 1.5f + rng.nextFloat() * 2f
         stage?.let { st ->
@@ -1793,6 +1900,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
      * it instead of relaxing toward Neutral and starting again.
      */
     private fun faceTarget(): String {
+        // Engine20: a static avatar heads straight for its rest face (busy faces now hold their
+        // emotional dwell, which must not keep a frozen avatar from settling).
+        if (!animate && reaction == null) return "Neutral"
         val t = currentExpressionTarget()
         if (animate && reaction == null && ExpressionDirector.normalize(t) == "Neutral" && expr.to != "Neutral" &&
             (reactionQueue != null || train.isNotEmpty() || mind.queued(Lane.Face) > 0 || pending.isNotEmpty())
@@ -1821,8 +1931,9 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             is AlivenessEngine.Beat.Gesture -> if (b.g == MotionDirector.Gesture.Spin) {
                 if (director.lifecycle != MarkLifecycle.Idle || recently("nice", 12f) || pokeCount > 0) trySpin("lively beat")
             } else director.gesture(b.g)
-            is AlivenessEngine.Beat.Accent -> accent(b.a, b.sec, force = b.a == FaceAccent.Startled)
-            is AlivenessEngine.Beat.Face -> if (reaction == null) setReaction(b.expr, b.sec, cause = "feeling (tone/fatigue)")
+            is AlivenessEngine.Beat.Accent -> if (b.appraised) because("tone appraisal", MindRules.P_IDLE) { accent(b.a, b.sec, force = b.a == FaceAccent.Startled) }
+                else accent(b.a, b.sec, force = b.a == FaceAccent.Startled)
+            is AlivenessEngine.Beat.Face -> if (reaction == null) setReaction(b.expr, b.sec, cause = if (b.appraised) "tone appraisal" else "feeling (fatigue/rhythm)")
             is AlivenessEngine.Beat.Blink -> blink.request(minGap = 0.8f)
             is AlivenessEngine.Beat.DoubleBlink -> blink.request(double = true, minGap = 0.8f)
             is AlivenessEngine.Beat.Glance -> {
@@ -1933,6 +2044,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun setReactionRaw(e0: String, sec: Float, style: ExpressionDirector.Style?, cause0: String, from: String) {
         val cause = if (cause0 == "unspecified" || cause0 == "queued") (if (why != "unspecified") why else cause0) else cause0
         val prio = whyPrio
+        if (e0 in MindRules.APPRAISED_NEGATIVE && !MindRules.hasEventCause(prio, cause)) { log("expr $e0 dropped: no appraised cause ($cause)"); return }
+        @Suppress("NAME_SHADOWING") val sec = if (prio >= MindRules.P_EVENT) sec else max(sec, MindRules.minDwell(e0)) // spontaneous: full dwell
         // Engine18: one intention owns the face. A weaker one waits (queued, expires).
         val cur = reaction
         if (cur != null && reactionLeft > 0f && prio < reactionPrio) {
@@ -2398,7 +2511,6 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 blink.request(minGap = 0f)
             }
             meaning == Meaning.Amused && pokeCount == 1 -> {
-                director.gesture(MotionDirector.Gesture.Recoil)
                 accent(FaceAccent.Glee, 1.2f, force = true)
             }
             meaning == Meaning.Annoyed -> {
@@ -2409,25 +2521,22 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 forgiveIn = 2.6f + rng.nextFloat() * 1.5f
             }
             pokeCount >= 2 -> {
-                director.gesture(MotionDirector.Gesture.Recoil)
                 setReaction("Surprised", 0.9f, cause = "poke")
                 blink.request(minGap = 0.2f)
             }
             // First poke: not the same reaction every time.
             else -> when (r) {
                 Response.Startle -> {
-                    director.gesture(MotionDirector.Gesture.Recoil)
-                    accent(FaceAccent.Startled, 0.45f, force = true)
+                        accent(FaceAccent.Startled, 0.45f, force = true)
                     if (rng.nextFloat() < 0.4f) { reactionQueue = "Happy" to 1.2f; reactionQueueIn = 0.6f }
                 }
                 Response.Freeze -> perform(Response.Freeze, Stimulus("poke", 0f, 0f, 0.9f))
                 Response.Smile -> { blink.request(minGap = 0f); accent(FaceAccent.Glee, 1.2f, force = true) }
                 Response.CuriousTilt -> { director.gesture(MotionDirector.Gesture.Tilt); accent(FaceAccent.Curious, 1.2f) }
                 Response.Acknowledge -> director.gesture(MotionDirector.Gesture.Nod)
-                // A poke that startles always shows it: the surprised bounce, eyes wide, then a blink.
-                else -> if (meaning == Meaning.Startled) {
-                    director.gesture(MotionDirector.Gesture.Recoil)
-                    accent(FaceAccent.Startled, 0.45f, force = true)
+                // A startling poke: the body pop is already playing; the eyes widen only sometimes.
+                else -> if (meaning == Meaning.Startled && rng.nextFloat() < 0.5f) {
+                    accent(FaceAccent.Startled, 0.4f, force = true)
                 } else blink.request(minGap = 0f)
             }
         }

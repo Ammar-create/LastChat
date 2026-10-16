@@ -241,6 +241,63 @@ object ChannelMetrics {
         return n
     }
 
+    /**
+     * Engine20: every gaze shift (saccade flag → next one, ≤ 0.6 s) should travel A → B in one
+     * go. stepgo: after its peak the visible gaze (head + eyes) nearly stops (< 15 % of peak)
+     * short of 85 % of the way, then speeds up again (> 40 %). reversal: progress falls back by
+     * > 10 % of the distance before reaching 85 % (a landing overshoot is fine).
+     * Returns (stepgo, reversals, shifts measured).
+     */
+    /** A shift's own flight; a new look decided later than this is a new shift, not a reversal. */
+    const val SHIFT_FLIGHT = 0.4f
+    fun gazeShifts(rows: List<TraceRow>, pokes: List<Float> = emptyList()): Triple<Int, Int, Int> {
+        val starts = rows.indices.filter { rows[it].saccade }
+        var sg = 0; var rv = 0; var n = 0
+        fun gx(i: Int) = rows[i].headX + rows[i].leadX
+        fun gy(i: Int) = rows[i].headY + rows[i].leadY
+        fun vel(i: Int): Pair<Float, Float> {
+            val dt = (rows[i].t - rows[i - 1].t).coerceAtLeast(1e-4f)
+            return (gx(i) - gx(i - 1)) / dt to (gy(i) - gy(i - 1)) / dt
+        }
+        for ((k, s0) in starts.withIndex()) {
+            if (s0 < 1) continue
+            val endT = minOf(rows[s0].t + 0.6f, starts.getOrNull(k + 1)?.let { rows[it].t } ?: Float.MAX_VALUE)
+            var e = s0; while (e + 1 < rows.size && rows[e + 1].t <= endT) e++
+            if (e - s0 < 4 || (s0..e).any { abs(rows[it].spin) > 0.5f }) continue
+            // A poke mid-shift is a new stimulus: the reflex redirect is meant to happen.
+            if (pokes.any { it >= rows[s0].t - 0.05f && it <= rows[e].t }) continue
+            // Landing: the first near-stop after the speed peak.
+            var peak = 0f; var land = e; var stopped = false
+            for (i in s0..e) {
+                if (rows[i].t - rows[s0].t > SHIFT_FLIGHT) { land = i; break } // later = a new decision
+                val (vx, vy) = vel(i); val v = kotlin.math.hypot(vx, vy)
+                if (v > peak) peak = v
+                else if (v < 0.15f * peak && rows[i].t - rows[s0].t > 0.05f) { land = i; stopped = true; break }
+            }
+            val ax = gx(s0 - 1); val ay = gy(s0 - 1)
+            val dx = gx(land) - ax; val dy = gy(land) - ay
+            val d = kotlin.math.hypot(dx, dy)
+            if (d < 0.06f) continue
+            n++
+            // Reversal: progress falls back > 10 % before landing.
+            var best = 0f
+            for (i in s0..land) {
+                val prog = ((gx(i) - ax) * dx + (gy(i) - ay) * dy) / (d * d)
+                if (best >= 0.85f) break // past here it is the landing (overshoot-and-settle is intended)
+                if (prog < best - 0.1f) { rv++; break }
+                best = maxOf(best, prog)
+            }
+            // Step: after landing the look sets off again the same way within 0.15 s (it
+            // stopped part-way and finished in a second step).
+            if (stopped) for (i in land + 1..e) {
+                if (rows[i].t - rows[land].t > 0.15f) break
+                val (vx, vy) = vel(i)
+                if (kotlin.math.hypot(vx, vy) > 0.4f * peak && (vx * dx + vy * dy) > 0f) { sg++; break }
+            }
+        }
+        return Triple(sg, rv, n)
+    }
+
     fun compute(tr: ChannelTrace): Result {
         val rows = tr.rows
         val blinks = tr.blinks
@@ -304,7 +361,8 @@ object ChannelMetrics {
                 val a = rows[i - 1]; val dt = (r.t - a.t).coerceAtLeast(1e-4f)
                 if (gReact.isNaN() && kotlin.math.hypot(r.leadX - a.leadX, r.leadY - a.leadY) / dt > 0.05f) gReact = dtp
                 val blinked = blinks.any { it.first > a.t && it.first <= r.t + 1e-4f }
-                if (fReact.isNaN() && (r.target != a.target || r.accent != a.accent && r.accent.isNotEmpty() || exprSpeed(a, r) > 0.3f || blinked)) fReact = dtp
+                if (fReact.isNaN() && (r.target != a.target || r.accent != a.accent && r.accent.isNotEmpty() || exprSpeed(a, r) > 0.3f || blinked ||
+                    r.beat.contains("+pop") && !a.beat.contains("+pop"))) fReact = dtp // the body bounce is a visible reaction too
                 if (dtp <= 0.3f) minAbs = minOf(minAbs, abs(visYaw(r)))
             }
             // Recenter = the poke itself starts a turn toward centre (motion already heading
@@ -319,6 +377,26 @@ object ChannelMetrics {
         m["react_gaze_max"] = gz
         m["react_face_max"] = fc
         m["recenter_before_react"] = rec.toFloat()
+        // Engine20 emotional dwell: a spontaneous face (below P_EVENT) that is replaced by an
+        // equal-or-weaker cause before its dwell; negative faces without an appraised cause.
+        var short = 0; var negNoCause = 0
+        for (i in tr.targets.indices) {
+            val (t0, face, cause) = tr.targets[i]
+            val prio = tr.targetPrio.getOrNull(i) ?: -1
+            if (face in MindRules.APPRAISED_NEGATIVE && !MindRules.hasEventCause(prio, cause)) negNoCause++
+            val nx = tr.targets.getOrNull(i + 1) ?: continue
+            val nPrio = tr.targetPrio.getOrNull(i + 1) ?: -1
+            val dwell = nx.first - t0
+            val poked = tr.pokes.any { it in t0..nx.first + 0.05f }
+            if (prio < MindRules.P_EVENT && nPrio <= prio && !poked && !MindRules.hasEventCause(nPrio, nx.third) &&
+                dwell < 0.85f * MindRules.minDwell(face)) short++
+        }
+        m["emo_short"] = short.toFloat()
+        m["neg_uncaused"] = negNoCause.toFloat()
+        val (gs, gr, gn) = gazeShifts(rows, tr.pokes)
+        m["gaze_shifts"] = gn.toFloat()
+        m["gaze_stepgo"] = gs.toFloat()
+        m["gaze_reversal"] = gr.toFloat()
         // Idle energy: mean |yaw velocity| (deg/s).
         val vy = speeds(rows, "yaw")
         m["energy_yaw"] = vy.average().toFloat()

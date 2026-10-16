@@ -588,6 +588,71 @@ class AvatarRenderHarnessTest {
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
     }
 
+    /**
+     * Engine20 "screen recording" of the editor: real composition, real animations, frames
+     * every 33 ms while a script taps a shape, a colour, switches the eye type there and
+     * back, then scrolls to the end. Frames land in editor_rec/fNNNN.png.
+     */
+    @Test
+    fun renderEditorRecording() {
+        assumeTrue(outDir != null)
+        AvatarPackData.ensureLoaded(org.robolectric.RuntimeEnvironment.getApplication())
+        val dir = File(outDir, "editor_rec").apply { mkdirs() }
+        val shape = androidx.compose.runtime.mutableStateOf("blob")
+        val eye = androidx.compose.runtime.mutableStateOf("generical")
+        val col = androidx.compose.runtime.mutableStateOf("#2A92FE" to "blue")
+        val eyeHex = androidx.compose.runtime.mutableStateOf<String?>(null)
+        val doScroll = androidx.compose.runtime.mutableStateOf(false)
+        // Robolectric's animator scale defaults to 0 (every Compose animation would snap).
+        android.provider.Settings.Global.putFloat(org.robolectric.RuntimeEnvironment.getApplication().contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        org.robolectric.shadows.ShadowChoreographer.setPaused(true)
+        org.robolectric.shadows.ShadowChoreographer.setFrameDelay(java.time.Duration.ofMillis(16))
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+        val activity = controller.get()
+        val wDp = 411; val hDp = 820
+        activity.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                Box(Modifier.requiredSize(wDp.dp, hDp.dp).background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    val sc = rememberScrollState(0)
+                    androidx.compose.runtime.LaunchedEffect(doScroll.value) {
+                        if (doScroll.value) sc.animateScrollTo(sc.maxValue, androidx.compose.animation.core.tween(900))
+                    }
+                    AnimatedAvatarEditorContent(
+                        shape = shape.value, onShape = {}, eyeType = eye.value, onEyeType = {},
+                        colorHex = col.value.first, colorPreset = col.value.second, onColor = { _, _ -> },
+                        eyeColorHex = eyeHex.value, onEyeColor = {}, onPickColor = {}, onPickEyeColor = {},
+                        onDismiss = {}, onSave = {}, modifier = Modifier.fillMaxSize(), scrollState = sc, livePreview = false,
+                    )
+                }
+            }
+        }
+        val d = activity.resources.displayMetrics.density
+        val w = (wDp * d).toInt(); val h = (hDp * d).toInt()
+        val view: View = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+        var n = 0
+        fun frames(sec: Float) {
+            repeat((sec / 0.033f).toInt()) {
+                shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(33))
+                view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
+                view.layout(0, 0, w, h)
+                val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                view.draw(Canvas(bmp))
+                File(dir, "f%04d.png".format(n++)).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 90, it) }
+            }
+        }
+        frames(0.6f)
+        shape.value = "heart"; frames(0.9f)
+        shape.value = "clover"; frames(0.9f)
+        col.value = "#FF781C" to "orange"; frames(0.9f)
+        doScroll.value = true
+        frames(1.4f)
+        eye.value = "grok"; frames(1.2f)
+        eye.value = "generical"; frames(1.4f)
+        org.robolectric.shadows.ShadowChoreographer.setPaused(false)
+        controller.pause().stop().destroy()
+    }
+
     /** Engine17: chat input hint text before (default onSurfaceVariant) vs after (dimmed). */
     @Test
     fun renderChatInputHint() {

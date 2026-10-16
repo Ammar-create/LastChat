@@ -28,9 +28,9 @@ internal class AlivenessEngine(private val rng: Random) {
 
     sealed interface Beat {
         data class Gesture(val g: MotionDirector.Gesture) : Beat
-        data class Accent(val a: FaceAccent, val sec: Float) : Beat
+        data class Accent(val a: FaceAccent, val sec: Float, val appraised: Boolean = false) : Beat
         data class Glance(val x: Float, val y: Float, val sec: Float, val kind: String) : Beat
-        data class Face(val expr: String, val sec: Float) : Beat
+        data class Face(val expr: String, val sec: Float, val appraised: Boolean = false) : Beat
         data object Blink : Beat
         data object DoubleBlink : Beat
     }
@@ -176,18 +176,18 @@ internal class AlivenessEngine(private val rng: Random) {
         if (!chance((0.35f + 0.6f * p.expressiveness) * (0.5f + intensity))) return
         val d = logRange(0.3f, 0.9f)
         when (emo) {
-            Emotion.Joy -> sequence(d to Beat.Face("Happy", logRange(1.2f, 2.2f)),
+            Emotion.Joy -> sequence(d to Beat.Face("Happy", logRange(1.2f, 2.2f), appraised = true),
                 d + 0.2f to if (chance(0.25f * p.playfulness)) Beat.Gesture(MotionDirector.Gesture.Hop) else Beat.Blink)
-            Emotion.Amusement -> sequence(d to Beat.Accent(FaceAccent.Glee, logRange(1.0f, 1.8f)),
+            Emotion.Amusement -> sequence(d to Beat.Accent(FaceAccent.Glee, logRange(1.0f, 1.8f), appraised = true),
                 d + 0.3f to Beat.Gesture(MotionDirector.Gesture.Nod))
-            Emotion.Concern -> sequence(d to Beat.Face("angered or concentrated", logRange(1.2f, 2.0f))) // engine17.1: Worried retired
-            Emotion.Sadness -> sequence(d to Beat.Accent(FaceAccent.Sad, logRange(1.4f, 2.4f)),
+            Emotion.Concern -> sequence(d to Beat.Face("angered or concentrated", logRange(1.2f, 2.0f), appraised = true)) // engine17.1: Worried retired
+            Emotion.Sadness -> sequence(d to Beat.Accent(FaceAccent.Sad, logRange(1.4f, 2.4f), appraised = true),
                 d + 1.2f to Beat.Gesture(MotionDirector.Gesture.Droop))
-            Emotion.Surprise -> sequence(d to Beat.Accent(FaceAccent.Startled, 0.6f), d + 0.7f to Beat.Blink)
-            Emotion.Interest -> sequence(d to Beat.Accent(FaceAccent.Curious, logRange(1.0f, 1.6f)),
+            Emotion.Surprise -> sequence(d to Beat.Accent(FaceAccent.Startled, 0.6f, appraised = true), d + 0.7f to Beat.Blink)
+            Emotion.Interest -> sequence(d to Beat.Accent(FaceAccent.Curious, logRange(1.0f, 1.6f), appraised = true),
                 d + 0.1f to Beat.Gesture(MotionDirector.Gesture.Tilt))
-            Emotion.Confusion -> sequence(d to Beat.Face("confused", logRange(0.8f, 1.4f)))
-            Emotion.Pride, Emotion.Calm -> sequence(d to Beat.Accent(FaceAccent.Smug, logRange(0.9f, 1.4f)))
+            Emotion.Confusion -> sequence(d to Beat.Face("confused", logRange(0.8f, 1.4f), appraised = true))
+            Emotion.Pride, Emotion.Calm -> sequence(d to Beat.Accent(FaceAccent.Smug, logRange(0.9f, 1.4f), appraised = true))
         }
     }
 
@@ -271,14 +271,18 @@ internal class AlivenessEngine(private val rng: Random) {
             "angered or concentrated" to (if (thinking) 0.15f else 0.09f) * (0.6f + p.attentiveness) +
                 // engine17.1: concern (was the retired Worried face) folds into concentration.
                 (if (emo == Emotion.Concern) 0.08f * el else if (thinking) 0.012f else 0f),
-            "Bored" to 0.07f * (1.2f - arousal) * (0.6f + p.calmness),
+            // Engine20: boredom needs a cause (a long wait), so not while its own reply streams.
+            "Bored" to (if (streaming) 0f else 0.07f * (1.2f - arousal) * (0.6f + p.calmness)),
             "Happy" to (if (streaming) 0.11f else 0.04f) * (0.5f + pos) * (0.5f + p.warmth) * show *
                 (if (emo == Emotion.Joy || emo == Emotion.Amusement) 1f + 2f * el else 1f),
             "confused" to (if (thinking) 0.05f else 0.015f) * show * (if (emo == Emotion.Confusion) 1f + 3f * el else 1f),
             "Surprised" to 0.025f * (0.5f + arousal) * show * (if (emo == Emotion.Surprise) 1f + 3f * el else 1f),
             // Engine16 thinking variety: eyes shut to concentrate, a pout of effort, a small "hmm".
             "Eyes closed" to (if (thinking) 0.03f else 0f) * (0.6f + p.calmness),
-            "pouty" to (if (thinking) 0.018f else 0.006f) * show,
+            // Engine20: a pout is a feeling, not filler — only while something weighs on it.
+            // Engine20: no pout as busy filler — a negative face needs an appraised cause and
+            // comes through the tone reaction instead.
+            "pouty" to 0f,
             "confused left" to (if (thinking) 0.03f else 0.01f) * show,
         )
         val opts = base.mapNotNull { (k, w) ->
@@ -307,6 +311,8 @@ internal class AlivenessEngine(private val rng: Random) {
             "pouty" -> logRange(0.6f, 1.3f)
             else -> logRange(0.8f, 2.2f)
         }
+        // Engine20: never a flicker — each face holds at least its emotional dwell.
+        faceLeft = maxOf(faceLeft, MindRules.minDwell(k) * (0.9f + 0.4f * rng.nextFloat()))
     }
 
     private fun busyBeat(life: MarkLifecycle, valence: Float): Beat? {
