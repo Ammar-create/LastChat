@@ -176,8 +176,9 @@ class FaceRig(private val rng: Random) {
             val h = min(rem, 1f / 120f)
             for (i in 0 until 16) {
                 val k = i % 8
-                val w = if (k == 2 || k == 3) 22f else 17f
-                val zeta = if (k == 2 || k == 3) 1f else 0.62f
+                // Engine17: softer, less wobbly accent channels (was ω17 ζ0.62 — snappy pops).
+                val w = if (k == 2 || k == 3) 14f else 11f
+                val zeta = if (k == 2 || k == 3) 1f else 0.82f
                 val a = w * w * (target[i] - x[i]) - 2f * zeta * w * v[i]
                 v[i] += a * h
                 x[i] += v[i] * h

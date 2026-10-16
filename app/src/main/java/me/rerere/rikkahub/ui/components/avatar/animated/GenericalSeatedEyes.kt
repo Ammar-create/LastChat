@@ -202,7 +202,7 @@ object GenericalFace {
      * Morphed eye outline in the 500 reference viewBox (y down).
      * [closure] 0 = as designed, 1 = fully closed bar (blink).
      */
-    fun outline(side: Int, from: String, to: String, t: Float, closure: Float): Outline? {
+    fun outline(side: Int, from: String, to: String, t: Float, closure: Float, top: String? = null, topT: Float = 0f): Outline? {
         val fa = face(from) ?: return null
         val fb = face(to) ?: return null
         val a = if (side == 0) fa.left else fa.right
@@ -210,12 +210,26 @@ object GenericalFace {
         val xs = FloatArray(N)
         val ys = FloatArray(N)
         val tt = t.coerceIn(0f, 1f)
+        // Key of the face whose point indexing [xs] uses (needed to align later layers).
+        var key: String; var ref: Outline
         if (from == to || tt >= 1f) {
-            System.arraycopy(b.x, 0, xs, 0, N); System.arraycopy(b.y, 0, ys, 0, N)
+            System.arraycopy(b.x, 0, xs, 0, N); System.arraycopy(b.y, 0, ys, 0, N); key = to; ref = b
         } else if (tt <= 0f) {
-            System.arraycopy(a.x, 0, xs, 0, N); System.arraycopy(a.y, 0, ys, 0, N)
+            System.arraycopy(a.x, 0, xs, 0, N); System.arraycopy(a.y, 0, ys, 0, N); key = from; ref = a
         } else {
-            lerpInto(xs, ys, a, b, shiftFor(from, to, side, a, b), tt)
+            lerpInto(xs, ys, a, b, shiftFor(from, to, side, a, b), tt); key = from; ref = a
+        }
+        // Engine17: interrupted morph — grow the newest face over the current blend.
+        val tw = topT.coerceIn(0f, 1f)
+        if (top != null && top != key && tw > 0f) {
+            face(top)?.let { ft ->
+                val c = if (side == 0) ft.left else ft.right
+                val sh = shiftFor(key, top, side, ref, c)
+                for (i in 0 until N) {
+                    val j = ((i + sh) % N + N) % N
+                    xs[i] += (c.x[j] - xs[i]) * tw; ys[i] += (c.y[j] - ys[i]) * tw
+                }
+            }
         }
         val c = closure.coerceIn(0f, 1f)
         if (c > 0.001f) {
@@ -230,7 +244,7 @@ object GenericalFace {
             val w = (xs.max() - xs.min()).coerceAtLeast(30f)
             val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
             val sx = min(1f, w / cw)
-            val sa = shiftFor(to, "Eyes closed", side, b, closed)
+            val sa = shiftFor(key, "Eyes closed", side, ref, closed)
             for (i in 0 until N) {
                 val j = ((i + sa) % N + N) % N
                 val tx = mx + (closed.x[j] - ccx) * sx
@@ -315,11 +329,7 @@ object GenericalSeat {
         fun build(i: Int): SeatedEye? {
             val poly = seated.getOrNull(i) ?: return null
             if (poly.size < 3) return null
-            val path = Path().apply {
-                moveTo(poly[0].x, poly[0].y)
-                for (k in 1 until poly.size) lineTo(poly[k].x, poly[k].y)
-                close()
-            }
+            val path = SmoothPath.closed(poly.size, x = { poly[it].x }, y = { poly[it].y })
             var mx = 0f; var my = 0f
             for (p in poly) { mx += p.x; my += p.y }
             mx /= poly.size; my /= poly.size

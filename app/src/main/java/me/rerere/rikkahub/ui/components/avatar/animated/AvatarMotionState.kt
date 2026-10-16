@@ -50,6 +50,9 @@ data class MotionFrame(
     val exprTo: String = "Neutral",
     /** Eased 0..1 morph progress from [exprFrom] to [exprTo]. */
     val exprT: Float = 1f,
+    /** Engine17: optional third layer blended over the pair (interrupted morph). */
+    val exprTop: String? = null,
+    val exprTopT: Float = 0f,
     val lifecycle: MarkLifecycle = MarkLifecycle.Idle,
     val eyeGap: Float = 0.94f,
     val eyeScale: Float = 1f,
@@ -98,6 +101,10 @@ internal class GazeDirector(
     private var microLeft = 2f
     private var mx = 0f
     private var my = 0f
+    // Engine17: fixational drift — slow, smooth, never-repeating wander (incommensurate
+    // sines with random phases), so a hold is alive instead of a dead plateau.
+    private var driftClock = 0f
+    private val driftPh = FloatArray(6) { rng.nextFloat() * 6.2832f }
     // Smooth pursuit.
     private var pursuitT = 1f
     private var pursuitDur = 0f
@@ -194,6 +201,12 @@ internal class GazeDirector(
             headDelay -= dt
             if (headDelay <= 0f) { htx = pendingHx; hty = pendingHy }
         }
+        driftClock += dt
+        val dc = driftClock; val dk = if (drowsy) 0.5f else 1f
+        val dex = dk * (0.006f * sin(0.83f * dc + driftPh[0]) + 0.004f * sin(1.97f * dc + driftPh[1]))
+        val dey = dk * (0.005f * sin(0.61f * dc + driftPh[2]) + 0.003f * sin(1.43f * dc + driftPh[3]))
+        val dhx = 0.014f * sin(0.37f * dc + driftPh[4]) + 0.006f * sin(0.89f * dc + driftPh[5])
+        val dhy = 0.010f * sin(0.29f * dc + driftPh[5]) + 0.005f * sin(0.73f * dc + driftPh[0])
         val sacc = MotionVocab[Action.Saccade]
         val headSpec = MotionVocab[if (playful) Action.HeadTurnPlayful else Action.HeadTurn]
         val eyeW = if (drowsy) 12f else sacc.omega
@@ -202,12 +215,12 @@ internal class GazeDirector(
         var rem = dt
         while (rem > 1e-6f) {
             val h = min(rem, 1f / 120f)
-            val ax = eyeW * eyeW * (tx + mx - eyeX) - 2f * eyeW * evx
-            val ay = eyeW * eyeW * (ty + my - eyeY) - 2f * eyeW * evy
+            val ax = eyeW * eyeW * (tx + mx + dex - eyeX) - 2f * eyeW * evx
+            val ay = eyeW * eyeW * (ty + my + dey - eyeY) - 2f * eyeW * evy
             evx += ax * h; evy += ay * h
             eyeX += evx * h; eyeY += evy * h
-            val bx = headW * headW * (htx - headX) - 2f * headZ * headW * hvx
-            val by = headW * headW * (hty - headY) - 2f * headZ * headW * hvy
+            val bx = headW * headW * (htx + dhx - headX) - 2f * headZ * headW * hvx
+            val by = headW * headW * (hty + dhy - headY) - 2f * headZ * headW * hvy
             hvx += bx * h; hvy += by * h
             headX += hvx * h; headY += hvy * h
             rem -= h
@@ -253,12 +266,29 @@ internal class GazeDirector(
 internal class ExpressionDirector(private val rng: Random) {
     enum class Style { Blink, Snap, Soft, Gradual }
 
-    var from = "Neutral"; private set
-    var to = "Neutral"; private set
-    private var t = 1f
-    private var dur = 0.18f
-    private var waitLids = -1f
-    private var dwell = 10f
+    /**
+     * Engine17: layered, interruptible blend. The displayed face is
+     * base → layer1 (w1) → layer2 (w2). A new target never waits: it becomes a new layer
+     * that grows over whatever is currently shown, so a change of mind mid-morph bends
+     * smoothly instead of finishing, pausing and restarting (the old "gearbox").
+     */
+    private class Layer(val name: String, val style: Style, val dur: Float) {
+        var t = 0f
+        var waitLids = -1f
+        /** Change of mind back to the face underneath: the layer retreats along its own path. */
+        var back = false
+        var backFrom = 0f
+        var backT = 0f
+        val eased: Float get() = if (back) backFrom * (1f - backT * backT * backT * (backT * (backT * 6f - 15f) + 10f)) else fwd
+        val fwd: Float get() = when (style) {
+            // Reactions: quick attack, long soft landing (no hard stop).
+            Style.Snap, Style.Blink -> 1f - (1f - t).let { it * it * it * it }
+            Style.Soft, Style.Gradual -> t * t * t * (t * (t * 6f - 15f) + 10f)
+        }
+    }
+
+    private var base = "Neutral"
+    private val layers = ArrayList<Layer>(2)
     private var pending: String? = null
     private var pendingStyle: Style? = null
     private var blinkNow = false
@@ -267,46 +297,60 @@ internal class ExpressionDirector(private val rng: Random) {
     /** Context for the next change (set by the owner just before [want]). */
     var hint: Style? = null
 
-    val eased: Float get() = when (style) {
-        Style.Snap, Style.Blink -> MotionVocab.easeOutCubic(t)
-        Style.Soft, Style.Gradual -> MotionVocab.easeInOutSine(t)
+    val from: String get() = base
+    /** The face being moved toward (latest intent). */
+    val to: String get() {
+        val l = layers.lastOrNull() ?: return base
+        return if (l.back) (layers.getOrNull(layers.size - 2)?.name ?: base) else l.name
     }
-    val morphing: Boolean get() = t < 1f
+    /** Pair partner of [from] in the frame (layer 1). */
+    val pairTo: String get() = layers.firstOrNull()?.name ?: base
+    val eased: Float get() = layers.firstOrNull()?.eased ?: 1f
+    val top: String? get() = layers.getOrNull(1)?.name
+    val topEased: Float get() = layers.getOrNull(1)?.eased ?: 0f
+    val morphing: Boolean get() = layers.isNotEmpty()
 
     fun want(raw: String) {
         val target = normalize(raw)
         val h = hint
         hint = null
-        if (target == to) {
-            pending = null
-            return
+        if (target == to) { pending = null; return }
+        val last = layers.lastOrNull()
+        val under = layers.getOrNull(layers.size - 2)?.name ?: base
+        if (last != null && target == under && !last.back && last.waitLids < 0f) {
+            last.backFrom = last.eased; last.backT = 0f; last.back = true; pending = null; return
         }
-        if (t < 1f || dwell < MIN_DWELL) {
-            pending = target; pendingStyle = h ?: pendingStyle
-            return
+        if (layers.size >= 2) {
+            // Third change inside one morph: if the oldest pose is nearly gone, drop it.
+            val effBase = (1f - layers[0].eased) * (1f - layers[1].eased)
+            if (effBase < 0.04f) { base = layers.removeAt(0).name } else {
+                pending = target; pendingStyle = h ?: pendingStyle; return
+            }
         }
         start(target, h)
     }
 
     private fun start(target: String, h: Style?) {
-        from = to
-        to = target
-        t = 0f
-        waitLids = -1f
-        style = h ?: run {
+        val st = h ?: run {
             val r = rng.nextFloat()
             when {
                 r < 0.4f -> Style.Blink
-                r < 0.8f -> Style.Snap
+                r < 0.75f -> Style.Snap
                 else -> Style.Soft
             }
         }
-        when (style) {
-            Style.Blink -> { blinkNow = true; waitLids = 0f; dur = 0.05f }
-            Style.Snap -> dur = 0.12f + rng.nextFloat() * 0.1f
-            Style.Soft -> dur = 0.28f + rng.nextFloat() * 0.1f
-            Style.Gradual -> dur = 0.9f + rng.nextFloat() * 0.5f
+        // A blink can only mask the change if nothing else is mid-morph.
+        val s2 = if (st == Style.Blink && layers.isNotEmpty()) Style.Soft else st
+        val dur = when (s2) {
+            Style.Blink -> 0.06f
+            Style.Snap -> 0.24f + rng.nextFloat() * 0.1f
+            Style.Soft -> 0.48f + rng.nextFloat() * 0.18f
+            Style.Gradual -> 1.0f + rng.nextFloat() * 0.5f
         }
+        val l = Layer(target, s2, dur)
+        if (s2 == Style.Blink) { blinkNow = true; l.waitLids = 0f }
+        layers += l
+        style = s2
         pending = null; pendingStyle = null
     }
 
@@ -314,20 +358,25 @@ internal class ExpressionDirector(private val rng: Random) {
     fun update(dt: Float, lidsClosed: Float): Boolean {
         val blink = blinkNow
         blinkNow = false
-        if (t < 1f) {
-            if (waitLids >= 0f) {
-                waitLids += dt
-                if (lidsClosed >= 0.85f) waitLids = -1f
-                else if (waitLids > 0.18f) { waitLids = -1f; style = Style.Snap; dur = 0.16f }
-                else return blink
+        for (l in layers) {
+            if (l.waitLids >= 0f) {
+                l.waitLids += dt
+                if (lidsClosed >= 0.85f || l.waitLids > 0.18f) l.waitLids = -1f else continue
             }
-            t = min(1f, t + dt / dur)
-            if (t >= 1f) dwell = 0f
-        } else {
-            dwell += dt
-            val p = pending
-            if (p != null && dwell >= MIN_DWELL) start(p, pendingStyle)
+            val d = if (l.style == Style.Blink && lidsClosed < 0.85f) 0.3f else l.dur
+            if (l.back) l.backT = min(1f, l.backT + dt / (d * (0.4f + 0.6f * l.backFrom)))
+            else l.t = min(1f, l.t + dt / d)
         }
+        // A fully retreated layer is gone (the face is exactly what was underneath).
+        layers.removeAll { it.back && it.backT >= 1f }
+        // Collapse finished layers: a complete layer hides everything beneath it.
+        val iDone = layers.indexOfLast { !it.back && it.t >= 1f }
+        if (iDone >= 0) {
+            base = layers[iDone].name
+            repeat(iDone + 1) { layers.removeAt(0) }
+        }
+        val p = pending
+        if (p != null && layers.size < 2) start(p, pendingStyle)
         return blink
     }
 
@@ -888,8 +937,10 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             leadY = ly,
             lid = lid + (1f - lid) * w,
             exprFrom = expr.from,
-            exprTo = expr.to,
+            exprTo = expr.pairTo,
             exprT = expr.eased,
+            exprTop = expr.top,
+            exprTopT = expr.topEased,
             lifecycle = director.lifecycle,
             eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
@@ -1030,7 +1081,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         spRunDeg = if (run) rr(3f, 7f) else 0f
         spCrouch = if (run) rr(0.015f, 0.035f) else 0f
         // engine14.1: weighty spin, 360° in ~1.8–1.98s, peak ~280–320°/s.
-        spMain = if (playful) rr(1.8f, 1.86f) else rr(1.84f, 1.98f)
+        spMain = if (playful) rr(2.05f, 2.15f) else rr(2.1f, 2.3f) // engine17: longer glide, same weight
         spFollow = rr(0.045f, 0.08f) * (1.6f - 0.3f * spMain) // faster spin → a bit more drift
         spFollowOut = rr(0.2f, 0.3f); spFollowBack = rr(0.5f, 0.75f)
         val pShake = (0.18f + 0.22f * (if (playful) 1f else 0f) + 0.15f * (1f - temper.energy)) * (if (spLastShake) 0.45f else 1.2f)
@@ -1065,20 +1116,26 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private val SPIN_GLIDE = 0.4f
 
     /**
-     * Normalised turn progress with mass: velocity rises slowly from rest along a half-cosine
-     * (first [SPIN_RISE]), holds its momentum, then glides out along a friction-like (1-s)²
-     * decay to exactly zero over the last [SPIN_GLIDE]. Monotonic, C¹, no overshoot.
+     * Engine17: normalised turn progress with mass. Velocity follows a smooth asymmetric
+     * bump v(u) ∝ u^1.5·(1-u)^3.2 — eases out of rest, peaks around a third of the way,
+     * then a long frictional glide to a dead stop. No constant-speed (linear) plateau.
      */
     private fun spinCurve(u: Float, @Suppress("UNUSED_PARAMETER") a0: Float): Float {
-        val pi = PI.toFloat(); val a = SPIN_RISE; val f = SPIN_GLIDE; val h = 1f - a - f
-        val vp = 1f / (a / 2f + h + f / 3f)
-        return when {
-            u <= 0f -> 0f
-            u < a -> vp * (u / 2f - a / (2f * pi) * sin(pi * u / a))
-            u < a + h -> vp * (a / 2f + (u - a))
-            u < 1f -> { val q = 1f - (u - a - h) / f; vp * (a / 2f + h + f * (1f - q * q * q) / 3f) }
-            else -> 1f
-        }
+        if (u <= 0f) return 0f
+        if (u >= 1f) return 1f
+        val x = u * (SPIN_CDF.size - 1)
+        val i = x.toInt().coerceAtMost(SPIN_CDF.size - 2)
+        val f = x - i
+        return SPIN_CDF[i] + (SPIN_CDF[i + 1] - SPIN_CDF[i]) * f
+    }
+
+    private val SPIN_CDF: FloatArray = run {
+        val n = 512
+        val v = DoubleArray(n + 1) { k -> val u = k / n.toDouble(); Math.pow(u, 1.5) * Math.pow(1 - u, 3.2) }
+        val c = FloatArray(n + 1); var acc = 0.0
+        for (k in 1..n) { acc += (v[k] + v[k - 1]) * 0.5; c[k] = acc.toFloat() }
+        for (k in 0..n) c[k] /= acc.toFloat()
+        c
     }
 
     /** Advances the spin timeline. */

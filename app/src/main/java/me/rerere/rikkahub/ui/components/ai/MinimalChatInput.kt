@@ -995,7 +995,8 @@ fun MinimalChatInput(
                                                 stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
                                             },
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = chatInputHintColor(),
                                         )
                                     }
                                 },
@@ -1256,7 +1257,8 @@ fun MinimalChatInput(
                                             stringResource(R.string.tool_approval_input_placeholder)
                                         } else {
                                             stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
-                                        }
+                                        },
+                                        color = chatInputHintColor(),
                                     )
                                 },
                                 lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 5),
@@ -3119,3 +3121,14 @@ private fun findDialogWindow(view: View): Window? {
     }
     return null
 }
+
+
+/**
+ * Hint (placeholder) text of the chat input: noticeably dimmer than the default
+ * onSurfaceVariant so it reads as a hint, not as typed text — still legible in both themes.
+ */
+@Composable
+internal fun chatInputHintColor(): Color =
+    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = CHAT_INPUT_HINT_ALPHA)
+
+internal const val CHAT_INPUT_HINT_ALPHA = 0.5f

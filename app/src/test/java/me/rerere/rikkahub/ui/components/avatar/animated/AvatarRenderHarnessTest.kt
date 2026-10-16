@@ -588,6 +588,41 @@ class AvatarRenderHarnessTest {
         @Suppress("UNUSED_VARIABLE") val unused = runBlocking { }
     }
 
+    /** Engine17: chat input hint text before (default onSurfaceVariant) vs after (dimmed). */
+    @Test
+    fun renderChatInputHint() {
+        assumeTrue(outDir != null)
+        for (dark in listOf(true, false)) capture("chat_hint_${if (dark) "dark" else "light"}", 411, 220) {
+            MaterialTheme(colorScheme = if (dark) darkColorScheme() else androidx.compose.material3.lightColorScheme()) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                ) {
+                    for (after in listOf(false, true)) {
+                        androidx.compose.material3.Text(if (after) "AFTER" else "BEFORE", color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.labelSmall)
+                        val st = androidx.compose.foundation.text.input.rememberTextFieldState()
+                        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh,
+                            androidx.compose.foundation.shape.RoundedCornerShape(28.dp))) {
+                            androidx.compose.material3.TextField(
+                                state = st, modifier = Modifier.fillMaxWidth(),
+                                placeholder = {
+                                    androidx.compose.material3.Text("Message Grok…", maxLines = 1,
+                                        color = if (after) me.rerere.rikkahub.ui.components.ai.chatInputHintColor()
+                                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                                },
+                                colors = androidx.compose.material3.TextFieldDefaults.colors().copy(
+                                    unfocusedIndicatorColor = Color.Transparent, focusedIndicatorColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /** Engine16.2b: the onboarding (first-time setup) bottom buttons, for side-by-side with the editor bar. */
     @Test
     fun renderSetupButtons() {

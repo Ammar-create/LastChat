@@ -293,17 +293,23 @@ object WhSphereEyes {
     }
 
     /** Morphed Grok pair for a Generical-named expression transition, with lids applied. */
-    fun morphPair(from: String, to: String, t: Float, lid: Float): List<EyeState> {
+    fun morphPair(from: String, to: String, t: Float, lid: Float, top: String? = null, topT: Float = 0f): List<EyeState> {
         val a = expressionPair(grokNameFor(from), 1f)
         val b = expressionPair(grokNameFor(to), 1f)
+        val c = top?.let { expressionPair(grokNameFor(it), 1f) }
         val l = lid.coerceIn(0.02f, 1.25f)
         val u = t.coerceIn(0f, 1f)
+        val w = if (c == null) 0f else topT.coerceIn(0f, 1f)
         return a.indices.map { i ->
             val e0 = a[i]; val e1 = b.getOrElse(i) { b.last() }
-            val e = cleanBlend(e0, e1, u)
+            val e01 = cleanBlend(e0, e1, u)
+            // Engine17: interrupted morph — the newest face grows over the current blend.
+            val e2 = c?.getOrElse(i) { c.last() }
+            val e = if (e2 != null && w > 0f) cleanBlend(e01, e2, w) else e01
             // Arc eyes (^ ‿) are already "closed-looking": a blink only thins them a
             // little instead of flattening the arcs into one long line.
-            val arc = (if (curved(e0)) 1f - u else 0f) + (if (curved(e1)) u else 0f)
+            val arc0 = (if (curved(e0)) 1f - u else 0f) + (if (curved(e1)) u else 0f)
+            val arc = arc0 * (1f - w) + (if (e2 != null && curved(e2)) w else 0f)
             val le = l + (1f - l).coerceAtLeast(0f) * arc * 0.8f
             e.copy(lidY = e.lidY * le)
         }
@@ -582,15 +588,9 @@ object WhSphereEyes {
         }
         if (flat.size < 3) return null
         @Suppress("UNUSED_VARIABLE") val _u = u
-        return Path().apply {
-            fillType = androidx.compose.ui.graphics.PathFillType.NonZero
-            // Unit sphere XY → He-centered Compose (y-down)
-            moveTo(flat[0][0] * he, -flat[0][1] * he)
-            for (i in 1 until flat.size) {
-                lineTo(flat[i][0] * he, -flat[i][1] * he)
-            }
-            close()
-        }
+        // Unit sphere XY → He-centered Compose (y-down), smooth curve (engine17).
+        return SmoothPath.closed(flat.size, Path().apply { fillType = androidx.compose.ui.graphics.PathFillType.NonZero },
+            x = { flat[it][0] * he }, y = { -flat[it][1] * he })
     }
 
     /**

@@ -729,3 +729,41 @@ They are implemented in `EditorActionButton`.
 - In steady state nothing is captured per frame; capture happens only on the change frame.
 - Colour, eye-colour and shade tweens are read in the draw phase, so there is no recomposition per tween frame.
 - `MorphBenchTest` logs the per-frame costs.
+
+## Engine17 — continuous motion & smooth outlines
+
+**Why ("manual gearbox"):** the engine16 `ExpressionDirector` never let a new face interrupt a
+running morph: it queued the target until the morph finished *plus* a 0.25 s dwell, then started a
+fresh two-pose lerp from rest. Every change of mind therefore froze the face on a plateau and then
+restarted (measured: 46 stall frames in a 6.5 s expression train). Reactions were 120–220 ms
+ease-out "snaps"; face accents ran on an underdamped ω17/ζ0.62 spring (wobbly pops); gaze holds
+were dead still between saccades; the spin had a constant-velocity middle third.
+
+**Expressions — layered blend.** The face is `base → layer1 (w1) → layer2 (w2)`
+(`MotionFrame.exprFrom/exprTo/exprT` + new `exprTop/exprTopT`). A new target is a new layer that
+grows over whatever is currently displayed, starting the very next frame. A change of mind back to
+the face underneath makes the newest layer *retreat* along its own path (smootherstep from its
+current weight). A finished layer collapses everything beneath it. Only a third change inside one
+morph whose oldest pose is still >4 % visible waits (≤ a few frames). Eases: reactions quartic-out
+0.24–0.34 s (quick attack, long soft landing — poke bounce kept), self-initiated smootherstep
+0.48–0.66 s, mood drift 1.0–1.5 s. Blink-masked swaps are unchanged (Generical blinks kept).
+Renderers: `GenericalFace.outline(..., top, topT)` (also fixes the closure index key mid-morph) and
+`WhSphereEyes.morphPair(..., top, topT)` via `cleanBlend`; Grok closed-eye lid suppression
+includes the top layer, so closed Grok eyes still never blink.
+`ExpressionContinuityTest` compares with a verbatim legacy copy: max per-frame pop 9.2 → 6.6,
+stall frames 46 → 6, max jerk 9.2 → 5.1.
+
+**Gaze.** Continuous fixational drift (incommensurate sines, random phases) on eye (~0.01) and
+head (~0.02) targets: holds are alive, never plateaus. Saccade/head-lead/pursuit springs unchanged;
+front rest default, specials still via `IdlePlanner.special()` (rare), up-right still glance-only.
+
+**Face accents.** Spring softened to ω11/ζ0.82 (shape) and ω14/ζ1 (offset).
+
+**Spins.** `spinCurve` is the CDF of a smooth asymmetric velocity bump v ∝ u^1.5(1−u)^3.2 (peak
+≈⅓ in, long frictional glide), no linear plateau; main turn 2.05–2.3 s. Still never in idle.
+
+**Outlines.** `SmoothPath.closed` (uniform Catmull-Rom → cubics) replaces the lineTo polylines in
+Generical seated eyes, Grok sphere/mesh eyes, `radialPath` and `blendContours` — no facets at
+editor size. `ArtifactStripTest` renders the strips.
+
+**Chat input.** Hint text uses `chatInputHintColor()` = onSurfaceVariant @ 50 % (both themes).

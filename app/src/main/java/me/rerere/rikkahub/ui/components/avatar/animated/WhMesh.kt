@@ -928,11 +928,7 @@ object WhMesh {
         val seated = sx(seat, EyeLoops(loopsNorm, shiftY), ctx)
         return seated.mapNotNull { loop ->
             val flat = vh(loop).firstOrNull() ?: return@mapNotNull null
-            Path().apply {
-                moveTo(flat[0], flat[1])
-                for (i in 1 until flat.size / 2) lineTo(flat[i * 2], flat[i * 2 + 1])
-                close()
-            }
+            SmoothPath.closed(flat.size / 2, x = { flat[it * 2] }, y = { flat[it * 2 + 1] })
         }
     }
 }

@@ -382,12 +382,15 @@ private fun DrawScope.drawMarkInner(
         val lidG = lid.coerceAtLeast(GROK_SLIT)
         // Engine16.1: eyes that are already closed (sleepy arcs, ^ ^ happy arcs) never blink —
         // the lid is ignored in proportion to how far the face is into a closed shape.
-        val closedW = (if (WhSphereEyes.grokNameFor(f.exprFrom) in GROK_CLOSED) 1f - f.exprT else 0f) +
+        val closedPair = (if (WhSphereEyes.grokNameFor(f.exprFrom) in GROK_CLOSED) 1f - f.exprT else 0f) +
             (if (WhSphereEyes.grokNameFor(f.exprTo) in GROK_CLOSED) f.exprT else 0f)
+        val topW = if (f.exprTop != null) f.exprTopT.coerceIn(0f, 1f) else 0f
+        val closedW = closedPair * (1f - topW) +
+            (if (f.exprTop != null && WhSphereEyes.grokNameFor(f.exprTop) in GROK_CLOSED) topW else 0f)
         val lidOpenG = lidG + (1f - lidG) * closedW.coerceIn(0f, 1f)
         val lidForPair = if (bodyKind == "sphere") lidOpenG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidOpenG
         val symFace = f.face.grokSymmetric()
-        val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair)
+        val pair = WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair, f.exprTop, f.exprTopT)
             .mapIndexed { i, e -> FaceRig.shapeCapsule(e, i, symFace.eye(i)) }
         val safeBody = EyeSafeRegion.Body(projected)
         // The turn applied to the eyes is scaled down only as far as needed to keep
@@ -507,8 +510,8 @@ private fun DrawScope.drawMarkInner(
 
     // Generical: morph → seat on the surface → eye-colour fill fading into the surface tint.
     val closure = (1f - lid).coerceIn(0f, 1f)
-    val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
-    val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure) ?: return
+    val lo = GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT) ?: return
+    val ro = GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT) ?: return
     FaceRig.shapeOutline(lo.x, lo.y, 0, f.face.left)
     FaceRig.shapeOutline(ro.x, ro.y, 1, f.face.right)
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)
@@ -676,14 +679,9 @@ private const val RADIAL_STEP = 1.5f
 internal fun radialPath(a: FloatArray, b: FloatArray, u: Float, into: Path): Path {
     into.reset()
     val n = a.size
-    for (k in 0 until n) {
-        val ang = (k + 0.5f) / n * (2.0 * Math.PI).toFloat()
-        val r = a[k] + (b[k] - a[k]) * u
-        val x = kotlin.math.sin(ang) * r; val y = -kotlin.math.cos(ang) * r
-        if (k == 0) into.moveTo(x, y) else into.lineTo(x, y)
-    }
-    into.close()
-    return into
+    val step = (2.0 * Math.PI).toFloat() / n
+    fun r(k: Int) = a[k] + (b[k] - a[k]) * u
+    return SmoothPath.closed(n, into, x = { k -> kotlin.math.sin((k + 0.5f) * step) * r(k) }, y = { k -> -kotlin.math.cos((k + 0.5f) * step) * r(k) })
 }
 
 /** Point-wise blend of two resampled contours, with the start index aligned for least travel. */
@@ -698,13 +696,9 @@ internal fun blendContours(a: List<Offset>, b: List<Offset>, u: Float): Path {
         while (i < n) { val q = b[((i + k) % n + n) % n]; val dx = a[i].x - q.x; val dy = a[i].y - q.y; d += dx * dx + dy * dy; i += 4 }
         if (d < bestD) { bestD = d; bestK = k }
     }
-    for (i in 0 until n) {
-        val q = b[((i + bestK) % n + n) % n]
-        val x = a[i].x + (q.x - a[i].x) * u; val y = a[i].y + (q.y - a[i].y) * u
-        if (i == 0) out.moveTo(x, y) else out.lineTo(x, y)
-    }
-    out.close()
-    return out
+    return SmoothPath.closed(n, out,
+        x = { i -> val q = b[((i + bestK) % n + n) % n]; a[i].x + (q.x - a[i].x) * u },
+        y = { i -> val q = b[((i + bestK) % n + n) % n]; a[i].y + (q.y - a[i].y) * u })
 }
 
 private fun lerpC(a: Color, b: Color, u: Float) = androidx.compose.ui.graphics.lerp(a, b, u)
