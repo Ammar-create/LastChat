@@ -214,31 +214,46 @@ class FaceRig(private val rng: Random) {
     internal fun accentPreview(a: FaceAccent): FaceParams { accentSide = 1f; return FaceParams(clampEye(accentTarget(a, 0, 0f)), clampEye(accentTarget(a, 1, 0f))) }
 
     /** side 0 = left (screen), 1 = right. "inner" is toward the other eye. */
+    private fun lead(side: Int) = (side == 0) == (accentSide > 0f)
+
     private fun accentTarget(a: FaceAccent, side: Int, time: Float): EyeShape {
         val s = accentSide
         return when (a) {
             FaceAccent.None -> EyeShape.ID
-            // Engine21 (Julian): no accent grows one eye while the other stays; every accent is a
-            // symmetric adaptation of a Figma face. Curious = a mild Surprised / Looking-up.
-            FaceAccent.Curious -> EyeShape(sx = 1.05f, sy = 1.12f, dy = -0.01f, rot = 3f * s)
-            FaceAccent.Annoyed -> EyeShape(upper = 0.74f, slant = 0.14f, sy = 0.97f) // engine13: was 0.32 slant, read too angry
-            FaceAccent.Shy -> EyeShape(lower = 0.68f, sy = 0.94f, dy = 0.02f)
-            FaceAccent.Startled -> EyeShape(sx = 1.2f, sy = 1.4f, dy = -0.016f)
+            // Engine21.1 (Julian): asymmetry is welcome; eyes never grow / shrink from the
+            // bottom. Lids come down from the top, both bottoms stay level (see [shapeOutline]).
+            // Curious = his "Looking to the right": the lead eye opens up a touch, the other is
+            // lidded from the top (flatter top corners), bottoms level.
+            FaceAccent.Curious -> if (lead(side)) EyeShape(sy = 1.06f) else EyeShape(upper = 0.74f, slant = 0.06f)
+            // Annoyed = a light Angry frame: lids down on the inner corners.
+            FaceAccent.Annoyed -> EyeShape(upper = 0.8f, slant = 0.09f)
+            // Shy = a soft Happy: the lower lid rises (top untouched), set a hair low.
+            FaceAccent.Shy -> EyeShape(lower = 0.7f, dy = 0.015f)
+            FaceAccent.Startled -> EyeShape(sx = 1.2f, sy = 1.4f, dy = 0.02f) // grows up from the bottom, which drops a touch (Figma Surprised)
             FaceAccent.Dizzy -> {
                 // Eyes circle in opposite phase, slowly settling.
                 val ph = time * 7f + side * PI.toFloat()
                 EyeShape(dx = cos(ph) * 0.03f, dy = sin(ph) * 0.03f, rot = sin(ph) * 6f, sy = 0.95f)
             }
-            // Smug = a softened Suspicious (both lids in, a hint of happy lower lid).
-            FaceAccent.Smug -> EyeShape(upper = 0.68f, lower = 0.82f, slant = -0.08f)
-            FaceAccent.Focused -> EyeShape(upper = 0.8f, lower = 0.9f, sx = 1.02f)
-            FaceAccent.Drowsy -> EyeShape(upper = 0.48f, slant = -0.18f, dy = 0.01f)
-            FaceAccent.Worried -> EyeShape(slant = -0.3f, sy = 1.05f, upper = 0.92f)
-            FaceAccent.Glee -> EyeShape(lower = 0.58f, sx = 1.04f, sy = 0.96f)
-            FaceAccent.WakeSquint -> EyeShape(upper = 0.42f, lower = 0.78f, sx = 1.04f)
-            FaceAccent.Sad -> EyeShape(slant = -0.24f, upper = 0.84f, dy = 0.02f)
-            // Puzzled = a light Sad/hurt/confused: soft outer droop, a touch taller.
-            FaceAccent.Puzzled -> EyeShape(sy = 1.05f, upper = 0.84f, slant = -0.12f, rot = 2f * s)
+            // Smug = Suspicious, lopsided: the lead eye lidded heavily (flat top), the other a
+            // little; a hint of the happy lower lid on both.
+            FaceAccent.Smug -> if (lead(side)) EyeShape(upper = 0.56f, lower = 0.9f, slant = 0.08f) else EyeShape(upper = 0.78f, lower = 0.9f)
+            // Focused = a light Suspicious: both lids in a little, flat-ish top and bottom.
+            FaceAccent.Focused -> EyeShape(upper = 0.76f, lower = 0.9f)
+            // Drowsy = a light Bored: heavy flat upper lids, bottoms level.
+            FaceAccent.Drowsy -> EyeShape(upper = 0.52f)
+            // Worried = his Worried frame: soft lids, inner corners raised (round corners kept).
+            FaceAccent.Worried -> EyeShape(slant = -0.1f, upper = 0.97f)
+            // Glee = Happy: the lower lid lifts high, flat bottom, round top.
+            FaceAccent.Glee -> EyeShape(lower = 0.6f, sx = 1.03f)
+            // WakeSquint = part Eyes closed: lids nearly met from the top, lower lid a little up;
+            // the lead eye opens first.
+            FaceAccent.WakeSquint -> if (lead(side)) EyeShape(upper = 0.52f, lower = 0.84f) else EyeShape(upper = 0.38f, lower = 0.8f)
+            // Sad = his Sad frame: soft, outer corners dropped, round corners kept.
+            FaceAccent.Sad -> EyeShape(slant = -0.1f, upper = 0.93f, dy = 0.015f)
+            // Puzzled = his Sad/hurt/confused frame, lopsided: the lead eye lidded with a soft
+            // inner rise, the other a little lidded with the lid tipped the other way.
+            FaceAccent.Puzzled -> if (lead(side)) EyeShape(upper = 0.78f, slant = -0.08f) else EyeShape(upper = 0.86f, slant = 0.07f)
         }
     }
 
@@ -248,8 +263,16 @@ class FaceRig(private val rng: Random) {
 
         /**
          * Shape a Generical outline (500 viewBox, y down) in place. [side] 0 = left.
-         * Lids compress the top / bottom halves toward a midline; the slant varies the
-         * upper compression across the eye (inner vs outer corner).
+         *
+         * Engine21.1 eyelid model (Julian, from his Figma frames — Looking to the right,
+         * Bored, Suspicious, Angry, Happy):
+         *  - the upper lid comes down from the TOP; the eye's BOTTOM edge stays where it is,
+         *    level with the other eye. [slant] tilts the lid line across the eye.
+         *  - the lid flattens the corners it presses on: the top corners get smaller radii
+         *    (squashed vertically, pulled out toward the box), the bottom corners keep theirs.
+         *    Soft (sad / worried, slant < 0) lids flatten far less — those faces stay round.
+         *  - the lower lid (happy / glee squints) mirrors that from the bottom, top fixed.
+         *  - size changes grow / shrink the eye from its bottom edge, never from the centre.
          */
         fun shapeOutline(xs: FloatArray, ys: FloatArray, side: Int, p: EyeShape) {
             if (p.isIdentity()) return
@@ -261,31 +284,71 @@ class FaceRig(private val rng: Random) {
                 minX = min(minX, xs[i]); maxX = max(maxX, xs[i]); minY = min(minY, ys[i]); maxY = max(maxY, ys[i]); sumX += xs[i]
             }
             val cx = sumX / n
-            val cy = (minY + maxY) / 2f
+            val h = max(1f, maxY - minY)
             val hw = max(1f, (maxX - minX) / 2f)
             val inward = if (side == 0) 1f else -1f
+            val soft = p.slant < -0.05f
+            // Lower lid first (top fixed), then the upper lid on the result (bottom fixed).
+            val fl = p.lower.coerceIn(0.05f, 1.2f)
+            var bottom = maxY
+            if (fl < 1f) {
+                bottom = minY + fl * h
+                val keep = min(0.42f * h, 0.8f * fl * h)
+                val yk = minY + keep
+                for (i in 0 until n) if (ys[i] > yk) {
+                    val w = ((ys[i] - yk) / (maxY - yk)).coerceIn(0f, 1f)
+                    ys[i] = yk + (ys[i] - yk) * (bottom - yk) / (maxY - yk)
+                    xs[i] = flattenX(xs[i] - cx, hw, (1f - fl) * (if (soft) 0.2f else 0.55f) * w) + cx
+                }
+            }
+            for (i in 0 until n) {
+                val xn = ((xs[i] - cx) / hw).coerceIn(-1f, 1f) * inward // +1 = inner corner
+                val f = (p.upper - p.slant * xn).coerceIn(0.05f, if (p.upper > 1f) 1.25f else 1f)
+                val hb = bottom - minY
+                if (f < 1f) {
+                    val top = bottom - f * hb
+                    val keep = min(0.42f * hb, 0.8f * f * hb)
+                    val yk = bottom - keep
+                    if (ys[i] < yk) {
+                        if (soft) {
+                            // Soft lids (sad / worried) slide the top down instead: the hand-made
+                            // round corners keep their radius, the straight sides shorten.
+                            // Tapered so the sides shorten smoothly (no pile-up notch at the keep line).
+                            val d = top - minY
+                            val u = ((yk - ys[i]) / (1.6f * d + 0.12f * hb)).coerceIn(0f, 1f)
+                            ys[i] = ys[i] + d * u * u * (3f - 2f * u) // smooth: no kink on the sides
+                        } else {
+                            val w = ((yk - ys[i]) / (yk - minY).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                            ys[i] = top + (ys[i] - minY) * (yk - top) / (yk - minY).coerceAtLeast(1f)
+                            xs[i] = flattenX(xs[i] - cx, hw, (1f - f) * 0.6f * w) + cx
+                        }
+                    }
+                } else if (f > 1f && ys[i] < bottom) {
+                    ys[i] = bottom - (bottom - ys[i]) * f
+                }
+            }
+            // Size from the bottom edge; rotation about the bottom centre.
             val r = Math.toRadians(p.rot.toDouble()).toFloat()
             val cr = cos(r); val sr = sin(r)
             for (i in 0 until n) {
-                var x0 = xs[i] - cx
-                var y0 = ys[i] - cy
-                val xn = (x0 / hw).coerceIn(-1f, 1f) * inward // +1 = inner corner
-                // Lids close by sliding the top/bottom edge in, not by squashing, so the
-                // hand-made corner radii stay the same (straight sides shorten instead).
-                val hh = max(1f, (maxY - minY) / 2f)
-                if (y0 < 0f) {
-                    val f = (p.upper - p.slant * xn).coerceIn(0.05f, 1.2f)
-                    y0 = if (f >= 1f) y0 * f else min(0f, y0 + (1f - f) * hh)
-                } else {
-                    val f = p.lower.coerceIn(0.05f, 1.2f)
-                    y0 = if (f >= 1f) y0 * f else max(0f, y0 - (1f - f) * hh)
-                }
-                x0 *= p.sx; y0 *= p.sy
-                val rx = x0 * cr - y0 * sr
-                val ry = x0 * sr + y0 * cr
-                xs[i] = cx + rx + p.dx * 250f
-                ys[i] = cy + ry + p.dy * 250f
+                val x0 = (xs[i] - cx) * p.sx
+                val y0 = (ys[i] - bottom) * p.sy
+                xs[i] = cx + x0 * cr - y0 * sr + p.dx * 250f
+                ys[i] = bottom + x0 * sr + y0 * cr + p.dy * 250f
             }
+        }
+
+        /**
+         * Pull a point near a pressed corner out toward the bounding box: the corner's
+         * horizontal radius shrinks with [k] (0 = untouched). Only the outer 55 % of the
+         * width moves, so straight edges stay straight.
+         */
+        private fun flattenX(x: Float, hw: Float, k: Float): Float {
+            if (k <= 0f) return x
+            val a = abs(x) / hw
+            val mask = ((a - 0.45f) / 0.55f).coerceIn(0f, 1f)
+            val target = if (x >= 0f) hw else -hw
+            return x + (target - x) * (k * mask).coerceIn(0f, 0.85f)
         }
 
         /** Shape a Grok capsule: stays a capsule (scale, offset, rotation, openness). */

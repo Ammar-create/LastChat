@@ -44,8 +44,16 @@ internal object ContextRules {
         UiReaction,
         /** Classic spins (Turn / Top / Flip), still subject to their own cause rules. */
         Spin,
+        /**
+         * Engine21.1: a brief (≤ [BRIEF_BORED] s) unimpressed Bored beat as an event reaction —
+         * "hey, I was reading that" when the user interrupts its timeline reading. Not low energy:
+         * allowed whenever it is awake.
+         */
+        BriefUnimpressed,
     }
 
+    /** Longest Bored beat that still counts as [Behaviour.BriefUnimpressed] (s). */
+    const val BRIEF_BORED = 1.8f
     /** Longest an attentive avatar keeps its eyes shut (s). */
     const val MAX_CLOSED_ATTENTIVE = 0.75f
     /** After the user's last interaction they count as active for this long (s). */
@@ -62,6 +70,7 @@ internal object ContextRules {
         Ctx.Streaming to B - LOW - Behaviour.IdleEpisode - Behaviour.ShortEyesClosed,
         Ctx.Outcome to B - LOW - Behaviour.IdleEpisode,
         Ctx.Asleep to setOf(Behaviour.LongEyesClosed, Behaviour.EyeRest, Behaviour.Sleepy, Behaviour.ShortEyesClosed, Behaviour.Yawn),
+        // (BriefUnimpressed is in B, so every awake context allows it; Asleep does not.)
     )
 
     fun allowed(ctx: Ctx, b: Behaviour): Boolean = b in TABLE.getValue(ctx)
@@ -72,7 +81,7 @@ internal object ContextRules {
     /** Behaviour a face held for [sec] seconds amounts to (null = always fine). */
     fun faceBehaviour(face: String, sec: Float): Behaviour? = when (face) {
         "Sleeping" -> Behaviour.Sleepy
-        "Bored" -> Behaviour.Bored
+        "Bored" -> if (sec <= BRIEF_BORED) Behaviour.BriefUnimpressed else Behaviour.Bored
         "Eyes closed" -> if (sec > MAX_CLOSED_ATTENTIVE) Behaviour.LongEyesClosed else Behaviour.ShortEyesClosed
         else -> null
     }

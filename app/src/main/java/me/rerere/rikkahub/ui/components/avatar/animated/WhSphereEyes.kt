@@ -156,14 +156,16 @@ object WhSphereEyes {
                     floatArrayOf(0.18f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.18f, -0.04f))
                 listOf(e, e)
             }
+            // Engine21.1: wide open — taller AND wider than neutral (the whites show).
             "surprised" -> {
-                val e = en(0.42f, 0.86f, 0f, 0f)
+                val e = en(0.44f, 0.9f, 0f, 0f)
                 listOf(e, e)
             }
             "sad" -> {
                 // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
                 // the / \ pair read clearly apart at a glance. Engine21: a little lower too.
-                val e = en(UR, 0.5f, -19f, 0f).let { it.copy(offY = it.offY - 0.025f) }
+                // Engine21.1 (Julian: far stronger tilts): inner tops raised hard, shorter, lower.
+                val e = en(UR, 0.46f, -30f, 0f).let { it.copy(offY = it.offY - 0.035f) }
                 listOf(e, e)
             }
             // Engine21: asleep = soft downward-curved pill strokes (relaxed lids).
@@ -180,8 +182,15 @@ object WhSphereEyes {
                 val e = n.copy(wid = n.wid * 1.22f, lidY = 0.2f)
                 listOf(e, e)
             }
+            // Bored: heavy half-closed lids — flat bars, set a little low (looking at nothing).
             "squinted", "bored", "calm" -> {
-                val e = en(UR, 0.5f, 90f, 0f)
+                val e = en(UR, 0.5f, 90f, 0f).let { it.copy(offY = it.offY - 0.03f) }
+                listOf(e, e)
+            }
+            // Engine21.1 pouty (Figma Angry/pouty): a sulk — short pills, a firm frown tilt,
+            // dropped low like a lowered head.
+            "pouty" -> {
+                val e = en(UR, 0.42f, 18f, 0f).let { it.copy(offY = it.offY - 0.05f) }
                 listOf(e, e)
             }
             // Confused: same eyes as every other face, one lid tilted, both on one level.
@@ -201,11 +210,15 @@ object WhSphereEyes {
             // Engine16.1: symmetric, slightly shorter pills — a quiet "hm".
             // Engine21: "hm?" — both pills tipped the same way (symmetric size, no lopsided
             // growth), the old shorter pills were indistinguishable from neutral.
-            "hm" -> listOf(en(UR, 0.52f, 14f, 0f), en(UR, 0.52f, -14f, 0f))
+            // Engine21.1 confused (o_O, the iconic minimal-eye "huh?"): one eye stays a full
+            // open pill, the other squints to a short pill set high and tipped — a raised,
+            // skeptical brow. Unmistakably lopsided on purpose; [hmLeft] mirrors it.
+            "hm" -> listOf(en(UR, 0.64f, 0f, 0f), en(UR, 0.4f, -24f, 0f).let { it.copy(offY = it.offY + 0.12f) })
+            "hmleft" -> listOf(en(UR, 0.4f, 24f, 0f).let { it.copy(offY = it.offY + 0.12f) }, en(UR, 0.64f, 0f, 0f))
             // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
             // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
             "angry" -> {
-                val e = en(UR, 0.47f, 15f, 0f) // engine21: readable cross (was 0.51, 9.5° ≈ neutral)
+                val e = en(UR, 0.45f, 28f, 0f) // engine21.1: a real frown (was 15°, read as neutral)
                 listOf(e, e)
             }
             // Playful (Group 3): one eye a hair shorter and tipped, the other open.
@@ -220,9 +233,10 @@ object WhSphereEyes {
                 listOf(e, e)
             }
             // Playful wink: one soft closed arc, one open eye.
+            // Engine21.1: the closed eye is the happy ^ pill (a cute squeeze), the other open.
             "wink" -> listOf(
-                pr(0f, 0f, 0f, CLOSED_W,
-                    floatArrayOf(-0.16f, 0.03f), floatArrayOf(0f, -0.06f), floatArrayOf(0.16f, 0.03f)),
+                pr(0f, 0.04f, 0f, HAPPY_W,
+                    floatArrayOf(0.18f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.18f, -0.04f)),
                 en(UR, 0.57f, 0f, 0f),
             )
             // Grok brand stare — never used in LastChat. Soften to neutral.
@@ -272,10 +286,13 @@ object WhSphereEyes {
         //  closed = short flat pills · sleeping = soft ∪ strokes.
         "Sleeping" -> "sleepy"
         "Eyes closed" -> "closed"
-        "Bored", "pouty" -> "squinted"
+        "Bored" -> "squinted"
         "angered or concentrated" -> "focused"
-        "confused", "confused left" -> "hm"
-        "hurt or cute", "Group 3" -> "happy"
+        "confused" -> "hm"
+        "confused left" -> "hmleft"
+        "pouty" -> "pouty"
+        // Engine21.1: hurt / cute is Julian's wink frame — one open pill, one closed arc.
+        "hurt or cute", "Group 3" -> "wink"
         "Angry" -> "angry"
         else -> "neutral"
     }

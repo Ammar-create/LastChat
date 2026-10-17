@@ -1158,6 +1158,7 @@ fun ChatMessageTurn(
                         if (activityState is ActivityState.Hidden) return@AssistantMessageTurn
                         if (timelineOpen && timelineOpenRequest?.focusType == type) {
                             timelineOpen = false
+                            avatarStage.emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.PillCollapsed, at = avatarStage.target(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.ActivityPill)?.center)
                         } else {
                             timelineOpenRequest = TimelineOpenRequest(
                                 focusType = type,
@@ -1175,7 +1176,10 @@ fun ChatMessageTurn(
                             )
                         }
                     },
-                    onTimelineDismiss = { timelineOpen = false },
+                    onTimelineDismiss = {
+                        if (timelineOpen) avatarStage.emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.PillCollapsed, at = avatarStage.target(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.ActivityPill)?.center)
+                        timelineOpen = false
+                    },
                     onBubbleClick = {
                         if (timelineOpen) {
                             timelineOpen = false

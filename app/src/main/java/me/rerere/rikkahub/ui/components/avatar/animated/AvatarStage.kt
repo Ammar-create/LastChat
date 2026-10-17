@@ -46,6 +46,8 @@ class AvatarStage(private val rng: Random = Random.Default) {
         ReplyTone,
         /** The activity pill / timeline was expanded at [Event.at]. */
         PillExpanded,
+        /** Engine21.1: the expanded activity timeline was collapsed / dismissed. */
+        PillCollapsed,
         /** The app came back to the foreground. */
         AppResumed,
         /** Another avatar just made a face ([Event.extra] = accent ordinal, [Event.source] = its id). */

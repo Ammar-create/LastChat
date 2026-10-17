@@ -217,6 +217,25 @@ class AvatarMotionVideoTest {
             if (t >= 9f && fired.add(9f)) st.emit(AvatarStage.EventKind.PillExpanded, at = Offset(700f, 720f))
             AvatarMotionHints()
         },
+        // ---------------- engine21.1
+        // The new faces, 1.7 s apart (each morphs from the last).
+        Script("e211_faces", 20f, preRoll = 6f, seed = 91) { s, _, t, _ ->
+            val seq = listOf("confused", "Angry", "Sad", "pouty", "hurt or cute", "Bored", "Surprised", "Happy", "angered or concentrated", "confused", "Neutral")
+            val i = (t / 1.7f).toInt()
+            if (i < seq.size && fired.add(300f + i)) s.debugReact(seq[i], 1.5f)
+            AvatarMotionHints()
+        },
+        // Reading the timeline, interrupted: collapse mid-pan, a message mid-pan, a poke mid-pan
+        // (demo: the "I was reading that" beat always fires; live it is ~40 % with a cooldown).
+        Script("e211_reading", 19f, preRoll = 8f, seed = 93) { s, st, t, _ ->
+            s.debugHooksAlways = true
+            st.setTarget(AvatarStage.Target.ActivityPill, this, androidx.compose.ui.geometry.Rect(380f, 700f, 1040f, 2000f))
+            for (o in listOf(1f, 7f, 13f)) if (t >= o && fired.add(o)) st.emit(AvatarStage.EventKind.PillExpanded, at = Offset(700f, 720f))
+            if (t >= 2.6f && fired.add(2.6f)) st.emit(AvatarStage.EventKind.PillCollapsed, at = Offset(700f, 720f))
+            if (t >= 8.6f && fired.add(8.6f)) st.emit(AvatarStage.EventKind.MessageSent, at = Offset(600f, 2200f))
+            if (t >= 14.6f && fired.add(14.6f)) s.poke()
+            AvatarMotionHints()
+        },
         // Every UI hook once (forced to notice for the demo), 4 s apart.
         Script("e21_ui", 40f, preRoll = 8f, seed = 83) { s, st, t, _ ->
             s.debugHooksAlways = true

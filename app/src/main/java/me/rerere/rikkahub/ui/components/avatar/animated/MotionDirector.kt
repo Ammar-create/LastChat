@@ -467,6 +467,8 @@ class MotionDirector(
     private val inC = Array(8) { FloatArray(6) }
     private var inT = 0f
     private var inDur = 0f
+    /** Engine21.1: each channel's own blend length (setQuintic may shorten it). */
+    private val inDurC = FloatArray(8)
 
     /** Debug / tests: the base target just before the output spring. */
     internal val steerTarget: FloatArray get() = tgt
@@ -512,9 +514,11 @@ class MotionDirector(
                 val dq = if (i < 3) MarkClipEngine.wrap180(raw[i] - q[i]) else raw[i] - q[i]
                 val bv = if (top.t > h * top.speed) dq / h * top.speed * tScale.coerceIn(0f, 1f) else 0f
                 val pred = tgt[i] + tgtV[i] * dt
-                setQuintic(inC[i], pred - base[i], tgtV[i] - bv, tgtA[i].coerceIn(-4000f, 4000f), T)
+                inDurC[i] = setQuintic(inC[i], pred - base[i], tgtV[i] - bv, tgtA[i].coerceIn(-4000f, 4000f), T)
             }
-            inT = 0f; inDur = T
+            // Engine21.1: start at −bdt so this frame evaluates the blend at 0 (it already holds
+            // the predicted step; evaluating at bdt counted the velocity twice — a one-frame kick).
+            inT = -bdt; inDur = inDurC.max()
         } else {
             for (a in 0..2) { base[a] += MarkClipEngine.wrap180(raw[a] - lastBaseRaw[a]); lastBaseRaw[a] = raw[a] }
             for (i in 3 until 8) base[i] = raw[i]
@@ -522,7 +526,10 @@ class MotionDirector(
         inT += bdt
         val inv = 1f / dt.coerceAtLeast(1e-4f)
         for (i in 0 until 8) {
-            val off = if (inT < inDur) evalQuintic(inC[i], inT) else 0f
+            // Engine21.1 fix (the e21_ui "spasm"): a channel's quintic is only valid up to its OWN
+            // (possibly shortened) length; past it the t⁵ term explodes — it was evaluated up to the
+            // nominal fade and drove the pitch into a multi-turn whirl.
+            val off = if (inT < inDurC[i]) evalQuintic(inC[i], inT.coerceAtLeast(0f)) else 0f
             val x = base[i] + off
             val v = (x - tgt[i]) * inv
             tgtA[i] = (v - tgtV[i]) * inv
@@ -916,6 +923,13 @@ class MotionDirector(
                 lastRaw[a] = raw[a]
             }
         }
+        // Engine21.1 guard: the output may trail a spin by at most about one turn. A bigger gap
+        // can only come from a corrupt input (wraps counted the wrong way) and used to make it
+        // whirl at the turn-speed cap for seconds; drop whole extra turns instead.
+        if (filterReady) for (a in 0..2) {
+            while (rawUnwrapped[a] - fx[a] > 540f) rawUnwrapped[a] -= 360f
+            while (rawUnwrapped[a] - fx[a] < -540f) rawUnwrapped[a] += 360f
+        }
         val target = floatArrayOf(
             rawUnwrapped[0], rawUnwrapped[1], rawUnwrapped[2],
             p.posY, p.squashX, p.squashY, p.scale, p.lidOpen,
@@ -1084,7 +1098,8 @@ class MotionDirector(
          * Quintic inertialization (pos, vel, acc → 0 at [T]); the offset never overshoots
          * zero on its way home (Bollo's clamps). Stored as (x0, v0, a0, A, B, C).
          */
-        fun setQuintic(c: FloatArray, x0In: Float, v0In: Float, a0In: Float, Tin: Float) {
+        /** Inertialization blend x0 → 0 over ≤ [Tin] s; returns the length actually used. */
+        fun setQuintic(c: FloatArray, x0In: Float, v0In: Float, a0In: Float, Tin: Float): Float {
             val s = if (x0In < 0f) -1f else 1f
             val x0 = x0In * s; var v0 = v0In * s; var a0 = a0In * s
             var T = Tin
@@ -1095,6 +1110,7 @@ class MotionDirector(
             c[3] = -(a0 * T2 + 6f * v0 * T + 12f * x0) / (2f * T3 * T2) * s
             c[4] = (3f * a0 * T2 + 16f * v0 * T + 30f * x0) / (2f * T2 * T2) * s
             c[5] = -(3f * a0 * T2 + 12f * v0 * T + 20f * x0) / (2f * T3) * s
+            return T
         }
 
         fun evalQuintic(c: FloatArray, t: Float): Float =

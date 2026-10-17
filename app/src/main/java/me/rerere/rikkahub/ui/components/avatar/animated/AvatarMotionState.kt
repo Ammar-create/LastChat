@@ -63,6 +63,8 @@ data class MotionFrame(
     val lifecycle: MarkLifecycle = MarkLifecycle.Idle,
     val eyeGap: Float = 0.94f,
     val eyeScale: Float = 1f,
+    /** Engine21.1: microscopic reopen settle (fraction of eye height, ±~1.5 %), 0 at rest. */
+    val eyePop: Float = 0f,
     val timeSec: Float = 0f,
     /** Parametric per-eye shaping on top of the expression (see [FaceRig]). */
     val face: FaceParams = FaceParams.ID,
@@ -191,6 +193,10 @@ internal class GazeDirector(
         if (!eyesOnly && hypot(hvx, hvy) > 0.3f && hypot(x - tx, y - ty) > 0.4f && (x - tx) * hvx + (y - ty) * hvy < 0f) {
             pendX = x; pendY = y; pendHead = withHead; pending = true; return
         }
+        // Engine21.1: a smaller look against a head turn still running does not wait, but the
+        // head's momentum is braked (velocity only — position stays continuous) so it cannot
+        // drag the look backwards first.
+        if (!eyesOnly && hypot(hvx, hvy) > 0.3f && hypot(x - tx, y - ty) > 0.06f && (x - tx) * hvx + (y - ty) * hvy < 0f) { hvx *= 0.3f; hvy *= 0.3f }
         pending = false
         sinceShift = 0f
         val gx = x.coerceIn(-1f, 1f)
@@ -297,6 +303,30 @@ internal class GazeDirector(
     private var returning = false
 
     /** Back to the rest point as an eased glide (never a snap-back), slower for longer trips. */
+    /**
+     * Engine21.1: snap the (hidden) gaze to rest. Only called while the avatar is fully settled
+     * (the gaze is multiplied by 0 on screen), so nothing visible moves — but when it resumes,
+     * the look starts from rest instead of a stale off-centre head swinging back into view
+     * (head × rising weight read as a look one way, then the other).
+     */
+    fun snapRest() {
+        tx = REST_X; ty = REST_Y; eyeX = REST_X; eyeY = REST_Y; evx = 0f; evy = 0f
+        htx = 0f; hty = 0f; pendingHx = 0f; pendingHy = 0f; headDelay = 0f
+        headX = 0f; headY = 0f; hvx = 0f; hvy = 0f
+        pending = false; returning = false; pursuitT = 1f
+    }
+
+    /**
+     * Engine21.1: take over a look that was held on screen (spin hold): the gaze resumes from
+     * what is visible, not from where it wandered unseen (that came back as a look one way,
+     * then the other, during the hand-back blend).
+     */
+    fun adoptVisible(hx: Float, hy: Float, ex: Float, ey: Float) {
+        headX = hx; headY = hy; htx = hx; hty = hy; pendingHx = hx; pendingHy = hy; headDelay = 0f; hvx = 0f; hvy = 0f
+        eyeX = ex; eyeY = ey; tx = ex; ty = ey; evx = 0f; evy = 0f
+        pending = false; returning = false; pursuitT = 1f
+    }
+
     private fun glideHome(x: Float, y: Float) {
         val d = hypot(x - tx, y - ty)
         if (d < 0.06f) { setTarget(x, y, true); return }
@@ -540,6 +570,14 @@ internal class ExpressionDirector(@Suppress("unused") private val rng: Random) {
  */
 internal class Blinker(private val rng: Random) {
     var closed = 0f; private set
+    /**
+     * Engine21.1 steering (b): a microscopic spring settle after a full blink reopens — the
+     * eye opening overshoots by ~1.5 % then settles (one damped wobble, ~0.4 s). Added to the
+     * lid opening, so it is barely perceptible by design. 0 at rest.
+     */
+    var settle = 0f; private set
+    private var settleT = -1f
+    private var settleUsed = false
     /** A blink (or its double) is under way. */
     val busy: Boolean get() = phase >= 0f || gapLeft >= 0f
     private var phase = -1f
@@ -605,6 +643,7 @@ internal class Blinker(private val rng: Random) {
 
     private fun begin(extra: Int, drowsy: Boolean, chained: Boolean = false, mask: Boolean = false) {
         if (phase >= 0f) overlaps++
+        settleT = -1f; settle = 0f; settleUsed = false
         phase = 0f
         repeats = extra
         if (!chained) { starts++; if (extra > 0) { doubles++; sinceDouble = 0f } }
@@ -622,6 +661,11 @@ internal class Blinker(private val rng: Random) {
 
     fun update(dt: Float, life: MarkLifecycle, drowsy: Boolean) {
         clock += dt
+        if (settleT >= 0f) {
+            settleT += dt
+            settle = if (settleT < SETTLE_DUR) SETTLE_AMP * kotlin.math.exp(-settleT / 0.09f) * kotlin.math.sin(2f * PI_F * settleT / 0.2f) else 0f
+            if (settleT >= SETTLE_DUR) { settleT = -1f; settle = 0f }
+        }
         sinceLast += dt
         sinceDouble += dt
         quiet -= dt
@@ -650,7 +694,12 @@ internal class Blinker(private val rng: Random) {
                 // Engine20: the lids spring open — fast off the mark, easing into place (the old
                 // it·(2−it) on the reversed clock started slow and *landed* at full speed,
                 // which read as a stiff snap-open).
-                phase < total -> 1f - ((phase - closeT - holdT) / openT).let { u -> 1f - (1f - u) * (1f - u) * (1f - u) }
+                phase < total -> 1f - ((phase - closeT - holdT) / openT).let { u ->
+                    // Engine21.1: the settle springs out of the opening's tail (only full, brisk
+                    // blinks; not a half-blink, a drowsy one or the first of a double).
+                    if (u >= 0.72f && settleT < 0f && !settleUsed && depth >= 0.99f && !drowsy && repeats == 0) { settleT = 0f; settleUsed = true }
+                    1f - (1f - u) * (1f - u) * (1f - u)
+                }
                 else -> 0f
             }
             if (phase >= total) {
@@ -693,6 +742,11 @@ internal class Blinker(private val rng: Random) {
         const val DOUBLE_GAP = 6f
         const val SACCADE_P = 0.75f
         const val REQUEST_DOUBLE_GAP = 40f
+        /** Reopen settle: amplitude (peak ≈ 0.57 × this) and length. */
+        const val SETTLE_AMP = 0.028f
+        const val SETTLE_DUR = 0.4f
+        /** Test hook: switch the reopen settle off (frame-strip comparisons). */
+        @JvmStatic var settleEnabled = true
     }
 }
 
@@ -973,6 +1027,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         why = "unspecified"; whyPrio = MindRules.P_IDLE
         val live = animate
         settle = if (live) max(0f, settle - dt / SETTLE_IN_SEC) else min(1f, settle + dt / SETTLE_OUT_SEC)
+        if (!live && settle >= 1f) gaze.snapRest() // invisible now; resumes from rest
         // A static avatar winds down as if nothing were going on.
         val hints = if (live) rawHints else QUIET_HINTS
         val desired = MarkLifecycleMapper.resolve(hints)
@@ -992,6 +1047,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 // Engine19 reflex: attention goes to the finger at once — eyes only, from
                 // wherever they are (no recenter); the head stays on what it was doing.
                 trace?.poke(time)
+                readingInterrupted("poke")
                 director.freezeBase(0.35f)
                 blink.inhibit(0.7f) // the startle is seen with open eyes
                 upRightPause = 1.5f // attention is on the finger; the up-right ease-out waits
@@ -1133,7 +1189,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                     time - shownAt < MindRules.minDwell(expr.to) && !MindRules.hasEventCause(prio, cause)
                 // Engine21: leaving a face the context forbids (asleep / bored / long-shut eyes while
                 // generating or with the user active) is never held back by dwell or budget.
-                val ctxForced = animate && !ContextRules.faceOk(ctx, expr.to, if (expr.to == "Eyes closed") closedHeld else 99f)
+                val ctxForced = animate && !ContextRules.faceOk(ctx, expr.to, heldSec(expr.to))
                 if (ctxForced || !blockedBySpin && !dwellHold && (!animate || mind.faceSafe(prio, expr.morphing) &&
                     mind.budgetOk(prio, MotionDirector.isBusy(director.lifecycle), mood.arousal, settle = baseline || relax))
                 ) {
@@ -1326,6 +1382,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             lifecycle = director.lifecycle,
             eyeGap = gapKnob + (REST_FRAME.eyeGap - gapKnob) * w,
             eyeScale = scaleKnob + (REST_FRAME.eyeScale - scaleKnob) * w,
+            eyePop = if (Blinker.settleEnabled && live) blink.settle * keep else 0f,
             timeSec = time,
             face = lerpFace(faceLive, w),
             spinYaw = spinAngles().first * keep,
@@ -1351,6 +1408,14 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             spinRelease = 0f
         } else {
             val held = spinHeld
+            if (held != null && spinRelease == 0f && keep > 0.5f) {
+                // Invert the composition above (hx = headX·keep, lead from eye − head) so the live
+                // gaze continues exactly from the held look.
+                val ghx = held.headLookX / keep; val ghy = held.headLookY / keep
+                val ex = (held.leadX / keep + 0.07f * ghx) / 0.1f
+                val ey = (held.leadY / keep + 0.06f * ghy) / 0.085f
+                gaze.adoptVisible(ghx, ghy, ex.coerceIn(-1f, 1f), ey.coerceIn(-1f, 1f))
+            }
             if (held != null && spinRelease < 1f) {
                 // Hand back to the live layers smoothly (no pop after the spin).
                 spinRelease = (spinRelease + dt / 0.35f).coerceAtMost(1f)
@@ -1947,6 +2012,39 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     internal var ctx = ContextRules.Ctx.Idle; private set
     /** How long the shown face has been a closed-eye one (s). */
     private var closedHeld = 0f
+    /** Engine21.1: the brief "I was reading that" Bored beat runs until then (context-allowed). */
+    private var briefBoredUntil = -1f
+    /** How long a face counts as held for the context table. */
+    private fun heldSec(face: String): Float = when (face) {
+        "Eyes closed" -> closedHeld
+        "Bored" -> if (time < briefBoredUntil) 0f else 99f
+        else -> 99f
+    }
+    /** Engine21.1: true while the timeline-pan story is actually reading (eyes on the timeline). */
+    private var readingUntil = -1f
+    private var readingInterruptCooldown = 0f
+
+    /**
+     * Engine21.1 steering (a): the user interrupted its timeline reading (collapsed it, sent a
+     * message, poked…). Reading stops; sometimes — not always, with a cooldown — a short
+     * unimpressed Bored beat: "hey, I was reading that". Only while it is actually reading.
+     */
+    private fun readingInterrupted(what: String) {
+        if (time >= readingUntil) return
+        readingUntil = -1f
+        if (train.any { it.what.startsWith("timeline-pan") }) train.clear()
+        // Eyes leave the timeline and come back to the user (a poke then takes them to the finger).
+        gaze.focus(0f, 0.05f, 1.2f, priority = 2, travel = 0.35f)
+        val go = debugHooksAlways || readingInterruptCooldown <= 0f && rng.nextFloat() < 0.4f
+        log("reading interrupted by $what" + if (go) ": unimpressed beat" else "")
+        if (!go) return
+        readingInterruptCooldown = 45f
+        val sec = 1.2f + rng.nextFloat() * 0.5f
+        briefBoredUntil = time + sec + 0.6f
+        because("reading interrupted by $what", MindRules.P_EVENT) {
+            setReaction("Bored", sec, ExpressionDirector.Style.Soft, cause = "reading interrupted by $what")
+        }
+    }
 
     /**
      * Engine21: re-check the running state against the context every frame. A rest, doze,
@@ -1958,7 +2056,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         if (!ContextRules.attentive(ctx)) return
         if (restPhase > 0 || drowsy) { log("context $ctx: ends rest/drowsy"); briskWake = true; wake(); briskWake = false; briskUntil = time + 1.5f }
         val r = reaction
-        if (r != null && !ContextRules.faceOk(ctx, r, if (r == "Eyes closed") closedHeld else 99f)) {
+        if (r != null && !ContextRules.faceOk(ctx, r, heldSec(r))) {
             log("context $ctx: ends $r (held ${"%.2f".format(closedHeld)} s)")
             reaction = null; reactionLeft = 0f
         }
@@ -1967,7 +2065,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
     private fun currentExpressionTarget(): String {
         val t = currentExpressionTarget0()
         if (!animate || reaction != null) return t
-        return if (ContextRules.faceOk(ctx, t, if (t == "Eyes closed") closedHeld else 99f)) t else ContextRules.substitute(ctx, t)
+        return if (ContextRules.faceOk(ctx, t, heldSec(t))) t else ContextRules.substitute(ctx, t)
     }
 
     private fun currentExpressionTarget0(): String {
@@ -2144,6 +2242,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         accentCooldown -= dt
         flingCooldown -= dt
         eventCooldown -= dt
+        readingInterruptCooldown -= dt
         mirror?.let { (a, sec) ->
             mirrorIn -= dt
             if (mirrorIn <= 0f) { mirror = null; because("mirrors a neighbour's face", MindRules.P_IDLE) { accent(a, sec) } }
@@ -2491,6 +2590,8 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
             // Its own face changes are not something it "notices" (that read as a double take).
             if (e.kind == AvatarStage.EventKind.AvatarAccent && e.source == stageId) continue
             any = true
+            if (e.kind != AvatarStage.EventKind.AvatarAccent && e.kind != AvatarStage.EventKind.PillExpanded &&
+                e.kind != AvatarStage.EventKind.MessageArrived) readingInterrupted(e.kind.name)
             if (debugHooksAlways) { log("demo: ${e.kind} noticed"); legacyEvent(e); continue }
             val (dx, dy) = e.at?.let { lookAt(it) } ?: (0f to 0.6f)
             val st = Stimulus(e.kind.name, dx, dy, salienceFor(e.kind), direct = e.kind == AvatarStage.EventKind.AppResumed || e.kind == AvatarStage.EventKind.Error)
@@ -2670,6 +2771,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
         fun rr(a: Float, b: Float) = a + (b - a) * rng.nextFloat()
         val wait = rr(0.35f, 0.55f)
         var down = rr(1.3f, 1.8f)
+        readingUntil = time + wait + 0.45f + down + 0.3f
         tell("timeline-pan", wait to "eyes to the top", wait + 0.45f to "pan down", acts = listOf(
             {
                 val r = stage?.target(AvatarStage.Target.ActivityPill)
@@ -2680,6 +2782,7 @@ class AvatarMotionState(private val rng: Random = Random.Default) {
                 val r = stage?.target(AvatarStage.Target.ActivityPill)
                 val bottom = if (r != null) Offset(r.center.x, r.bottom - minOf(r.height * 0.1f, 40f)) else at?.let { Offset(it.x, it.y + 400f) }
                 if (r != null) down = (0.9f + r.height / 900f).coerceIn(1.1f, 2.2f) * rr(0.9f, 1.1f)
+                readingUntil = time + down + 0.3f
                 if (bottom != null) {
                     val (gx, gy) = lookAt(bottom)
                     gaze.focus(gx, gy, down + 0.5f, priority = 2, travel = down)

@@ -1235,3 +1235,86 @@ Clips (`/workspace/lastchat-renders/engine21/clips`): `e21_timeline` (two expans
 and tall timeline), `e21_ui` (every hook, forced to notice for the demo via
 `debugHooksAlways`), `e21_gen` (dozing, then a 30 s reply: eyes open, worst closed 0.07 s),
 `e21_speed`, `e21_mask`. All Engine19/20 gates (`ChannelMetricsTest`) still pass.
+
+## Engine21.1 — eyelids from the top, readable Grok faces, no teleports
+
+### Generical: asymmetric is fine, growth from the bottom is not
+Julian's rule: a lid sits on TOP. A more-closed eye closes top-down, and its bottom edge
+stays level with the other eye's bottom. `FaceRig.shapeOutline` now works as an eyelid model:
+* **Lower lid** first (the top stays put): squash below a kept band, flatten the bottom corners.
+* **Upper lid** per outline point, `f = upper − slant·x` (clamped ≤ 1 unless the eye is meant
+  to grow): the top drops to `bottom − f·h`, the bottom never moves.
+  * Hard lids (Curious, Smug, Annoyed, Focused…) squash the top cap and **flatten the top
+    corners** (`flattenX`, more the more closed) → a smaller top radius, as in Julian's
+    "Looking to the right" frame. The bottom corners keep their radius.
+  * Soft lids (slant < −0.05: Sad, Worried, Puzzled lead) slide the top down with a smoothstep
+    taper, so corners stay round and the top tilts gently (Figma Sad / Worried).
+* Size changes (`sx`, `sy`) and rotation pivot on the bottom centre, so bottoms stay level.
+* Squircle smoothing is unchanged.
+
+Accent rework (asymmetric where his frames are): Curious = lead eye a touch taller, the other
+lidded from the top with flattened top corners (both bottoms level); Puzzled = lopsided tipped
+lids; Smug = asymmetric heavy lids; Annoyed = Angry-style top lid, inner corner lower; Sad /
+Worried = soft tilted lids (tilt reduced to match the Figma frames). Group 3 is not one of the
+15 Figma frames, so it stays removed. Zoom: `lid_zoom_confused_curious.png`.
+
+### Grok: every face reads as its name (pill language)
+* **confused** = o_O: one tall open pill, the other short, tipped 24° and raised (a brow up);
+  `confused left` mirrors it.
+* **Angry** 28° `\ /`, **Sad** 30° `/ \` set low (were 15°, too weak).
+* **pouty** = short pills, 18° frown, dropped low (no longer merged into Bored).
+* **hurt or cute** = a wink: one eye the happy ^ arc, the other open (wink is in `GROK_CLOSED`,
+  so the closed side never blinks).
+* **Surprised** taller and slimmer; **Bored** flat bars set a little low.
+* Eyes never touch (GrokEyeGapTest).
+
+### Reading interrupted (steering a)
+While the timeline-pan story is actually reading (`readingUntil`), an interruption — the
+timeline collapsed (new `PillCollapsed` event from `ChatMessageV2`), a message sent, a poke, any
+other UI event — stops the pan and brings the eyes back. ~40 % of the time (45 s cooldown) it
+answers with a brief (1.2–1.7 s) **Bored** beat: "hey, I was reading that". The context table
+has a new `BriefUnimpressed` behaviour (Bored ≤ `BRIEF_BORED` = 1.8 s) that every awake context
+allows; long Bored stays banned when attentive. Clip: `e211_reading`.
+
+### Reopen settle (steering b)
+After a full, brisk blink (not a half-blink, a drowsy blink or the first of a double) the eye
+opening gets a microscopic spring settle: `+1.7 %` overshoot of eye height ≈ 33 ms after
+opening, one small undershoot, gone by 0.4 s (`Blinker.settle` → `MotionFrame.eyePop`; Generical
+grows from the bottom like the lid, Grok pills lengthen; closed shapes ignore it). Measured on
+the strips: +1 px of 77 (Generical) and +2 px of 78 (Grok). Gate: `SettleStripTest` (peak
+≤ 2 %, never while the lids still move). Strip: `settle_compare.png`.
+
+### Fix: the start-of-clip "spasm" (e21_ui)
+Root cause (engine, not harness): the beat hand-over inertialization (`MotionDirector.steer`)
+fits a quintic per channel; `setQuintic` may **shorten** the blend (when the old motion already
+heads back toward the new beat), but the offset was evaluated up to the *nominal* fade. Past its
+own length the t⁵ term explodes: the beat target's pitch accelerated through ±180° in a few
+frames, the output filter's unwrap counted those wraps as ~6 turns, and the body then whirled at
+the 700°/s turn cap for ~3 s. On screen: eyes jumping position to position frame by frame. It
+was seed/timing dependent, so it could also hit in the app after any beat switch.
+Fixes: per-channel blend lengths (`inDurC`, returned by `setQuintic`); the hand-over frame
+evaluates the blend at 0 (velocity was counted twice: a one-frame kick); the output filter
+never trails its input by more than ~1.5 turns (drops corrupt extra turns instead of whirling).
+App start: the first frame initialises every spring at the beat pose (no jump), dt is clamped
+to 0.1 s; nothing is written raw to the render.
+
+Two smaller gaze discontinuities found on the way (ChannelMetrics reversal gate):
+* After a spin, the gaze is held on screen while the live gaze kept wandering unseen; the
+  hand-back blend then showed a look one way, then the other. The live gaze now adopts the held
+  (visible) look when the hand-back starts (`GazeDirector.adoptVisible`).
+* A fully settled (static) avatar snaps its hidden gaze to rest (`snapRest`, invisible at weight
+  0), so it resumes from rest when it animates again (list → live, first appearance).
+* A look against a head turn still running brakes the head's velocity (position continuous).
+
+New CI gate `TeleportGateTest`:
+* `noTeleports`: cold starts (idle, UI hooks from 0.1 s, timeline + interrupt, rapid pokes,
+  generation) plus the exact e21_ui set-up (seed 83). Per 60 fps frame: body angle step ≤ 9°
+  (non-spin), |pitch|/|roll| ≤ 45° outside spins, gaze step ≤ 0.16, eye lead step ≤ 0.06 (a
+  saccade peaks ≈ 0.04), from the first frame on. Old engine: 11.7°/frame whirl → fails.
+* `beatTargetNeverWhirls`: 60 seeds × 40 s of random lifecycle changes and gestures; the beat
+  target stays < 60° and steps < 12°/frame. Old engine: 178° whirl at seed 6 → fails.
+
+### Verification
+Full avatar suite green (incl. ContextFitTest, ChannelMetricsTest, GrokEyeGapTest,
+TeleportGateTest, SettleStripTest). Clips: `e21_ui` re-rendered (first 3 s checked frame by
+frame), `e211_faces` (morph through the new faces), `e211_reading`.

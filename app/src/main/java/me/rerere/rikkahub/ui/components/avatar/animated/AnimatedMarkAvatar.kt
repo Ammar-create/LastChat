@@ -408,7 +408,9 @@ private fun DrawScope.drawMarkInner(
                 (if (f.exprTop != null && WhSphereEyes.grokNameFor(f.exprTop) in GROK_CLOSED) topW else 0f)
         }
         val lidOpenG = lidG + (1f - lidG) * closedW.coerceIn(0f, 1f)
-        val lidForPair = if (bodyKind == "sphere") lidOpenG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidOpenG
+        // Engine21.1: the reopen settle stretches open pills a hair (closed shapes ignore it).
+        val popG = 1f + f.eyePop * (1f - closedW.coerceIn(0f, 1f))
+        val lidForPair = (if (bodyKind == "sphere") lidOpenG * f.eyeScale.coerceIn(0.5f, 1.2f) else lidOpenG) * popG
         val symFace = f.face.grokSymmetric()
         val pair = (if (ws != null) WhSphereEyes.morphWeighted(ws, lidForPair)
             else WhSphereEyes.morphPair(f.exprFrom, f.exprTo, f.exprT, lidForPair, f.exprTop, f.exprTopT))
@@ -534,8 +536,10 @@ private fun DrawScope.drawMarkInner(
     val wsG = f.exprWeights
     val lo = (if (wsG != null) GenericalFace.outlineWeighted(0, wsG, closure) else GenericalFace.outline(0, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return
     val ro = (if (wsG != null) GenericalFace.outlineWeighted(1, wsG, closure) else GenericalFace.outline(1, f.exprFrom, f.exprTo, f.exprT, closure, f.exprTop, f.exprTopT)) ?: return
-    FaceRig.shapeOutline(lo.x, lo.y, 0, f.face.left)
-    FaceRig.shapeOutline(ro.x, ro.y, 1, f.face.right)
+    // Engine21.1: the reopen settle — a hair taller (from the bottom, like the lid) and wider.
+    fun popped(e: EyeShape) = if (f.eyePop == 0f) e else e.copy(sx = e.sx * (1f + 0.4f * f.eyePop), sy = e.sy * (1f + f.eyePop))
+    FaceRig.shapeOutline(lo.x, lo.y, 0, popped(f.face.left))
+    FaceRig.shapeOutline(ro.x, ro.y, 1, popped(f.face.right))
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)
     val fit = WhEyeSeat.genericalFitScale(shapeId)
     fun seatGen(k: Float) = GenericalSeat.seat(
@@ -604,7 +608,7 @@ internal fun softCap(v: Float, cap: Float): Float = cap * kotlin.math.tanh(v / c
 /** Grok eye shapes that are already closed: blinks don't apply to them. */
 private const val GROK_ACCENT_GAIN = 1.7f
 private const val GROK_SLANT_GAIN = 2.6f
-private val GROK_CLOSED = setOf("sleepy", "happy", "closed")
+private val GROK_CLOSED = setOf("sleepy", "happy", "closed", "wink")
 
 /**
  * Engine16.1: Grok faces stay mirror-symmetric. Size / lid / height are averaged across the
