@@ -253,7 +253,10 @@ class FaceRig(private val rng: Random) {
             FaceAccent.Sad -> EyeShape(slant = -0.1f, upper = 0.93f, dy = 0.015f)
             // Puzzled = his Sad/hurt/confused frame, lopsided: the lead eye lidded with a soft
             // inner rise, the other a little lidded with the lid tipped the other way.
-            FaceAccent.Puzzled -> if (lead(side)) EyeShape(upper = 0.78f, slant = -0.08f) else EyeShape(upper = 0.86f, slant = 0.07f)
+            // Engine21.2: never a parallel tilt (the old pair leaned // ) and no soft slide (its
+            // corner kink). One eye lidded from the top with a hard, brow-down lid (inner corner
+            // lower, top corners flattened), the other upright and open a touch wider; bottoms level.
+            FaceAccent.Puzzled -> if (lead(side)) EyeShape(upper = 0.7f, slant = 0.1f) else EyeShape(sy = 1.04f)
         }
     }
 

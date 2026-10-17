@@ -599,6 +599,28 @@ class AvatarRenderHarnessTest {
         val exprs = listOf("Neutral", "Happy", "Surprised", "Sad", "Worried", "Eyes closed", "Sleeping", "Bored",
             "angered or concentrated", "Angry", "pouty", "hurt or cute", "confused", "confused left", "Group 3")
         val rig = FaceRig(kotlin.random.Random(1))
+        if (tag.endsWith("confopts")) {
+            // Engine21.2: the Grok confused options (O = Engine21.1), both mirrors, for the sheet.
+            val keep = WhSphereEyes.confusedVariant
+            try {
+                for (v in listOf('O', 'A', 'B', 'C', 'D')) {
+                    WhSphereEyes.confusedVariant = v
+                    for (e in listOf("confused", "confused left")) capture("$tag/opt_${v}_${e.replace(' ', '-')}", 240, 240) {
+                        Box(Modifier.fillMaxSize().background(Color(0xFF1C1B1F)), contentAlignment = Alignment.Center) {
+                            AnimatedMarkAvatar(shapeId = "blob", eyeType = "grok", colorHex = "#2A92FE", colorPreset = "blue", isLoading = false,
+                                debugFrame = MotionFrame(exprFrom = e, exprTo = e, exprT = 1f), modifier = Modifier.size(220.dp))
+                        }
+                    }
+                }
+            } finally { WhSphereEyes.confusedVariant = keep }
+            capture("$tag/opt_neutral-ref", 240, 240) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF1C1B1F)), contentAlignment = Alignment.Center) {
+                    AnimatedMarkAvatar(shapeId = "blob", eyeType = "grok", colorHex = "#2A92FE", colorPreset = "blue", isLoading = false,
+                        debugFrame = MotionFrame(exprFrom = "Neutral", exprTo = "Neutral", exprT = 1f), modifier = Modifier.size(220.dp))
+                }
+            }
+            return
+        }
         if (tag.endsWith("zoom")) {
             // Engine21.1: big cells of the lid faces for the corner-radius zoom.
             for (mode in listOf("generical", "grok")) {

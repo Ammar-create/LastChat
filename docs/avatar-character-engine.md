@@ -1318,3 +1318,44 @@ New CI gate `TeleportGateTest`:
 Full avatar suite green (incl. ContextFitTest, ChannelMetricsTest, GrokEyeGapTest,
 TeleportGateTest, SettleStripTest). Clips: `e21_ui` re-rendered (first 3 s checked frame by
 frame), `e211_faces` (morph through the new faces), `e211_reading`.
+
+## Engine21.2 — no parallel tilts, Puzzled redone, a cleaner Grok confused
+
+Julian's rule: **two eyes tilted the same direction (`//` or `\\`) is never good.** Mirrored
+tilts (`/\`, `\/`) are fine, and so is one tilted eye next to an upright one.
+
+### Audit
+`ParallelTiltTest` measures each eye's tilt (+ = "/", screen space): Generical on the top and
+bottom lid edges (line fitted over the middle 60 %), Grok on the pill's long axis (deviation
+from the nearest upright / level axis, faded out for round blobs). A pair fails when both share a
+sign above 3°. Found in Engine21.1:
+* Generical **Puzzled** was parallel by construction (lead lid slant −0.08 = inner higher, the
+  other +0.07: both "/"), and its soft lid slid the corner (the kink).
+* Accents on top of tilted faces (Smug / Curious / Annoyed on Sad, Worried, confused, hurt).
+* Grok mid-morphs between differently tilted faces (confused, wink ↔ Bored, Happy, Sleeping…)
+  pass through same-way leans up to ~40°; Grok diagonal gaze adds 4–7° of perspective lean.
+
+### Fixes
+* **Puzzled** (`FaceRig`): one eye lidded from the top with a *hard* brow-down lid (upper 0.7,
+  slant +0.1: inner corner lower, top corners flattened, bottom level, no soft slide → no kink),
+  the other upright and open a touch wider (sy 1.04). One tilted + one upright.
+* **Grok confused** redesigned (`WhSphereEyes.confusedPair`, explored on
+  `grok_confused_options.png`): A "brow up" (chosen) — one neutral pill, the other a little
+  shorter (0.46) and raised so its top clears the other's: one raised eyebrow in pill language, nothing tipped. B "one
+  squint", C "tipped brow" (one pill tipped 14°), D "soft lopsided" (mirrored 7°) remain
+  selectable via `confusedVariant`. "confused left" is now the exact mirror (`reversed()`).
+* **`TiltGuard`** (general enforcement for everything in between): measures both eyes and
+  removes only the lean they share, minus a 1.5° dead zone — continuous, so it never pops and a
+  mirrored or one-eye tilt is untouched. Generical: sheared out of the top lids only (bottoms
+  stay level and in place), right after `FaceRig.shapeOutline`. Grok: each pill turned about its
+  own centre, measured relative to the head roll (a rolled head is kept), after seating and
+  before the gap pass; rigid (off) while spinning.
+
+### CI gate
+`ParallelTiltTest.noParallelTilt`: rest poses of every expression and accent as authored (no
+guard) in both styles; and, as rendered, every expression × accent, all expression-pair
+mid-morphs at t = 0.25 / 0.5 / 0.75, Grok gaze (pitch ±14 × yaw ±18) and head roll ±9°.
+`-Dlastchat.gridModes=raw` writes the unguarded audit for comparison.
+
+Caveat: the Generical seat/gaze perspective is not guarded (the guard runs on the flat outline,
+before seating); it is small on the Generical seat.

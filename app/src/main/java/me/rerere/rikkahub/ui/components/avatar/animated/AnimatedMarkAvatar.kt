@@ -478,6 +478,9 @@ private fun DrawScope.drawMarkInner(
         // Never let the eyes touch or overlap (Sad ^ ^, closed arcs, mid-morph, turned).
         // A spin is a rigid rotation of the face: the projected gap narrows with the surface, so
         // the gap pass (which would push the eyes off their surface points) is skipped then.
+        // Engine21.2: never two eyes leaning the same way (// or \\) — blends, accents on a face
+        // and a diagonal gaze's perspective included (head roll is kept). Rigid while spinning.
+        if (ok(left) && ok(right) && !spinning) TiltGuard.grok(left, right, roll).let { left = it.first; right = it.second }
         if (ok(left) && ok(right) && !spinning) {
             GrokEyeGap.shrinkInPlace(left, right, he, 1f, GrokEyeGap.TOUCH_GAP).let { left = it.first; right = it.second }
             val (dl, dr) = GrokEyeGap.separation(left, right, he, 1f, GrokEyeGap.TOUCH_GAP)
@@ -540,6 +543,8 @@ private fun DrawScope.drawMarkInner(
     fun popped(e: EyeShape) = if (f.eyePop == 0f) e else e.copy(sx = e.sx * (1f + 0.4f * f.eyePop), sy = e.sy * (1f + f.eyePop))
     FaceRig.shapeOutline(lo.x, lo.y, 0, popped(f.face.left))
     FaceRig.shapeOutline(ro.x, ro.y, 1, popped(f.face.right))
+    // Engine21.2: no same-way lean of the two top lids (blends, a face + an accent).
+    TiltGuard.generical(lo.x, lo.y, ro.x, ro.y)
     val gap = WhEyeSeat.genericalGapScale(shapeId) * (f.eyeGap / 0.94f).coerceIn(0.92f, 1.06f)
     val fit = WhEyeSeat.genericalFitScale(shapeId)
     fun seatGen(k: Float) = GenericalSeat.seat(

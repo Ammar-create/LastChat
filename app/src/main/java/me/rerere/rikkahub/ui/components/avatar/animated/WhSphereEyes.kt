@@ -144,6 +144,31 @@ object WhSphereEyes {
         return listOf(e, e)
     }
 
+    /**
+     * Engine21.2 Grok confused, explored in pill language (sheet: grok_confused_options.png).
+     * [left, right] for "confused"; "confused left" is the mirror. All keep the eyes apart and
+     * never lean both the same way.
+     *  - A "brow up": one pill as at rest, the other a little shorter and raised — the pill
+     *    analogue of one raised eyebrow. (chosen)
+     *  - B "one squint": the other eye a short, slightly lowered pill — a skeptical squint.
+     *  - C "tipped brow": the other eye a touch shorter, raised and tipped 14° (one tilted, one upright).
+     *  - D "soft lopsided": both a hair tipped as a mirrored pair, one shorter and raised.
+     *  - O: the Engine21.1 o_O (comparison sheet only).
+     */
+    internal var confusedVariant = 'A'
+
+    internal fun confusedPair(v: Char): List<EyeState> {
+        fun up(e: EyeState, dy: Float) = e.copy(offY = e.offY + dy)
+        return when (v) {
+            // The Engine21.1 o_O, kept only for the comparison sheet.
+            'O' -> listOf(en(UR, 0.64f, 0f, 0f), up(en(UR, 0.4f, -24f, 0f), 0.12f))
+            'B' -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.36f, 0f, 0f), -0.02f))
+            'C' -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.5f, 14f, 0f), 0.04f))
+            'D' -> listOf(en(UR, 0.6f, 7f, 0f), up(en(UR, 0.46f, 7f, 0f), 0.05f))
+            else -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.46f, 0f, 0f), 0.1f))
+        }
+    }
+
     fun expressionPair(name: String, lid: Float): List<EyeState> {
         val lidY = lid.coerceIn(0.02f, 1.25f)
         val base = when (name.lowercase()) {
@@ -210,11 +235,10 @@ object WhSphereEyes {
             // Engine16.1: symmetric, slightly shorter pills — a quiet "hm".
             // Engine21: "hm?" — both pills tipped the same way (symmetric size, no lopsided
             // growth), the old shorter pills were indistinguishable from neutral.
-            // Engine21.1 confused (o_O, the iconic minimal-eye "huh?"): one eye stays a full
-            // open pill, the other squints to a short pill set high and tipped — a raised,
-            // skeptical brow. Unmistakably lopsided on purpose; [hmLeft] mirrors it.
-            "hm" -> listOf(en(UR, 0.64f, 0f, 0f), en(UR, 0.4f, -24f, 0f).let { it.copy(offY = it.offY + 0.12f) })
-            "hmleft" -> listOf(en(UR, 0.4f, 24f, 0f).let { it.copy(offY = it.offY + 0.12f) }, en(UR, 0.64f, 0f, 0f))
+            // Engine21.2 confused: see [confusedPair] (the Engine21.1 o_O read as ugly).
+            "hm" -> confusedPair(confusedVariant)
+            // The mirror: the same two eyes swapped (per-side tilt is mirrored already).
+            "hmleft" -> confusedPair(confusedVariant).reversed()
             // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
             // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
             "angry" -> {
