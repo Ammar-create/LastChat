@@ -413,7 +413,7 @@ fun SettingLorebookDetailPage(
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -683,7 +683,7 @@ private fun EntryCard(
     Card(
         onClick = onEdit,
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = AppShapes.CardLarge
     ) {

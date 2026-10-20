@@ -163,7 +163,7 @@ fun ApiKeyPoolBottomSheet(
                         Icon(
                             imageVector = Icons.Rounded.Tune,
                             contentDescription = stringResource(R.string.api_key_pool_settings_title),
-                            tint = if (isDark) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -177,7 +177,7 @@ fun ApiKeyPoolBottomSheet(
                         Icon(
                             imageVector = Icons.Rounded.Add,
                             contentDescription = stringResource(R.string.api_key_pool_add_key),
-                            tint = if (isDark) Color.White else MaterialTheme.colorScheme.primary,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(28.dp),
                         )
                     }

@@ -23,19 +23,20 @@ object MarkColors {
         "yellow" to "#FFAF38",
         "green" to "#00C972",
         "cyan" to "#1CC3B0",
-        // The Generical blue — its own swatch (it used to hide behind "cyan").
+        "generical" to me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_HEX,
+        // Legacy azure stays available for avatars that explicitly chose it.
         "azure" to "#009FE0",
         "blue" to "#2A92FE",
-        // Default Generical body.
         "indigo" to "#7C5CFF",
         "violet" to "#A97EFE",
         "magenta" to "#FF5EB1",
         "gray" to "#959595",
     )
 
-    const val GENERICAL_BLUE_HEX = "#009FE0"
-    const val DEFAULT_GENERICAL_BODY_HEX = "#7C5CFF"
-    const val DEFAULT_GENERICAL_BODY_PRESET = "indigo"
+    const val GENERICAL_BLUE_HEX = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_HEX
+    private const val LEGACY_AZURE_HEX = "#009FE0"
+    const val DEFAULT_GENERICAL_BODY_HEX = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_HEX
+    const val DEFAULT_GENERICAL_BODY_PRESET = me.rerere.rikkahub.data.model.Avatar.Animated.GENERICAL_BLUE_PRESET
 
     /** Mode default eye colours (what `eyeColorHex == null` renders as). */
     const val DEFAULT_GENERICAL_EYE_HEX = "#FFFFFF"
@@ -58,7 +59,7 @@ object MarkColors {
         return try {
             Color(android.graphics.Color.parseColor(normalizeHex(hex)))
         } catch (_: Exception) {
-            Color(0xFF009FE0)
+            Color(0xFF0078D7)
         }
     }
 
@@ -83,10 +84,10 @@ object MarkColors {
         val preset = colorPreset?.lowercase()?.takeIf { it in PRESETS }
         val generical = !eyeType.equals("grok", true)
         return when {
-            generical && preset == "cyan" && (hex == null || hex == GENERICAL_BLUE_HEX) -> GENERICAL_BLUE_HEX to "azure"
+            generical && preset == "cyan" && (hex == null || hex == LEGACY_AZURE_HEX) -> LEGACY_AZURE_HEX to "azure"
             preset != null -> PRESETS.getValue(preset) to preset
             hex != null -> hex to PRESETS.entries.firstOrNull { it.value.equals(hex, true) }?.key
-            else -> GENERICAL_BLUE_HEX to "azure"
+            else -> DEFAULT_GENERICAL_BODY_HEX to DEFAULT_GENERICAL_BODY_PRESET
         }
     }
 

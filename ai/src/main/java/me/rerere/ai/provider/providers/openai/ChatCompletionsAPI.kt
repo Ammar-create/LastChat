@@ -241,7 +241,7 @@ class ChatCompletionsAPI(
                         try {
                             parseStreamData(event.data).forEach { chunk ->
                                 hasEmittedChunk = true
-                                trySend(chunk)
+                                send(chunk)
                             }
                         } catch (e: Throwable) {
                             close(e)

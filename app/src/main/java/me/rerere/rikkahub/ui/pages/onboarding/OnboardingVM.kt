@@ -33,6 +33,8 @@ class OnboardingVM(
     private val modelCatalogService: ModelCatalogService,
     private val modelMetadataResolver: ModelMetadataResolver,
 ) : ViewModel() {
+    internal var accountSetupDraft: ProviderSetting.OpenAI? = null
+    internal var resumeAccountSetup: Boolean = false
     private var localProviderBeforeSetup: ProviderSetting.LiteRtLocal? = null
 
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
@@ -44,6 +46,7 @@ class OnboardingVM(
         return (snapshot?.toProviderPresets() ?: emptyList())
             .withSpecialProviderPresets()
             .filterNot { it.type == ProviderSetting.ComfyUI::class }
+            .prioritizeSetupProviders()
     }
 
     fun skipSetup(onDone: () -> Unit) {
@@ -238,6 +241,20 @@ class OnboardingVM(
         if (setupModelIds.isEmpty()) return this
         val modelsById = associateBy { it.modelId }
         return setupModelIds.mapNotNull(modelsById::get)
+    }
+}
+
+/** Account providers and OpenCode are available before the bundled catalog finishes loading. */
+internal fun List<ProviderPreset>.prioritizeSetupProviders(): List<ProviderPreset> {
+    fun priority(preset: ProviderPreset): Int = when {
+        me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(preset.baseUrl)?.go == true -> 0
+        preset.subscriptionAccount == me.rerere.ai.provider.SubscriptionAccountType.CHATGPT -> 1
+        preset.subscriptionAccount == me.rerere.ai.provider.SubscriptionAccountType.GROK -> 2
+        else -> 3
+    }
+    return sortedBy(::priority).map { preset ->
+        val rank = priority(preset)
+        if (rank < 3) preset.copy(setupRecommended = true, setupOrder = rank - 100) else preset
     }
 }
 

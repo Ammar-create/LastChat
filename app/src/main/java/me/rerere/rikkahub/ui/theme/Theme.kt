@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.theme
 
 import android.app.Activity
+import android.app.UiModeManager
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -13,6 +14,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +34,7 @@ private val ExtendDarkColors = darkExtendColors()
 val LocalExtendColors = compositionLocalOf { ExtendLightColors }
 
 val LocalDarkMode = compositionLocalOf { false }
+val LocalSystemContrast = compositionLocalOf { 0f }
 
 @Serializable
 enum class ColorMode {
@@ -52,16 +57,26 @@ fun RikkahubTheme(
     }
 
 
+    val context = LocalContext.current
+    var systemContrast by remember { mutableFloatStateOf(0f) }
+    DisposableEffect(context) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            val manager = context.getSystemService(UiModeManager::class.java)
+            systemContrast = manager?.contrast ?: 0f
+            val listener = UiModeManager.ContrastChangeListener { systemContrast = it }
+            manager?.addContrastChangeListener(context.mainExecutor, listener)
+            onDispose { manager?.removeContrastChangeListener(listener) }
+        } else onDispose { }
+    }
     val colorScheme = when {
         settings.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         darkTheme -> findPresetTheme(settings.themeId).getColorScheme(dark = true)
         else -> findPresetTheme(settings.themeId).getColorScheme(dark = false)
     }
-    val colorSchemeConverted = remember(darkTheme, colorScheme) {
-        colorScheme.withLastChatAmoledSurface(darkTheme)
+    val colorSchemeConverted = remember(darkTheme, colorScheme, systemContrast) {
+        colorScheme.withLastChatContrast(darkTheme, systemContrast)
     }
     val extendColors = if (darkTheme) ExtendDarkColors else ExtendLightColors
     val statusBarColor = colorSchemeConverted.background
@@ -86,6 +101,7 @@ fun RikkahubTheme(
     CompositionLocalProvider(
         LocalLayoutDirection provides LayoutDirection.Ltr,
         LocalDarkMode provides darkTheme,
+        LocalSystemContrast provides systemContrast,
         LocalExtendColors provides extendColors
     ) {
         // Create typography from font settings

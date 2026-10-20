@@ -107,9 +107,9 @@ class SubscriptionProvider(
                     val setting = authenticated(providerSetting)
             delegate(setting).streamText(setting, messages, requestParams(setting, params)).collect { emit(it) }
                 } catch (retry: KeyRequestException) {
-                    error(subscriptionHttpError(retry.statusCode))
+                    error(subscriptionHttpError(retry.statusCode, retry.message))
                 }
-            } else error(subscriptionHttpError(e.statusCode))
+            } else error(subscriptionHttpError(e.statusCode, e.message))
         }
     }
 
@@ -170,11 +170,12 @@ class SubscriptionProvider(
     ): ImageGenerationResult = error("Image generation is not available through subscription sign-in.")
 }
 
-fun subscriptionHttpError(status: Int): String = when (status) {
+fun subscriptionHttpError(status: Int, detail: String? = null): String = when (status) {
     401 -> "Your subscription session has expired. Sign in again in provider settings."
     402, 403 -> "This account or plan does not allow access to this model. Check your subscription permissions."
     429 -> "Your subscription usage limit has been reached. Try again later."
-    else -> "Subscription request failed (HTTP $status). Try again later."
+    else -> detail?.takeIf { it.isNotBlank() }?.take(500)
+        ?: "Subscription request failed (HTTP $status). Try again later."
 }
 
 internal fun parseSubscriptionModels(root: JsonObject, account: SubscriptionAccountType): List<Model> {

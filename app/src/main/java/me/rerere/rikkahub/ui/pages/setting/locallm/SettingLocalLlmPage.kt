@@ -434,7 +434,7 @@ fun SettingLocalLlmPage(
                 SectionHeader("HuggingFace Configuration")
                 Card(
                     shape = AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
@@ -557,7 +557,7 @@ private fun InstalledModelCard(
     Card(
         onClick = onClick,
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -659,7 +659,7 @@ private fun DownloadableModelCard(
     Card(
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {

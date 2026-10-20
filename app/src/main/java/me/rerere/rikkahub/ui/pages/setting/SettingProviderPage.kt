@@ -1650,10 +1650,7 @@ private fun ProviderItemContent(
     onClick: () -> Unit
 ) {
     // Define the normal card color (used for both enabled background and disabled border)
-    val normalCardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        MaterialTheme.colorScheme.surfaceContainerLow 
-    else 
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    val normalCardColor = MaterialTheme.colorScheme.surfaceContainerLow
     
     val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
         androidx.compose.ui.graphics.Color.Black 

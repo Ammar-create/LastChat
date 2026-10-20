@@ -643,7 +643,7 @@ private fun AssistantItemContent(
         modifier = Modifier
             .fillMaxWidth()
             .clip(if (useWideSettingsLayout) assistantItemShape(position) else RoundedCornerShape(0.dp))
-            .background(if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -721,7 +721,7 @@ private fun AssistantItemContent(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        MaterialTheme.colorScheme.surfaceContainerLow
                                     )
                                 )
                             )

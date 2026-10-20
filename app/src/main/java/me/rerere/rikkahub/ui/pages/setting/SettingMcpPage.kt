@@ -706,10 +706,7 @@ private fun McpServerItem(
         modifier = modifier
     ) { animatedShape ->
         // Define the normal card color (used for both enabled background and disabled border)
-        val normalCardColor = if (LocalDarkMode.current) 
-            MaterialTheme.colorScheme.surfaceContainerLow 
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHigh
+        val normalCardColor = MaterialTheme.colorScheme.surfaceContainerLow
         
         val disabledBackground = MaterialTheme.colorScheme.surfaceContainerHighest
         
@@ -1294,7 +1291,7 @@ private fun McpToolsConfigure(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Row(

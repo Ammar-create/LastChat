@@ -1636,8 +1636,7 @@ private fun SkillExportDialog(
             Card(
                 onClick = { skillPackageLauncher.launch("${skill.name.ifBlank { "skill" }}.zip") },
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow
-                    else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 ),
                 shape = AppShapes.CardLarge
             ) {

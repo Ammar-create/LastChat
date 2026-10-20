@@ -7,6 +7,38 @@ import org.junit.Test
 
 class StreamingTextPresentationStateTest {
     @Test
+    fun largeIdleUserEditIsImmediateAndCreatesNoAnimationWork() {
+        val state = StreamingTextPresentationState("User message")
+        val edited = "User message" + " appended paragraph".repeat(10_000)
+        assertTrue(state.updateContent(edited, nowMillis = 16L, streaming = false))
+        assertEquals(edited, state.displayContent)
+        assertTrue(state.settleRanges.isEmpty())
+        assertFalse(state.step(32L, 16L))
+    }
+
+    @Test
+    fun aRealStreamStillDrainsSmoothlyAfterGenerationFinishesThenAllowsIdleEdits() {
+        val state = StreamingTextPresentationState("")
+        val reply = "A streamed answer. ".repeat(10)
+        state.updateContent(reply, 16L, streaming = true)
+        state.step(80L, 64L)
+        val beforeFinish = state.displayContent
+        state.updateContent(reply, 96L, streaming = false)
+        state.step(96L, 16L)
+        assertTrue(state.displayContent.startsWith(beforeFinish))
+        assertTrue(state.displayContent.length < reply.length)
+        for (time in 112L..20_000L step 16) {
+            state.updateContent(reply, time, streaming = false)
+            state.step(time, 16L)
+        }
+        assertEquals(reply, state.displayContent)
+        val edited = reply + " newly edited text".repeat(200)
+        state.updateContent(edited, 20_016L, streaming = false)
+        assertEquals(edited, state.displayContent)
+        assertTrue(state.settleRanges.isEmpty())
+    }
+
+    @Test
     fun fastBurstRevealsAcrossMultipleSteps() {
         val state = StreamingTextPresentationState("", nowMillis = 0L)
 

@@ -35,6 +35,20 @@ class MarkColorsAndRestTest {
     private fun hex(c: Color) = MarkColors.colorToHex(c)
 
     @Test
+    fun genericalUsesStopScreenBlueAndMigratesOnlyTheOldStockMark() {
+        val stock = Avatar.Animated.defaultGenerical()
+        assertEquals("#0078D7", stock.colorHex)
+        assertEquals(stock.colorHex, hex(MarkColors.bodyColor(stock.colorHex, stock.colorPreset)))
+        val old = Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo")
+        val assistant = Assistant(id = me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID,
+            name = "Generical", avatar = old)
+        assertEquals(stock, Settings(assistants = listOf(assistant)).migrateGenericalDefaultAvatar().assistants.single().avatar)
+        val explicitIndigo = old.copy(stockColorVersion = 1)
+        assertEquals(explicitIndigo, Settings(assistants = listOf(assistant.copy(avatar = explicitIndigo)))
+            .migrateGenericalDefaultAvatar().assistants.single().avatar)
+    }
+
+    @Test
     fun everyBodySwatchRendersItsOwnColourInBothModes() {
         for (mode in listOf("generical", "grok")) {
             for ((name, h) in MarkColors.PRESETS) {

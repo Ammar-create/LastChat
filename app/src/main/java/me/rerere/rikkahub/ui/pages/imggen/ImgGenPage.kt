@@ -427,7 +427,7 @@ private fun ImageGenScreen(
                     Text(
                         text = stringResource(R.string.imggen_page_prompt_placeholder),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
                 }

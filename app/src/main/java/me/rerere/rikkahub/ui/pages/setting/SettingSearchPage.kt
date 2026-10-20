@@ -1339,7 +1339,7 @@ private fun SearchServiceItemContent(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(0.dp))
-            .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -1396,7 +1396,7 @@ private fun SearchServiceItemContent(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                                    MaterialTheme.colorScheme.surfaceContainerLow
                                 )
                             )
                         )

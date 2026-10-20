@@ -233,7 +233,7 @@ private fun SliderSettingCard(
     steps: Int
 ) {
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier.fillMaxWidth()
     ) {

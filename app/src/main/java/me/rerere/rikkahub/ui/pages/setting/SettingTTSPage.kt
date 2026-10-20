@@ -923,7 +923,7 @@ internal fun TtsTextFilterSettingsDialog(
             ) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
@@ -943,7 +943,7 @@ internal fun TtsTextFilterSettingsDialog(
                         item {
                             androidx.compose.material3.Card(
                                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                             ) {
@@ -1037,7 +1037,7 @@ private fun TtsFilterRuleItem(
     
     androidx.compose.material3.Card(
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         onClick = onEdit
@@ -1438,7 +1438,7 @@ private fun TTSProviderItemContent(
     dragHandle: @Composable () -> Unit
 ) {
     val backgroundColor by androidx.compose.animation.animateColorAsState(
-        targetValue = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        targetValue = MaterialTheme.colorScheme.surfaceContainerLow,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "ttsProviderBackground"
     )

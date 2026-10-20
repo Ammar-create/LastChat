@@ -109,16 +109,7 @@ fun lastChatSoftEdgeBorder(
     val scheme = MaterialTheme.colorScheme
     val blur = LocalLastChatBlur.current
     val blurOn = blur.enabled && blur.hazeState != null
-    val color = if (!blurOn) {
-        AppSurface.softEdgeColor(scheme)
-    } else {
-        val glassAlpha = if (LocalDarkMode.current) AppSurface.GlassAlphaDark else AppSurface.GlassAlphaLight
-        AppSurface.softEdgeLightenStroke(
-            outline = scheme.outlineVariant,
-            surface = surface,
-            glassAlpha = glassAlpha,
-        )
-    }
+    val color = AppSurface.borderColor(scheme, surface, blurEnabled = blurOn, dark = LocalDarkMode.current)
     return BorderStroke(AppSurface.SoftEdgeWidth, color)
 }
 

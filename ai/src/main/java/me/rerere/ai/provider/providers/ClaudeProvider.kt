@@ -301,7 +301,7 @@ class ClaudeProvider(
                         runCatching {
                             val chunk = parseStreamChunk(event)
                             hasEmittedChunk = true
-                            trySend(chunk)
+                            send(chunk)
                         }.onFailure { error ->
                             close(error)
                         }

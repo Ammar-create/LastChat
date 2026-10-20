@@ -678,7 +678,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 ProviderConfigure(
@@ -709,7 +709,7 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Column(
@@ -837,14 +837,14 @@ private fun ConnectionTesterButton(
                             Text(
                                 text = stringResource(R.string.setting_provider_page_test_success),
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.extendColors.green6
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
 
                         is UiState.Error -> {
                             Text(
                                 text = (testState as UiState.Error).error.message ?: "Error",
-                                color = MaterialTheme.extendColors.red6,
+                                color = MaterialTheme.colorScheme.error,
                                 maxLines = 10
                             )
                         }
@@ -2060,7 +2060,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                             )
                         ) {
                             Row(
@@ -3041,10 +3041,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
                 .background(
-                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
-                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
                 )
                 .clickable {
                     dialogState.open(model.copy())
@@ -3130,7 +3127,7 @@ private fun BuiltInToolsSettings(
                 modifier = Modifier.fillMaxWidth(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Row(

@@ -12,10 +12,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SubscriptionProviderTest {
+    @Test fun requestValidationErrorsKeepTheProvidersActionableDetail() {
+        assertEquals("HTTP 400: Unsupported reasoning effort", subscriptionHttpError(400, "HTTP 400: Unsupported reasoning effort"))
+        assertTrue(subscriptionHttpError(401, "expired").contains("Sign in again"))
+    }
     private val media = object : PlatformMediaEncoder {
         override fun encodeImage(url: String, withPrefix: Boolean) = Result.success(url)
         override fun encodeVideo(url: String, withPrefix: Boolean) = Result.success(url)
         override fun encodeAudio(url: String, withPrefix: Boolean) = Result.success(url)
+    }
+
+    @Test fun successfulHttpStatusKeepsTheActualStreamFailureDetail() = runBlocking {
+        val http = object : PlatformHttpClient {
+            override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse = error("Must stream")
+            override fun streamEvents(request: PlatformHttpRequest) = flow {
+                emit(PlatformServerEvent.Open(200))
+                emit(PlatformServerEvent.Failure(statusCode = 200, message = "Connection reset by peer"))
+            }
+        }
+        val provider = SubscriptionProvider(http, media, SubscriptionTokenSource { "test-session" })
+        val failure = runCatching { provider.generateText(ProviderSetting.OpenAI(subscriptionAccount = SubscriptionAccountType.CHATGPT),
+            listOf(UIMessage.user("Hello")), TextGenerationParams(Model(modelId = "test"))) }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue(failure?.message.orEmpty().contains("Connection reset by peer"))
+        assertFalse(failure?.message.orEmpty().contains("Subscription request failed"))
+    }
+
+    @Test fun completedResponseIsNotDiscardedWhenTheServerClosesItsConnection() = runBlocking {
+        val http = object : PlatformHttpClient {
+            override suspend fun execute(request: PlatformHttpRequest): PlatformHttpResponse = error("Must stream")
+            override fun streamEvents(request: PlatformHttpRequest) = flow {
+                emit(PlatformServerEvent.Event(data = """{"type":"response.output_text.delta","item_id":"one","delta":"Hello"}"""))
+                emit(PlatformServerEvent.Event(data = """{"type":"response.completed","response":{"id":"one","output":[]}}"""))
+                emit(PlatformServerEvent.Failure(statusCode = 200, message = "Connection closed"))
+            }
+        }
+        val result = SubscriptionProvider(http, media, SubscriptionTokenSource { "test-session" }).generateText(
+            ProviderSetting.OpenAI(subscriptionAccount = SubscriptionAccountType.CHATGPT), listOf(UIMessage.user("Hello")),
+            TextGenerationParams(Model(modelId = "test")))
+        assertEquals("Hello", result.choices.first().message?.parts?.filterIsInstance<UIMessagePart.Text>()?.joinToString("") { it.text })
     }
 
     @Test fun chatGptCatalogUsesAccountSlugsAndVisibilityInServerOrder() {

@@ -79,7 +79,7 @@ fun AssistantLorebooksSubPage(
             item(key = "description") {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -168,7 +168,7 @@ private fun LorebookSelectionCard(
     
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = shape,
         onClick = onClick

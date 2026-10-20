@@ -76,10 +76,7 @@ fun AssistantModelSubPage(
             // Chat Model (Primary)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Column(
@@ -108,10 +105,7 @@ fun AssistantModelSubPage(
             // Voice
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Column(
@@ -141,10 +135,7 @@ fun AssistantModelSubPage(
             // Background Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Column(
@@ -203,10 +194,7 @@ fun AssistantModelSubPage(
             // Temperature Slider
             ExpandableContent(visible = assistant.temperature != null) {
                 Surface(
-                    color = if (LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -262,10 +250,7 @@ fun AssistantModelSubPage(
             // Top-P Slider
             ExpandableContent(visible = assistant.topP != null) {
                 Surface(
-                    color = if (LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {

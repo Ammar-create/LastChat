@@ -147,7 +147,7 @@ class ResponseAPI(
             url = "${providerSetting.baseUrl}/responses",
             headers = params.customHeaders.toHeaderMap()
                 .withReferHeaders(providerSetting.baseUrl, params.sessionId)
-                .withAuthAndJson(selectedKey.value),
+                .withAuthAndJson(selectedKey.value) + mapOf("Accept" to "text/event-stream"),
             body = encodedRequestBody.encodeToByteArray(),
             mediaType = "application/json",
             proxy = providerSetting.proxy.toPlatformProxy()
@@ -175,9 +175,13 @@ class ResponseAPI(
                         close()
                     }
                     is PlatformServerEvent.Failure -> {
+                        if (completed) {
+                            close()
+                            return@collect
+                        }
                         val statusCode = event.statusCode ?: 0
                         val cause = parseStreamFailure(event)
-                        if (statusCode != 0) {
+                        if (statusCode > 0 && statusCode !in 200..299) {
                             keyRoulette.reportHttpStatusFailure(
                                 key = selectedKey,
                                 providerSetting = providerSetting,
@@ -219,7 +223,7 @@ class ResponseAPI(
                             val chunk = parseResponseDelta(eventJson)
                             if (chunk != null) {
                                 hasEmittedChunk = true
-                                trySend(chunk)
+                                send(chunk)
                             }
                         }
                         if (completed || event.event == "response.completed") {

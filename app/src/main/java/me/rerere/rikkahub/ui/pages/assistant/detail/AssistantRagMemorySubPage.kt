@@ -51,7 +51,7 @@ fun AssistantRagMemorySubPage(
         Card(
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
             colors = CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
             )
         ) {
             FormItem(
@@ -84,7 +84,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Column(
@@ -131,7 +131,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Column(
@@ -171,7 +171,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Column(
@@ -219,7 +219,7 @@ fun AssistantRagMemorySubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 FormItem(
@@ -268,7 +268,7 @@ private fun MemoryDebugger(
     Card(
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
         colors = CardDefaults.cardColors(
-            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
         Column(
@@ -316,7 +316,7 @@ private fun MemoryDebugger(
                     Card(
                         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                         colors = CardDefaults.cardColors(
-                            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                         ),
                         modifier = Modifier.padding(vertical = 4.dp)
                     ) {

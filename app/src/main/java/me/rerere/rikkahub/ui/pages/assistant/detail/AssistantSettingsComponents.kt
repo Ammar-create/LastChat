@@ -94,10 +94,7 @@ fun AssistantSettingsItem(
     )
 
     Surface(
-        color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-            MaterialTheme.colorScheme.surfaceContainerLow 
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {

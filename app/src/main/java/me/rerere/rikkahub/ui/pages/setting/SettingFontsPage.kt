@@ -320,10 +320,7 @@ private fun FontConfigSection(
         // Main item (expandable)
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
             ),
             shape = AppShapes.CardLarge,
             onClick = { expanded = !expanded }
@@ -695,10 +692,7 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) 
-                MaterialTheme.colorScheme.surfaceContainerLow 
-            else 
-                MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = AppShapes.CardLarge
     ) {

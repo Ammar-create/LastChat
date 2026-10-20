@@ -307,7 +307,7 @@ fun AssistantAdvancedSubPage(
         SettingsGroup(title = stringResource(R.string.assistant_advanced_custom_request)) {
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = AppShapes.CardMedium
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
@@ -320,7 +320,7 @@ fun AssistantAdvancedSubPage(
 
             androidx.compose.material3.Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = AppShapes.CardMedium
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {

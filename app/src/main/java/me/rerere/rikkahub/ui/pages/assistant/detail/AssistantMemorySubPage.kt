@@ -405,7 +405,7 @@ fun AssistantMemorySettings(
                 // Regenerate embeddings button (visible when embeddings are missing or outdated)
                 ExpandableContent(visible = needsEmbeddingRegeneration && requestEmbeddingRegeneration != null) {
                     Surface(
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
                         shape = RoundedCornerShape(24.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -553,7 +553,7 @@ private fun MemorySettingsItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -603,7 +603,7 @@ private fun MemorySettingsItem(
 private fun MemoryModeIndicator(mode: MemoryMode) {
     val backgroundColor by animateColorAsState(
         targetValue = if (mode == MemoryMode.OFF)
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            MaterialTheme.colorScheme.surfaceContainerLow
         else
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
         animationSpec = spring(),
@@ -670,7 +670,7 @@ private fun RagSettingsCard(
     ) {
         // Similarity Threshold
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = RoundedCornerShape(24.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -736,7 +736,7 @@ private fun ConsolidationSettingsCard(
             SummarizerModelTipBanner(onClick = onNavigateToSummarizerSettings)
         }
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = RoundedCornerShape(10.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -774,7 +774,7 @@ private fun ConsolidationSettingsCard(
 
         if (assistant.lastConsolidationTime > 0) {
             Surface(
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = AppShapes.ListItemLast,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -821,7 +821,7 @@ private fun MemoryStatisticsCard(
     val withEmbeddings = memories.count { it.hasEmbedding }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(24.dp)
     ) {
         CollapseSpacingColumn(
@@ -1114,7 +1114,7 @@ private fun ManageMemoriesSection(
             
             if (displayMemories.isEmpty()) {
                 Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = RoundedCornerShape(24.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1201,7 +1201,7 @@ private fun MemoryItem(
     
     Surface(
         onClick = { onEditMemory(memory) },
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -1264,7 +1264,7 @@ private fun MemoryItem(
                                     text = stringResource(R.string.assistant_memory_no_embedding),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onError
                                 )
                             }
                         } else if (isModelMismatch) {
@@ -1312,7 +1312,7 @@ private fun MemoryDebugger(
     val (query, setQuery) = remember { mutableStateOf("") }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(24.dp)
     ) {
         CollapseSpacingColumn(
@@ -1397,7 +1397,7 @@ private fun MemoryDebugger(
                     )
                     state.results.forEachIndexed { index, (memory, score) ->
                         Surface(
-                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {

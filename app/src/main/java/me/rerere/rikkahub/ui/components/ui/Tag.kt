@@ -65,7 +65,7 @@ fun Tag(
         else -> MaterialTheme.colorScheme.tertiaryContainer
     }
     val textColor = when (type) {
-        TagType.SUCCESS -> MaterialTheme.extendColors.gray8
+        TagType.SUCCESS -> MaterialTheme.extendColors.green9
         TagType.ERROR -> MaterialTheme.extendColors.red8
         TagType.WARNING -> MaterialTheme.extendColors.orange8
         TagType.INFO -> MaterialTheme.extendColors.blue8

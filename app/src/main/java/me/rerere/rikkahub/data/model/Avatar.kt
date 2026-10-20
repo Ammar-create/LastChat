@@ -38,19 +38,24 @@ sealed class Avatar {
         val eyeShade: Boolean = true,
         /** Optional character trait overrides (trait name → 0…1); null = style default. */
         val traits: Map<String, Float>? = null,
+        /** Version of the stock colour choice; explicit editor saves opt out of old defaults. */
+        val stockColorVersion: Int = 0,
     ) : Avatar() {
         // Field defaults above stay as they were so data that omits a field (imports,
         // older exports) still decodes to the same avatar.
         companion object {
-            /** The Generical character's own mark: indigo blob with Generical eyes. */
+            const val GENERICAL_BLUE_HEX = "#0078D7"
+            const val GENERICAL_BLUE_PRESET = "generical"
+            /** Generical's Windows stop-screen blue, with white eyes. */
             fun defaultGenerical(
                 shape: String = "blob",
             ) = Animated(
                 shape = shape,
                 eyeType = "generical",
-                colorHex = "#7C5CFF",
-                colorPreset = "indigo",
+                colorHex = GENERICAL_BLUE_HEX,
+                colorPreset = GENERICAL_BLUE_PRESET,
                 eyeColorHex = null,
+                stockColorVersion = 1,
             )
         }
     }

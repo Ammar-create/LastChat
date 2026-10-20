@@ -347,7 +347,7 @@ private fun TtsVoiceTab(
                         Text(
                             text = "Add or fetch voices to use this provider.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 32.dp),
                         )
@@ -578,7 +578,7 @@ private fun TtsVoiceRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
-                .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .clickable(onClick = onEdit)
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),

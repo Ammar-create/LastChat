@@ -27,7 +27,6 @@ import java.io.File
 import java.io.InputStream
 
 private const val PALETTE_TARGET_SIZE = 128
-private val AMOLED_DARK_BACKGROUND = Color(0xFF000000)
 
 @Composable
 fun AssistantChatTheme(
@@ -70,16 +69,7 @@ fun AssistantChatTheme(
         baseScheme = MaterialTheme.colorScheme,
         seedColor = seedColor!!,
         darkTheme = darkTheme
-    ).let { baseScheme ->
-        if (darkTheme) {
-            baseScheme.copy(
-                background = AMOLED_DARK_BACKGROUND,
-                surface = AMOLED_DARK_BACKGROUND
-            )
-        } else {
-            baseScheme
-        }
-    }
+    ).withLastChatContrast(darkTheme, LocalSystemContrast.current)
 
     MaterialTheme(
         colorScheme = scheme,

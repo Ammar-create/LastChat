@@ -480,7 +480,7 @@ class GoogleProvider(
                         runCatching {
                             parseStreamChunk(event.data, params.model.modelId)?.let {
                                 hasEmittedChunk = true
-                                trySend(it)
+                                send(it)
                             }
                         }.onFailure { error ->
                             error.printStackTrace()

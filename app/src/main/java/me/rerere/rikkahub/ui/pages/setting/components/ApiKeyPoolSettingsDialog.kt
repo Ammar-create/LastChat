@@ -61,7 +61,7 @@ fun ApiKeyPoolSettingsDialog(
             Icon(
                 imageVector = Icons.Rounded.Tune,
                 contentDescription = null,
-                tint = if (isDark) Color.White else MaterialTheme.colorScheme.primary,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp),
             )
         },

@@ -136,6 +136,7 @@ fun AnimatedAvatarEditor(
             onSave = {
                 onSave(
                     Avatar.Animated(
+                        stockColorVersion = 1,
                         shape = shape,
                         eyeType = eyeType.lowercase(),
                         colorHex = MarkColors.normalizeHex(colorHex),

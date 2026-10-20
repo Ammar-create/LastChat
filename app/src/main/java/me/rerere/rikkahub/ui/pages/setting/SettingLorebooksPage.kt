@@ -515,7 +515,7 @@ private fun LorebookCard(
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = AppShapes.CardLarge
     ) {

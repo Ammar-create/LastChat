@@ -1,9 +1,13 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,20 +20,19 @@ import me.rerere.ai.provider.SubscriptionAccountType
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountState
 import me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountVM
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun SubscriptionAccountCard(provider: ProviderSetting.OpenAI, onEdit: (ProviderSetting.OpenAI) -> Unit) {
-    val type = provider.subscriptionAccount ?: return
+    if (provider.subscriptionAccount == null) return
     val vm = koinViewModel<SubscriptionAccountVM>(key = "subscription-${provider.id}")
     val state by vm.state.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
     val latestProvider by rememberUpdatedState(provider)
     val latestEdit by rememberUpdatedState(onEdit)
-    var connectionOptions by remember(provider.id) { mutableStateOf(false) }
 
     LaunchedEffect(provider.id, provider.subscriptionAccountVersion) { vm.refresh(provider) }
     LaunchedEffect(state.completed) {
@@ -42,17 +45,62 @@ fun SubscriptionAccountCard(provider: ProviderSetting.OpenAI, onEdit: (ProviderS
             haptics.perform(HapticPattern.Success)
         }
     }
-    LaunchedEffect(state.dnsFailure) { if (state.dnsFailure) connectionOptions = true }
-
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Card(shape = AppShapes.CardLarge, colors = CardDefaults.cardColors(containerColor =
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // The provider logo already appears in the toolbar. Account controls need no second logo.
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Account", style = MaterialTheme.typography.titleMedium)
-                    Text(state.account ?: "Sign in with your ${type.displayName} subscription",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SubscriptionAccountContent(provider, state, onEdit,
+            onConnect = { vm.connect(latestProvider, deviceCode = it) },
+            onCancel = vm::cancel, onOpenBrowser = vm::openBrowser,
+            onSignOut = { vm.signOut(latestProvider) }, onFeedback = haptics::perform)
+        if (state.account != null) ProviderUsageCard(provider)
+    }
+}
+
+/** Stateless account UI shared with the visual review harness. */
+@Composable
+internal fun SubscriptionAccountContent(
+    provider: ProviderSetting.OpenAI,
+    state: SubscriptionAccountState,
+    onEdit: (ProviderSetting.OpenAI) -> Unit,
+    onConnect: (Boolean) -> Unit,
+    onCancel: () -> Unit,
+    onOpenBrowser: (String) -> Unit,
+    onSignOut: () -> Unit,
+    onFeedback: (HapticPattern) -> Unit = {},
+) {
+    val type = provider.subscriptionAccount ?: return
+    val latestProvider by rememberUpdatedState(provider)
+    val latestEdit by rememberUpdatedState(onEdit)
+    var connectionOptions by remember(provider.id) { mutableStateOf(false) }
+    LaunchedEffect(state.dnsFailure) { if (state.dnsFailure) connectionOptions = true }
+    var accountMenu by remember(provider.id) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Card(shape = AppShapes.CardLarge, colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Account", style = MaterialTheme.typography.titleMedium)
+                        Text(state.account ?: "Connect your ${type.displayName} account",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (state.account != null && !state.busy) Text("Connected · Plan allowance",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    if (state.account != null || type == SubscriptionAccountType.CHATGPT) Box {
+                        IconButton(onClick = { accountMenu = true; onFeedback(HapticPattern.Tick) }, enabled = !state.busy) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "Account options")
+                        }
+                        DropdownMenu(expanded = accountMenu, onDismissRequest = { accountMenu = false }) {
+                            if (state.account != null) DropdownMenuItem(text = { Text("Reconnect account") }, onClick = {
+                                accountMenu = false; onFeedback(HapticPattern.Pop); onConnect(false)
+                            })
+                            if (type == SubscriptionAccountType.CHATGPT) DropdownMenuItem(text = { Text("Sign in with a code") }, onClick = {
+                                accountMenu = false; onFeedback(HapticPattern.Pop); onConnect(true)
+                            })
+                            if (state.account != null) DropdownMenuItem(text = { Text("Sign out") }, onClick = {
+                                accountMenu = false; onFeedback(HapticPattern.Pop); onSignOut()
+                            })
+                        }
+                    }
                 }
                 if (state.busy) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -64,50 +112,52 @@ fun SubscriptionAccountCard(provider: ProviderSetting.OpenAI, onEdit: (ProviderS
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         state.prompt?.let { prompt ->
-                            OutlinedButton(onClick = { haptics.perform(HapticPattern.Pop); vm.openBrowser(prompt.url) },
-                                shape = AppShapes.ButtonPill, modifier = Modifier.weight(1f)) {
+                            OutlinedButton(onClick = { onFeedback(HapticPattern.Pop); onOpenBrowser(prompt.url) },
+                                shape = AppShapes.ButtonPill) {
                                 Text("Open browser")
                                 Spacer(Modifier.width(8.dp))
                                 Icon(Icons.Rounded.OpenInNew, null, modifier = Modifier.size(18.dp))
                             }
                         }
-                        TextButton(onClick = { vm.cancel(); haptics.perform(HapticPattern.Cancel) }, shape = AppShapes.ButtonPill) { Text("Cancel") }
+                        TextButton(onClick = { onCancel(); onFeedback(HapticPattern.Cancel) }, shape = AppShapes.ButtonPill) { Text("Cancel") }
                     }
-                } else {
-                    Button(onClick = { haptics.perform(HapticPattern.Pop); vm.connect(latestProvider) },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = AppShapes.ButtonPill) {
-                        Text(if (state.account != null) "Reconnect ${type.displayName}" else "Continue with ${type.displayName}")
-                    }
-                    if (type == SubscriptionAccountType.CHATGPT) {
-                        TextButton(onClick = { haptics.perform(HapticPattern.Pop); vm.connect(latestProvider, deviceCode = true) },
-                            shape = AppShapes.ButtonPill, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Use a sign-in code instead") }
-                    }
-                    if (state.account != null) {
-                        TextButton(onClick = { haptics.perform(HapticPattern.Pop); vm.signOut(latestProvider) },
-                            modifier = Modifier.align(Alignment.End), shape = AppShapes.ButtonPill) { Text("Sign out on this device") }
+                } else if (state.account == null) {
+                    Text(if (type == SubscriptionAccountType.CHATGPT) "Use Codex models included in your ChatGPT plan."
+                        else "Use models included in your eligible Grok plan.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { onFeedback(HapticPattern.Pop); onConnect(false) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AppShapes.ButtonPill) {
+                        Text("Continue with ${type.displayName}")
                     }
                 }
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                TextButton(onClick = { connectionOptions = !connectionOptions; haptics.perform(HapticPattern.Tick) },
-                    shape = AppShapes.ButtonPill, modifier = Modifier.align(Alignment.Start)) { Text("Connection options") }
-                if (connectionOptions) {
-                    HorizontalDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Secure DNS fallback", style = MaterialTheme.typography.bodyMedium)
-                            Text("If system DNS fails, resolve account service hostnames through Cloudflare. Other app traffic keeps your DNS settings.",
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        HapticSwitch(checked = provider.subscriptionDnsFallback, enabled = !state.busy,
-                            onCheckedChange = { latestEdit(latestProvider.copy(subscriptionDnsFallback = it)) })
+                state.error?.let { error ->
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = AppShapes.concentricShape(28.dp, 16.dp)) {
+                        Text(error, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                Text(if (type == SubscriptionAccountType.CHATGPT)
-                    "Uses your plan’s Codex allowance and available models. Your account’s limits apply."
-                else "Uses your eligible Grok subscription. Your account’s model availability and limits apply.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Row(Modifier.fillMaxWidth().clickable {
+                    connectionOptions = !connectionOptions; onFeedback(HapticPattern.Tick)
+                }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Connection", style = MaterialTheme.typography.bodyMedium)
+                        Text(if (provider.subscriptionDnsFallback) "Secure DNS fallback enabled" else "System DNS",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(if (connectionOptions) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (connectionOptions) "Hide connection options" else "Show connection options")
+                }
+                if (connectionOptions) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Secure DNS fallback", style = MaterialTheme.typography.bodyMedium)
+                        Text("If your DNS blocks account services, try Cloudflare for those hostnames. Other app traffic keeps system DNS.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    HapticSwitch(checked = provider.subscriptionDnsFallback, enabled = !state.busy,
+                        onCheckedChange = { latestEdit(latestProvider.copy(subscriptionDnsFallback = it)) })
+                }
             }
         }
-        if (state.account != null) ProviderUsageCard(provider)
     }
 }

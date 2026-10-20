@@ -214,7 +214,7 @@ fun PhysicsSwipeToDelete(
     
     // Background color
     val backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
-    val fadeColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+    val fadeColor = MaterialTheme.colorScheme.surfaceContainerLow
     
     Box(
         modifier = modifier

@@ -184,6 +184,7 @@ fun ProviderConfigure(
 
         // 2. Type selector (for non-built-in remote providers)
         if (showProviderTypeSelector && !provider.builtIn && provider !is ProviderSetting.ComfyUI &&
+            ((provider as? ProviderSetting.OpenAI)?.let { me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(it.baseUrl) } == null) &&
             (provider as? ProviderSetting.OpenAI)?.subscriptionAccount == null) {
             ProviderTypeSelector(
                 selectedType = provider::class,
@@ -704,7 +705,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         modifier = Modifier.fillMaxWidth()
     )
 
-    DebouncedTextField(
+    val openCode = me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(provider.baseUrl)
+    if (openCode == null) DebouncedTextField(
         value = provider.baseUrl,
         onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
         stateKey = "openai_base_url_${provider.id}",
@@ -712,7 +714,6 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         modifier = Modifier.fillMaxWidth(),
     )
 
-    val openCode = me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(provider.baseUrl)
     if (openCode != null) {
         Text("API format is selected automatically for each OpenCode model.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

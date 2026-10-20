@@ -608,14 +608,24 @@ internal fun ColumnScope.ModelList(
                 ) { item ->
                     when (item) {
                         is ProviderListItem.Header -> {
-                            ModelSectionHeader(
-                                title = item.provider.name
-                            ) {
-                                ProviderBalanceText(
-                                    providerSetting = item.provider,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                            val accountProvider = item.provider as? ProviderSetting.OpenAI
+                            val showUsage = accountProvider != null && (accountProvider.subscriptionAccount != null ||
+                                me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(accountProvider.baseUrl)?.go == true)
+                            Column {
+                                ModelSectionHeader(title = item.provider.name) {
+                                    if (!showUsage) ProviderBalanceText(
+                                        providerSetting = item.provider,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                if (showUsage && accountProvider != null) {
+                                    val navController = LocalNavController.current
+                                    ProviderUsageSummary(accountProvider, onManage = {
+                                        onDismiss()
+                                        navController.navigate(Screen.SettingProviderDetail(accountProvider.id.toString()))
+                                    })
+                                }
                             }
                         }
                         is ProviderListItem.ModelEntry -> {
@@ -932,9 +942,9 @@ private fun ModelSectionHeader(
             text = title,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
-
-        Spacer(modifier = Modifier.weight(1f))
 
         trailingContent()
     }

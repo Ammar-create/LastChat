@@ -76,7 +76,16 @@ val FALLBACK_PROVIDER_PRESETS = listOf(
 
 val SPECIAL_PROVIDER_PRESETS = listOf(
     ProviderPreset(
-        name = "ChatGPT subscription",
+        id = "584e2459-7933-4acb-8f8a-3a9e48764708",
+        name = "OpenCode Go",
+        description = "Use your OpenCode Go plan with automatic model routing",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://opencode.ai/inference/go/openai/v1",
+        customIconUri = "icons/opencode.svg",
+        apiKeyUrl = "https://opencode.ai/console",
+    ),
+    ProviderPreset(
+        name = "ChatGPT",
         description = "Sign in with ChatGPT and use models included in your plan",
         type = ProviderSetting.OpenAI::class,
         baseUrl = me.rerere.ai.provider.SubscriptionAccountType.CHATGPT.baseUrl,
@@ -85,7 +94,7 @@ val SPECIAL_PROVIDER_PRESETS = listOf(
         customIconUri = "lobehub://openai",
     ),
     ProviderPreset(
-        name = "Grok subscription",
+        name = "Grok",
         description = "Sign in with Grok and use your eligible subscription",
         type = ProviderSetting.OpenAI::class,
         baseUrl = me.rerere.ai.provider.SubscriptionAccountType.GROK.baseUrl,

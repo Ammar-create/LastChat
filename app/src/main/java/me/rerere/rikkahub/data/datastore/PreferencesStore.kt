@@ -307,7 +307,7 @@ class SettingsStore(
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
             ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
-                .normalizeLocalProvider().normalizeSearchServices().normalizeMemorySettings()
+                .normalizeLocalProvider().normalizeAccountProviderNames().normalizeSearchServices().normalizeMemorySettings()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -617,6 +617,7 @@ class SettingsStore(
             .normalizeThemeId()
             .normalizeTtsSettings()
             .normalizeLocalProvider()
+            .normalizeAccountProviderNames()
             .normalizeSearchServices()
             .normalizeMemorySettings()
             .clearMissingModelReferences()

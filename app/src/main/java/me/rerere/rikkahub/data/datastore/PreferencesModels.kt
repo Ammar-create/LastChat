@@ -330,6 +330,17 @@ internal fun Settings.normalizeThemeId(): Settings {
     }
 }
 
+/** Rename only our old preset names; user-created labels remain untouched. */
+internal fun Settings.normalizeAccountProviderNames(): Settings = copy(providers = providers.map { provider ->
+    if (provider !is ProviderSetting.OpenAI) return@map provider
+    val oldName = when (provider.subscriptionAccount) {
+        me.rerere.ai.provider.SubscriptionAccountType.CHATGPT -> "ChatGPT subscription"
+        me.rerere.ai.provider.SubscriptionAccountType.GROK -> "Grok subscription"
+        null -> return@map provider
+    }
+    if (provider.name == oldName) provider.copy(name = provider.subscriptionAccount?.displayName ?: provider.name) else provider
+})
+
 /**
  * The on-device ([ProviderSetting.LiteRtLocal]) provider is an ordinary, user-managed provider: it is
  * NOT seeded by default and may be reordered or deleted like any other. This normalization only
@@ -442,10 +453,12 @@ internal fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
  */
 internal fun Settings.migrateGenericalDefaultAvatar(): Settings {
     val stock = Avatar.Resource(R.drawable.default_generical_pfp)
+    val oldMark = Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo")
     var changed = false
     val updated = assistants.map { assistant ->
         val isGenerical = assistant.id == DEFAULT_ASSISTANT_ID || assistant.name == "Generical"
-        if (isGenerical && assistant.avatar == stock) {
+        if (isGenerical && (assistant.avatar == stock ||
+            (assistant.id == DEFAULT_ASSISTANT_ID && assistant.avatar == oldMark))) {
             changed = true
             assistant.copy(avatar = Avatar.Animated.defaultGenerical())
         } else {
