@@ -2,6 +2,9 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -689,6 +692,7 @@ class GenerationHandler(
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
         for (stepIndex in 0 until maxSteps) {
+            currentCoroutineContext().ensureActive()
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
             val toolsInternal = buildList {
@@ -774,6 +778,7 @@ class GenerationHandler(
                 contextUsageSourceKey = contextUsageSourceKey,
                 contextBudgetScale = contextBudgetScale,
             )
+            currentCoroutineContext().ensureActive()
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
                 context = context,
@@ -803,6 +808,7 @@ class GenerationHandler(
             val results = arrayListOf<UIMessagePart.ToolResult>()
             val pendingToolCallIds = mutableSetOf<String>()
             toolCalls.forEach { toolCall ->
+                currentCoroutineContext().ensureActive()
                 runCatching {
                     val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
                         ?: error("Tool ${toolCall.toolName} not found")
@@ -813,6 +819,7 @@ class GenerationHandler(
                     }
                     Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
                     val result = tool.execute(args)
+                    currentCoroutineContext().ensureActive()
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
                         toolCallId = toolCall.toolCallId,
@@ -821,6 +828,7 @@ class GenerationHandler(
                         metadata = toolCall.metadata
                     )
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     Log.e(TAG, "Tool execution failed: ${toolCall.toolName}", it)
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,

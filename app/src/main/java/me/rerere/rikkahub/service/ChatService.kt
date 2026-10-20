@@ -19,6 +19,9 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -507,6 +510,31 @@ internal fun shouldPersistStreamingCheckpoint(
     return conversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true
 }
 
+/** Rebase a finished summary onto the current history; never restore its input snapshot. */
+internal fun applyContextSummaryIfCurrent(
+    live: Conversation,
+    source: Conversation,
+    summary: String,
+    lastMessageIndex: Int,
+    nowMs: Long,
+): Conversation? {
+    if (live.id != source.id || live.assistantId != source.assistantId ||
+        live.contextSummary != source.contextSummary ||
+        live.contextSummaryUpToIndex != source.contextSummaryUpToIndex
+    ) return null
+    val sourceMessages = source.currentMessages
+    val liveMessages = live.currentMessages
+    if (lastMessageIndex !in sourceMessages.indices || lastMessageIndex !in liveMessages.indices) return null
+    for (index in 0..lastMessageIndex) {
+        if (sourceMessages[index] != liveMessages[index]) return null
+    }
+    return live.copy(
+        contextSummary = summary,
+        contextSummaryUpToIndex = lastMessageIndex,
+        lastRefreshTime = nowMs,
+    )
+}
+
 internal fun mergeLiveMessagesIfIncomingIsStale(
     liveConversation: Conversation?,
     incomingConversation: Conversation,
@@ -514,7 +542,6 @@ internal fun mergeLiveMessagesIfIncomingIsStale(
     if (liveConversation == null) return incomingConversation
     if (liveConversation.id != incomingConversation.id) return incomingConversation
     if (!incomingConversation.updateAt.isBefore(liveConversation.updateAt)) return incomingConversation
-    if (!incomingConversation.losesDurableAssistantProgressFrom(liveConversation)) return incomingConversation
 
     return liveConversation.copy(
         assistantId = incomingConversation.assistantId,
@@ -533,38 +560,6 @@ internal fun mergeLiveMessagesIfIncomingIsStale(
         lastRefreshTime = incomingConversation.lastRefreshTime,
         isFork = incomingConversation.isFork,
     )
-}
-
-private fun Conversation.losesDurableAssistantProgressFrom(liveConversation: Conversation): Boolean {
-    val incomingMessagesById = currentMessages.associateBy { it.id }
-    return liveConversation.currentMessages.any { liveMessage ->
-        liveMessage.role == MessageRole.ASSISTANT &&
-            liveMessage.hasDurableAssistantProgress() &&
-            incomingMessagesById[liveMessage.id]?.hasAtLeastAssistantProgressOf(liveMessage) != true
-    }
-}
-
-private fun UIMessage.hasAtLeastAssistantProgressOf(liveMessage: UIMessage): Boolean {
-    if (role != liveMessage.role) return false
-    if (!hasDurableAssistantProgress()) return false
-    return assistantProgressScore() >= liveMessage.assistantProgressScore()
-}
-
-private fun UIMessage.assistantProgressScore(): Int {
-    return parts.sumOf { part ->
-        when (part) {
-            is UIMessagePart.Text -> part.text.length
-            is UIMessagePart.Reasoning -> part.reasoning.length
-            is UIMessagePart.Thinking -> part.thinking.length
-            is UIMessagePart.Image -> part.url.length
-            is UIMessagePart.Document -> part.url.length + part.fileName.length
-            is UIMessagePart.Video -> part.url.length
-            is UIMessagePart.Audio -> part.url.length
-            is UIMessagePart.ToolCall -> part.toolCallId.length + part.toolName.length + part.arguments.length
-            is UIMessagePart.ToolResult -> part.toolCallId.length + part.toolName.length + part.content.toString().length
-            else -> 0
-        }
-    }
 }
 
 internal fun dropDanglingAutoToolCallNodes(messageNodes: List<MessageNode>): List<MessageNode> {
@@ -673,9 +668,9 @@ class ChatService(
         _conversationPersistenceModes.asStateFlow()
 
     // 存储每个对话的生成任务状态
-    private val _generationJobs = MutableStateFlow<Map<Uuid, Job?>>(emptyMap())
-    private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs
-        .asStateFlow()
+    private val persistenceLocks = ConversationWriteLocks()
+    private val generationTasks = ConversationGenerationJobs(appScope)
+    private val generationJobs = generationTasks.jobs
 
     private val conversationDeletionLedger = ConversationDeletionLedger()
 
@@ -714,7 +709,7 @@ class ChatService(
 
     fun cleanup() = runCatching {
         ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleObserver)
-        _generationJobs.value.values.forEach { it?.cancel() }
+        generationTasks.cancelAll()
     }
 
     // 添加引用
@@ -793,7 +788,7 @@ class ChatService(
 
     // 检查是否有引用
     private fun hasReference(conversationId: Uuid): Boolean {
-        return hasConversationReference(conversationId) || _generationJobs.value.containsKey(
+        return hasConversationReference(conversationId) || generationJobs.value.containsKey(
             conversationId
         )
     }
@@ -864,24 +859,15 @@ class ChatService(
         }.toMap()
     }
 
-    private fun setGenerationJob(conversationId: Uuid, job: Job?) {
-        if (job == null) {
-            removeGenerationJob(conversationId)
-            return
-        }
-        _generationJobs.value = _generationJobs.value.toMutableMap().apply {
-            this[conversationId] = job
-        }.toMap() // 确保创建新的不可变Map实例
-    }
+    private fun getGenerationJob(conversationId: Uuid): Job? = generationTasks.get(conversationId)
 
-    private fun getGenerationJob(conversationId: Uuid): Job? {
-        return _generationJobs.value[conversationId]
-    }
-
-    private fun removeGenerationJob(conversationId: Uuid) {
-        _generationJobs.value = _generationJobs.value.toMutableMap().apply {
-            remove(conversationId)
-        }.toMap() // 确保创建新的不可变Map实例
+    private fun launchGeneration(conversationId: Uuid, block: suspend () -> Unit) {
+        generationTasks.launch(conversationId, onCompletion = {
+            appScope.launch {
+                delay(500)
+                checkAllConversationsReferences()
+            }
+        }, block = block)
     }
 
     // 初始化对话
@@ -1036,19 +1022,27 @@ class ChatService(
         conversation: Conversation,
         preserveConsolidation: Boolean = false,
         syncAttachments: Boolean = true,
-    ): Boolean {
+    ): Boolean = persistenceLocks.withLock(conversation.id) persist@{
         if (conversationDeletionLedger.isTombstoned(conversation.id)) {
             LogUtil.i(TAG, "persistConversationToRepository: refusing tombstoned ${conversation.id}")
-            return false
+            return@persist false
         }
-        val normalizedConversation = normalizeConversation(conversation).stripEphemeralToolImagePayloads()
-        if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty()) return false
+        // Re-read after acquiring the write lock: a late title/checkpoint must not undo a
+        // deletion, edit or version switch that was persisted while this write was queued.
+        val normalizedConversation = mergeLiveMessagesIfIncomingIsStale(
+            liveConversation = getConversationState(conversation.id)?.value,
+            incomingConversation = normalizeConversation(conversation),
+        ).stripEphemeralToolImagePayloads()
+        // Empty new drafts stay in memory; clearing an existing chat must reach the DB.
+        if (normalizedConversation.title.isBlank() && normalizedConversation.messageNodes.isEmpty() &&
+            withContext(Dispatchers.IO) { conversationRepo.getConversationById(conversation.id) } == null
+        ) return@persist false
 
         val retryDelaysMs = longArrayOf(40L, 120L, 240L)
         repeat(retryDelaysMs.size + 1) { attempt ->
             try {
                 if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
-                    return false
+                    return@persist false
                 }
                 withContext(Dispatchers.IO) {
                     if (conversationDeletionLedger.isTombstoned(normalizedConversation.id)) {
@@ -1073,18 +1067,19 @@ class ChatService(
                             conversationRepo.deleteConversation(existing, deleteFiles = false)
                         }
                     }
-                    return false
+                    return@persist false
                 }
-                return true
+                return@persist true
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 if (attempt == retryDelaysMs.size) {
                     e.printStackTrace()
-                    return false
+                    return@persist false
                 }
                 delay(retryDelaysMs[attempt])
             }
         }
-        return false
+        return@persist false
     }
 
     suspend fun getConversationSnapshot(conversationId: Uuid): Conversation? {
@@ -1107,7 +1102,7 @@ class ChatService(
     }
 
     fun stopGeneration(conversationId: Uuid) {
-        getGenerationJob(conversationId)?.cancel()
+        generationTasks.cancel(conversationId)
     }
 
     fun isGenerating(conversationId: Uuid): Boolean {
@@ -1121,45 +1116,47 @@ class ChatService(
         parts: List<UIMessagePart>,
     ) {
         if (parts.isEmptyInputMessage()) return
+        generationTasks.mutate(conversationId) {
 
-        val currentConversation = ensureConversationLoaded(conversationId) ?: return
-        val assistant = settingsStore.settingsFlow.value.getAssistantById(currentConversation.assistantId)
-        val processedParts = if (assistant != null) {
-            parts.map { part ->
-                when (part) {
-                    is UIMessagePart.Text -> {
-                        part.copy(
-                            text = part.text.replaceRegexes(
-                                assistant = assistant,
-                                scope = AssistantAffectScope.USER,
-                                visual = false
+            val currentConversation = ensureConversationLoaded(conversationId) ?: return@mutate
+            val assistant = settingsStore.settingsFlow.value.getAssistantById(currentConversation.assistantId)
+            val processedParts = if (assistant != null) {
+                parts.map { part ->
+                    when (part) {
+                        is UIMessagePart.Text -> {
+                            part.copy(
+                                text = part.text.replaceRegexes(
+                                    assistant = assistant,
+                                    scope = AssistantAffectScope.USER,
+                                    visual = false
+                                )
                             )
-                        )
+                        }
+
+                        else -> part
                     }
-
-                    else -> part
                 }
+            } else {
+                parts
             }
-        } else {
-            parts
+
+            val updatedConversation = currentConversation.copy(
+                messageNodes = currentConversation.messageNodes.map { node ->
+                    val originalMessage = node.messages.find { it.id == messageId } ?: return@map node
+                    node.copy(
+                        messages = node.messages + UIMessage(
+                            role = originalMessage.role,
+                            parts = processedParts,
+                            versionTag = originalMessage.versionTag,
+                        ),
+                        selectIndex = node.messages.size,
+                    )
+                },
+                updateAt = Instant.now(),
+            )
+
+            saveConversation(conversationId, updatedConversation)
         }
-
-        val updatedConversation = currentConversation.copy(
-            messageNodes = currentConversation.messageNodes.map { node ->
-                val originalMessage = node.messages.find { it.id == messageId } ?: return@map node
-                node.copy(
-                    messages = node.messages + UIMessage(
-                        role = originalMessage.role,
-                        parts = processedParts,
-                        versionTag = originalMessage.versionTag,
-                    ),
-                    selectIndex = node.messages.size,
-                )
-            },
-            updateAt = Instant.now(),
-        )
-
-        saveConversation(conversationId, updatedConversation)
     }
 
     suspend fun forkConversationAtMessage(
@@ -1182,53 +1179,55 @@ class ChatService(
         conversationId: Uuid,
         messageId: Uuid,
     ) {
-        val currentConversation = ensureConversationLoaded(conversationId) ?: return
-        val message = currentConversation.messageNodes
-            .flatMap { it.messages }
-            .firstOrNull { it.id == messageId }
-            ?: return
+        generationTasks.mutate(conversationId) {
+            val currentConversation = ensureConversationLoaded(conversationId) ?: return@mutate
+            val message = currentConversation.messageNodes
+                .flatMap { it.messages }
+                .firstOrNull { it.id == messageId }
+                ?: return@mutate
 
-        val updatedConversation = if (message.role == MessageRole.USER) {
-            // User message: delete this message and ALL messages after it
-            val node = currentConversation.getMessageNodeByMessageId(messageId) ?: return
-            val nodeIndex = currentConversation.messageNodes.indexOf(node)
-            if (nodeIndex == -1) return
+            val updatedConversation = if (message.role == MessageRole.USER) {
+                // User message: delete this message and ALL messages after it
+                val node = currentConversation.getMessageNodeByMessageId(messageId) ?: return@mutate
+                val nodeIndex = currentConversation.messageNodes.indexOf(node)
+                if (nodeIndex == -1) return@mutate
 
-            if (node.messages.size > 1) {
-                // Multi-version node: remove just this version and truncate everything after
-                val remainingMessages = node.messages.filter { it.id != messageId }
-                val updatedNode = node.copy(
-                    messages = remainingMessages,
-                    selectIndex = if (node.selectIndex >= remainingMessages.size) {
-                        remainingMessages.lastIndex
-                    } else {
-                        node.selectIndex
-                    }
-                )
-                currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes.subList(0, nodeIndex) +
-                        listOf(updatedNode)
-                )
+                if (node.messages.size > 1) {
+                    // Multi-version node: remove just this version and truncate everything after
+                    val remainingMessages = node.messages.filter { it.id != messageId }
+                    val updatedNode = node.copy(
+                        messages = remainingMessages,
+                        selectIndex = if (node.selectIndex >= remainingMessages.size) {
+                            remainingMessages.lastIndex
+                        } else {
+                            node.selectIndex
+                        }
+                    )
+                    currentConversation.copy(
+                        messageNodes = currentConversation.messageNodes.subList(0, nodeIndex) +
+                            listOf(updatedNode)
+                    )
+                } else {
+                    // Single-version node: truncate everything from this node onward
+                    currentConversation.copy(
+                        messageNodes = currentConversation.messageNodes.subList(0, nodeIndex)
+                    )
+                }
             } else {
-                // Single-version node: truncate everything from this node onward
-                currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes.subList(0, nodeIndex)
-                )
+                // Assistant/Tool message: existing behavior
+                val relatedMessages = collectRelatedMessages(currentConversation, message)
+                var result = deleteMessageInternal(currentConversation, message)
+                relatedMessages.forEach { related ->
+                    result = deleteMessageInternal(result, related)
+                }
+                result
             }
-        } else {
-            // Assistant/Tool message: existing behavior
-            val relatedMessages = collectRelatedMessages(currentConversation, message)
-            var result = deleteMessageInternal(currentConversation, message)
-            relatedMessages.forEach { related ->
-                result = deleteMessageInternal(result, related)
-            }
-            result
-        }
 
-        saveConversation(
-            conversationId = conversationId,
-            conversation = updatedConversation.copy(updateAt = Instant.now()),
-        )
+            saveConversation(
+                conversationId = conversationId,
+                conversation = updatedConversation.copy(updateAt = Instant.now()),
+            )
+        }
     }
 
     suspend fun selectMessageNode(
@@ -1236,15 +1235,17 @@ class ChatService(
         nodeId: Uuid,
         selectIndex: Int,
     ) {
-        val currentConversation = ensureConversationLoaded(conversationId) ?: return
-        val updatedConversation = selectConversationTurnVersion(
-            conversation = currentConversation,
-            nodeId = nodeId,
-            selectIndex = selectIndex,
-        ).copy(
-            updateAt = Instant.now(),
-        )
-        saveConversation(conversationId, updatedConversation)
+        generationTasks.mutate(conversationId) {
+            val currentConversation = ensureConversationLoaded(conversationId) ?: return@mutate
+            val updatedConversation = selectConversationTurnVersion(
+                conversation = currentConversation,
+                nodeId = nodeId,
+                selectIndex = selectIndex,
+            ).copy(
+                updateAt = Instant.now(),
+            )
+            saveConversation(conversationId, updatedConversation)
+        }
     }
 
     suspend fun handleToolApproval(
@@ -1254,9 +1255,7 @@ class ChatService(
         reason: String,
         answer: String?,
     ) {
-        getGenerationJob(conversationId)?.cancel()
-
-        val job = appScope.launch {
+        launchGeneration(conversationId) {
             try {
                 val currentConversation = ensureConversationLoaded(conversationId)
                     ?: error("Conversation not found")
@@ -1264,7 +1263,7 @@ class ChatService(
                     ?: error("Tool call $toolCallId not found")
                 if (pendingToolCall.approvalState !is ToolApprovalState.Pending) {
                     Log.w(TAG, "Ignoring tool approval for non-pending call: $toolCallId")
-                    return@launch
+                    return@launchGeneration
                 }
 
                 val settings = settingsStore.settingsFlow.first()
@@ -1321,17 +1320,9 @@ class ChatService(
 
                 emitGenerationDone(conversationId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 e.printStackTrace()
                 _errorFlow.emit(e)
-            }
-        }
-
-        setGenerationJob(conversationId, job)
-        job.invokeOnCompletion {
-            setGenerationJob(conversationId, null)
-            appScope.launch {
-                delay(500)
-                checkAllConversationsReferences()
             }
         }
     }
@@ -1353,9 +1344,8 @@ class ChatService(
         setConversationPersistenceMode(conversationId, effectiveMode)
 
         // 取消现有的生成任务
-        getGenerationJob(conversationId)?.cancel()
 
-        val job = appScope.launch {
+        launchGeneration(conversationId) {
             try {
                 var effectiveContent = content
                 val currentConversation = getConversationFlow(conversationId).value
@@ -1397,6 +1387,7 @@ class ChatService(
                                         }
                                     }
                                 } catch (e: Exception) {
+                if (e is CancellationException) throw e
                                     e.printStackTrace()
                                 }
                             }
@@ -1434,17 +1425,9 @@ class ChatService(
 
                 emitGenerationDone(conversationId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 e.printStackTrace()
                 _errorFlow.emit(e)
-            }
-        }
-        setGenerationJob(conversationId, job)
-        job.invokeOnCompletion {
-            setGenerationJob(conversationId, null)
-            // 取消生成任务后，检查是否有其他任务在进行
-            appScope.launch {
-                delay(500)
-                checkAllConversationsReferences()
             }
         }
     }
@@ -1459,15 +1442,13 @@ class ChatService(
         regenerateAssistantMsg: Boolean = true,
         suppressCompletionNotification: Boolean = false,
     ) {
-        getGenerationJob(conversationId)?.cancel()
-
-        val job = appScope.launch {
+        launchGeneration(conversationId) {
             try {
                 val conversation = getConversationFlow(conversationId).value
 
                 if (message.role == MessageRole.USER) {
                     // If user message, truncate to that message and regenerate
-                    val node = conversation.getMessageNodeByMessage(message)
+                    val node = conversation.getMessageNodeByMessage(message) ?: return@launchGeneration
                     val indexAt = conversation.messageNodes.indexOf(node)
                     val newConversation = conversation.copy(
                         messageNodes = conversation.messageNodes.subList(0, indexAt + 1)
@@ -1485,7 +1466,7 @@ class ChatService(
                 } else {
                     // TURN-BASED REGENERATION for assistant messages
                     if (regenerateAssistantMsg) {
-                        val clickedNode = conversation.getMessageNodeByMessage(message)
+                        val clickedNode = conversation.getMessageNodeByMessage(message) ?: return@launchGeneration
                         val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
 
                         // Find the last user message before this point
@@ -1554,17 +1535,8 @@ class ChatService(
 
                 emitGenerationDone(conversationId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _errorFlow.emit(e)
-            }
-        }
-
-        setGenerationJob(conversationId, job)
-        job.invokeOnCompletion {
-            setGenerationJob(conversationId, null)
-            // 取消生成任务后，检查是否有其他任务在进行
-            appScope.launch {
-                delay(500)
-                checkAllConversationsReferences()
             }
         }
     }
@@ -1709,77 +1681,83 @@ class ChatService(
                     _contextUsage.value = current + (conversationId to usage)
                 },
             ).onCompletion { cause ->
-                if (conversationDeletionLedger.isTombstoned(conversationId)) {
-                    LogUtil.i(TAG, "generation onCompletion: skipping persist for tombstoned $conversationId")
-                    return@onCompletion
-                }
-                // Calculate generation duration from first token (excludes TTFT)
-                val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
+                withContext(NonCancellable) {
+                    if (conversationDeletionLedger.isTombstoned(conversationId)) {
+                        LogUtil.i(TAG, "generation onCompletion: skipping persist for tombstoned $conversationId")
+                        return@withContext
+                    }
+                    // Calculate generation duration from first token (excludes TTFT)
+                    val generationDurationMs = firstTokenTime?.let { System.currentTimeMillis() - it }
 
-                // 可能被取消了，或者意外结束，兜底更新
-                val currentConversation = latestStreamingConversation ?: getConversationFlow(conversationId).value
-                val regenerationLastNodeIndex = assistantRegeneration?.let { regeneration ->
-                    val turnEndIndex = currentConversation.messageNodes
-                        .subList(regeneration.turnStartNodeIndex, currentConversation.messageNodes.size)
-                        .indexOfFirst { it.role == MessageRole.USER }
-                        .let { offset ->
-                            if (offset == -1) currentConversation.messageNodes.size
-                            else regeneration.turnStartNodeIndex + offset
-                        }
-                    (regeneration.turnStartNodeIndex until turnEndIndex).lastOrNull { index ->
-                        currentConversation.messageNodes[index].messages.any {
-                            it.versionTag == regeneration.versionTag
+                    // 可能被取消了，或者意外结束，兜底更新
+                    val liveConversation = getConversationFlow(conversationId).value
+                    val currentConversation = latestStreamingConversation?.let {
+                        liveConversation.copy(messageNodes = it.messageNodes)
+                    } ?: liveConversation
+                    val regenerationLastNodeIndex = assistantRegeneration?.let { regeneration ->
+                        val turnEndIndex = currentConversation.messageNodes
+                            .subList(regeneration.turnStartNodeIndex, currentConversation.messageNodes.size)
+                            .indexOfFirst { it.role == MessageRole.USER }
+                            .let { offset ->
+                                if (offset == -1) currentConversation.messageNodes.size
+                                else regeneration.turnStartNodeIndex + offset
+                            }
+                        (regeneration.turnStartNodeIndex until turnEndIndex).lastOrNull { index ->
+                            currentConversation.messageNodes[index].messages.any {
+                                it.versionTag == regeneration.versionTag
+                            }
                         }
                     }
-                }
-                val updatedConversation = currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes.mapIndexed { index, node ->
-                        node.copy(messages = node.messages.map { msg ->
-                            val finishedMsg = msg.finishReasoning()
-                            // Add generation duration to the last assistant message
-                            val isCompletionTarget = if (assistantRegeneration == null) {
-                                index == currentConversation.messageNodes.lastIndex
-                            } else {
-                                index == regenerationLastNodeIndex &&
-                                    finishedMsg.versionTag == assistantRegeneration.versionTag
-                            }
-                            if (isCompletionTarget && finishedMsg.role == MessageRole.ASSISTANT && finishedMsg.generationDurationMs == null) {
-                                // Debug usage
-                                if (finishedMsg.usage == null) {
-                                    Log.w(TAG, "Assistant message usage is null in onCompletion")
+                    val updatedConversation = currentConversation.copy(
+                        messageNodes = currentConversation.messageNodes.mapIndexed { index, node ->
+                            node.copy(messages = node.messages.map { msg ->
+                                val finishedMsg = msg.finishReasoning()
+                                // Add generation duration to the last assistant message
+                                val isCompletionTarget = if (assistantRegeneration == null) {
+                                    index == currentConversation.messageNodes.lastIndex
+                                } else {
+                                    index == regenerationLastNodeIndex &&
+                                        finishedMsg.versionTag == assistantRegeneration.versionTag
                                 }
-                                finishedMsg.copy(generationDurationMs = generationDurationMs)
-                            } else {
-                                finishedMsg
-                            }
-                        })
-                    },
-                    updateAt = Instant.now()
-                )
-                val cleanedConversation = updatedConversation.removeTrailingEmptyOcrPlaceholder()
-                updateConversation(conversationId, cleanedConversation)
-                val completionPersisted = if (getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL) {
-                    persistConversationToRepository(
-                        conversation = cleanedConversation,
-                        preserveConsolidation = preserveConsolidation,
+                                if (isCompletionTarget && finishedMsg.role == MessageRole.ASSISTANT && finishedMsg.generationDurationMs == null) {
+                                    // Debug usage
+                                    if (finishedMsg.usage == null) {
+                                        Log.w(TAG, "Assistant message usage is null in onCompletion")
+                                    }
+                                    finishedMsg.copy(generationDurationMs = generationDurationMs)
+                                } else {
+                                    finishedMsg
+                                }
+                            })
+                        },
+                        updateAt = Instant.now()
                     )
-                } else {
-                    true
-                }
+                    val cleanedConversation = updatedConversation.removeTrailingEmptyOcrPlaceholder()
+                    updateConversation(conversationId, cleanedConversation)
+                    val completionPersisted = if (getConversationPersistenceMode(conversationId) == ChatPersistenceMode.NORMAL) {
+                        persistConversationToRepository(
+                            conversation = cleanedConversation,
+                            preserveConsolidation = preserveConsolidation,
+                        )
+                    } else {
+                        true
+                    }
 
-                // Show notification if app is not in foreground
-                if (
-                    cause == null &&
-                    completionPersisted &&
-                    !cleanedConversation.hasPendingToolApprovals() &&
-                    cleanedConversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true &&
-                    !suppressCompletionNotification &&
-                    !isForeground.value &&
-                    settings.displaySetting.enableNotificationOnMessageGeneration
-                ) {
-                    sendGenerationDoneNotification(conversationId)
+                    // Show notification if app is not in foreground
+                    if (
+                        cause == null &&
+                        completionPersisted &&
+                        !cleanedConversation.hasPendingToolApprovals() &&
+                        cleanedConversation.currentMessages.lastOrNull()?.hasDurableAssistantProgress() == true &&
+                        !suppressCompletionNotification &&
+                        !isForeground.value &&
+                        settings.displaySetting.enableNotificationOnMessageGeneration
+                    ) {
+                        sendGenerationDoneNotification(conversationId)
+                    }
                 }
             }.collect { chunk ->
+                currentCoroutineContext().ensureActive()
                 // Set first token time on first chunk arrival (excludes TTFT from tok/s)
                 val isFirstTokenArrival = firstTokenTime == null
                 if (isFirstTokenArrival) {
@@ -1788,7 +1766,10 @@ class ChatService(
                 
                 when (chunk) {
                     is GenerationChunk.Messages -> {
-                        val currentConversation = latestStreamingConversation ?: getConversationFlow(conversationId).value
+                        val liveConversation = getConversationFlow(conversationId).value
+                        val currentConversation = latestStreamingConversation?.let {
+                            liveConversation.copy(messageNodes = it.messageNodes)
+                        } ?: liveConversation
                         val updatedConversation = if (assistantRegeneration != null) {
                             mergeRegeneratedAssistantTurn(
                                 conversation = currentConversation,
@@ -1856,7 +1837,7 @@ class ChatService(
                 break
             }
         }.onFailure {
-            if (it is CancellationException) return@onFailure
+            if (it is CancellationException) throw it
             it.printStackTrace()
             _errorFlow.emit(it)
             Logging.log(TAG, "handleMessageComplete: $it")
@@ -2853,17 +2834,25 @@ class ChatService(
 
             val summaryTokens = ContextTokenEstimator.textTokens(rawSummary, model)
 
-            // Update conversation with summary
-            val now = System.currentTimeMillis()
-            val updatedConversation = conversation.copy(
-                contextSummary = finalSummary,
-                contextSummaryUpToIndex = lastIndexToSummarize, // Index of last message included in summary
-                lastRefreshTime = now
+            // A summary may finish after a deletion, regeneration or a newer reply. Wait
+            // for the current writer without cancelling it, then validate the summarized prefix.
+            val applied = generationTasks.mutate(conversationId, cancelGeneration = false) {
+                if (conversationDeletionLedger.isTombstoned(conversationId)) return@mutate false
+                val live = getConversationSnapshot(conversationId) ?: return@mutate false
+                val updated = applyContextSummaryIfCurrent(
+                    live = live,
+                    source = conversation,
+                    summary = finalSummary,
+                    lastMessageIndex = lastIndexToSummarize,
+                    nowMs = System.currentTimeMillis(),
+                ) ?: return@mutate false
+                saveConversation(conversationId, updated, preserveConsolidation = true)
+                true
+            }
+            if (!applied) return@withContext contextRefreshError(
+                R.string.context_refresh_error_unexpected,
+                "The conversation changed while its context was being summarized. Please try again.",
             )
-
-            // Persist changes
-            conversationRepo.updateConversation(updatedConversation)
-            updateConversation(conversationId, updatedConversation)
 
             Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages into Milestone $nextMilestoneNumber, saved ~${originalTokens - summaryTokens} tokens")
 
@@ -2874,6 +2863,7 @@ class ChatService(
                 tokensSaved = (originalTokens - summaryTokens).coerceAtLeast(0)
             )
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "summarizeAndRefresh failed", e)
             val errorMessage = e.message?.takeIf { it.isNotBlank() }
             if (errorMessage != null) {
@@ -2884,6 +2874,12 @@ class ChatService(
         }
     }
 
+
+    suspend fun replaceConversationHistory(conversationId: Uuid, conversation: Conversation) {
+        generationTasks.mutate(conversationId) {
+            saveConversation(conversationId, conversation.copy(updateAt = Instant.now()))
+        }
+    }
 
     // 保存对话
     suspend fun saveConversation(
@@ -2900,19 +2896,20 @@ class ChatService(
             chatAttachmentRepository.syncConversationAttachments(normalizedConversation)
         }
 
-        // 临时对话不持久化到数据库
+        val updatedConversation = mergeLiveMessagesIfIncomingIsStale(
+            liveConversation = getConversationState(conversationId)?.value,
+            incomingConversation = synchronizedConversation,
+        )
+
+        // Temporary chats need the same post-I/O snapshot guard as persisted chats.
         if (getConversationPersistenceMode(conversationId) != ChatPersistenceMode.NORMAL) {
-            updateConversation(conversationId, synchronizedConversation)
+            updateConversation(conversationId, updatedConversation)
             return
         }
 
-        val updatedConversation = synchronizedConversation.copy()
         // Always update in-memory state (even for empty conversations)
         // This ensures mode toggles work on new chats before first message
         updateConversation(conversationId, updatedConversation)
-
-        // Skip database persist for empty conversations (no messages and no title)
-        if (updatedConversation.title.isBlank() && updatedConversation.messageNodes.isEmpty()) return
 
         persistConversationToRepository(
             conversation = updatedConversation,
@@ -3030,8 +3027,7 @@ class ChatService(
     }
 
     fun cleanupConversation(conversationId: Uuid) {
-        getGenerationJob(conversationId)?.cancel()
-        removeGenerationJob(conversationId)
+        generationTasks.cancel(conversationId)
         removeConversationState(conversationId)
         removeContextUsage(conversationId)
         setContextManagementActivity(conversationId, null)
@@ -3039,7 +3035,7 @@ class ChatService(
 
         Log.i(
             TAG,
-            "cleanupConversation: removed $conversationId (current references: ${conversationReferenceCount()}, generation jobs: ${_generationJobs.value.size})"
+            "cleanupConversation: removed $conversationId (current references: ${conversationReferenceCount()}, generation jobs: ${generationJobs.value.size})"
         )
     }
 }

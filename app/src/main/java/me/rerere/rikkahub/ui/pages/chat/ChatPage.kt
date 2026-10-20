@@ -1644,7 +1644,7 @@ private fun ChatPageContent(
                                                 action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                                                     label = context.getString(R.string.undo),
                                                     onClick = {
-                                                        vm.updateConversation(backup)
+                                                        vm.restoreConversationHistory(backup)
                                                         vm.markNodesAsRestored(removedIds)
                                                     }
                                                 )
@@ -1657,7 +1657,7 @@ private fun ChatPageContent(
                                             if (oldNode.selectIndex != newNode.selectIndex) {
                                                 vm.selectMessageNode(newNode.id, newNode.selectIndex)
                                             } else {
-                                                vm.updateConversation(
+                                                vm.restoreConversationHistory(
                                                     frameConversation.copy(
                                                         messageNodes = frameConversation.messageNodes.map { node ->
                                                             if (node.id == newNode.id) {

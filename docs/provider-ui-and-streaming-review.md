@@ -102,7 +102,33 @@ streaming/code render harnesses check the fade/focus output. These are Android A
 renders, not a Samsung One UI 9 device or a device-frame-rate benchmark. Live paid
 account generation still needs a phone-side check.
 
-The uploaded recording exceeds the execution tool's 32 MiB transfer limit. Its
-specific error cannot be identified from the inaccessible video; the exact message
-has been requested separately. No claim is made that this unidentified error has
-been reproduced or that every possible runtime error can be prevented.
+## Recording: overlapping assistant generations
+
+The compressed 95-second recording is now accessible. It shows assistant tool
+follow-ups changing/reappearing after deletion, with generation controls no longer
+matching the updates. The generation registry previously cancelled an old job
+without waiting for its final flush, and each job's completion unconditionally
+removed the chat's current job. An old completion could therefore hide a newer
+stream while both generations still wrote snapshots. History mutations and late
+metadata saves could also restore older nodes or switch the visible reply version.
+
+Generation now has one writer lane per conversation. A replacement waits for the
+previous stream's final text/reasoning flush; only the matching job is removed
+from the registry. Cancelling a queued replacement still tracks any predecessor
+that is finishing. Edits, deletions, reply-version changes and explicit history
+restores take the same lane. Tool cancellation propagates instead of becoming a
+tool error followed by another assistant step. A deleted regeneration target is
+ignored. Late metadata saves preserve current message nodes, including deletions;
+per-chat database write locks prevent an older save from finishing after a newer
+save. The stale-snapshot guard also applies to temporary chats. Clearing an existing
+chat persists its empty history, while a new empty draft still creates no row.
+Independent chats remain concurrent. Background context summaries also wait for
+active generation without cancelling it, then rebase only if the summarized prefix
+and prior summary still match; their old input snapshot is never restored.
+
+Regression tests cover 100 rapid regenerations, simultaneous chats, deletion
+while cancellation is flushing, queued cancellation, editing followed by a new
+reply, late metadata after deletion/version selection, and persistence ordering.
+The final deliverable uses **stableRelease**, the normal LastChat application ID
+and label, while source changes remain committed on `lastchat_dev`. It uses the
+uploaded signing key and ARM64 libraries for the S24 Exynos.

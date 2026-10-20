@@ -626,6 +626,12 @@ class ChatVM(
         }
     }
 
+    fun restoreConversationHistory(snapshot: Conversation) {
+        viewModelScope.launch {
+            chatService.replaceConversationHistory(_conversationId, snapshot)
+        }
+    }
+
     fun updateConversation(newConversation: Conversation) {
         viewModelScope.launch {
             chatService.saveConversation(_conversationId, newConversation)
