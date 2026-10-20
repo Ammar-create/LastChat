@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -291,35 +294,17 @@ fun LorebooksPageContent(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
-    var orderedLorebooks by remember { mutableStateOf(settings.lorebooks) }
-    var isReordering by remember { mutableStateOf(false) }
-    var awaitingPersistedOrder by remember { mutableStateOf(false) }
-    val canDelete = true
-
-    LaunchedEffect(settings.lorebooks, isReordering) {
-        if (!isReordering) {
-            if (awaitingPersistedOrder && settings.lorebooks.map { it.id } != orderedLorebooks.map { it.id }) {
-                return@LaunchedEffect
-            }
-            awaitingPersistedOrder = false
-            orderedLorebooks = settings.lorebooks
-        }
+    val itemOrder = rememberReorderableItems(settings.lorebooks, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(lorebooks = latest.lorebooks.reorderedByKeys(order) { it.id }) }
     }
+    val orderedLorebooks = itemOrder.items
+    val canDelete = true
 
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
     }
 
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index
-        val toIndex = to.index
-        if (fromIndex !in orderedLorebooks.indices || toIndex !in 0..orderedLorebooks.size) {
-            return@rememberReorderableLazyListState
-        }
-        orderedLorebooks = orderedLorebooks.toMutableList().apply {
-            add(toIndex, removeAt(fromIndex))
-        }
-    }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to -> itemOrder.move(from.key, to.key) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -461,15 +446,9 @@ fun LorebooksPageContent(
                                             onClick = {},
                                             modifier = Modifier.longPressDraggableHandle(
                                                 onDragStarted = {
-                                                    isReordering = true
                                                     haptics.perform(HapticPattern.Pop)
                                                 },
                                                 onDragStopped = {
-                                                    isReordering = false
-                                                    if (orderedLorebooks.map { it.id } != settings.lorebooks.map { it.id }) {
-                                                        awaitingPersistedOrder = true
-                                                        vm.updateSettings { settings -> settings.copy(lorebooks = orderedLorebooks) }
-                                                    }
                                                     haptics.perform(HapticPattern.Thud)
                                                 }
                                             )

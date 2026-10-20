@@ -18,7 +18,7 @@ data class OpenCodeEndpoint(val go: Boolean) {
             id.startsWith("claude-") -> Api.MESSAGES
             // Go's Qwen3.8 Max and MiniMax M3 use Messages; Zen serves these two via Chat.
             id.startsWith("qwen") && (id != "qwen3.8-max" || go) -> Api.MESSAGES
-            go && id == "minimax-m3" -> Api.MESSAGES
+            go && id in setOf("minimax-m2.7", "minimax-m3") -> Api.MESSAGES
             else -> Api.CHAT
         }
     }

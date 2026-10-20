@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -901,16 +904,10 @@ private fun ModelList(
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()
     val modelItemIndexOffset = 0
-    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val fromModelIndex = from.index - modelItemIndexOffset
-        val toModelIndex = to.index - modelItemIndexOffset
-        if (
-            fromModelIndex in providerSetting.models.indices &&
-            toModelIndex in providerSetting.models.indices
-        ) {
-            onUpdateProvider(providerSetting.moveModel(fromModelIndex, toModelIndex))
-        }
+    val modelOrder = rememberReorderableItems(providerSetting.models, key = { it.id }, eagerCommit = true) { order ->
+        onUpdateProvider(providerSetting.copyProvider(models = providerSetting.models.reorderedByKeys(order) { it.id }))
     }
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to -> modelOrder.move(from.key, to.key) }
     val density = LocalDensity.current
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
@@ -990,11 +987,11 @@ private fun ModelList(
 
 
             // 模型列表
-            itemsIndexed(providerSetting.models, key = { _, item -> item.id }) { index, item ->
+            itemsIndexed(modelOrder.items, key = { _, item -> item.id }) { index, item ->
                 val position = when {
-                    providerSetting.models.size == 1 -> ItemPosition.ONLY
+                    modelOrder.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == providerSetting.models.lastIndex -> ItemPosition.LAST
+                    index == modelOrder.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 

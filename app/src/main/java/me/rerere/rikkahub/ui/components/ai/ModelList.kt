@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.components.ai
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -300,7 +303,11 @@ internal fun ColumnScope.ModelList(
     
     // activeProviderId is null initially and is set upon explicit user click
 
-    val favoriteModels = settings.value.favoriteModels.mapNotNull { modelId ->
+    val favoriteOrder = rememberReorderableItems(settings.value.favoriteModels, key = { "favorite:$it" }) { order ->
+        val ids = order.mapNotNull { runCatching { Uuid.parse(it.toString().removePrefix("favorite:")) }.getOrNull() }
+        settingsStore.enqueueUpdate { latest -> latest.copy(favoriteModels = latest.favoriteModels.reorderedByKeys(ids) { it }) }
+    }
+    val favoriteModels = favoriteOrder.items.mapNotNull { modelId ->
         val model = providers.findModelById(modelId) ?: return@mapNotNull null
         val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
         val isTypeMatch = if (modelType == ModelType.STT) {
@@ -415,31 +422,7 @@ internal fun ColumnScope.ModelList(
         }
     }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // 计算favorite models在列表中的位置偏移
-        var favoriteStartIndex = 0
-        if (providers.isEmpty()) {
-            favoriteStartIndex = 1 // no providers item
-        }
-        if (favoriteModels.isNotEmpty()) {
-            favoriteStartIndex += 1 // favorite header
-        }
-
-        val fromIndex = from.index - favoriteStartIndex
-        val toIndex = to.index - favoriteStartIndex
-
-        // 只处理favorite models范围内的拖拽
-        if (fromIndex >= 0 && toIndex >= 0 &&
-            fromIndex < favoriteModels.size && toIndex < favoriteModels.size
-        ) {
-            val newFavoriteModels = settings.value.favoriteModels.toMutableList().apply {
-                add(toIndex, removeAt(fromIndex))
-            }
-            coroutineScope.launch {
-                settingsStore.update { oldSettings ->
-                    oldSettings.copy(favoriteModels = newFavoriteModels)
-                }
-            }
-        }
+        favoriteOrder.move(from.key, to.key)
     }
     val haptics = rememberPremiumHaptics(enabled = settings.value.displaySetting.enableUIHaptics)
 
@@ -548,8 +531,7 @@ internal fun ColumnScope.ModelList(
                                 model = favoriteItem.model,
                                 onSelect = onSelect,
                                 modifier = Modifier
-                                    .scale(dragScale)
-                                    .animateItem(),
+                                    .scale(dragScale),
                                 providerSetting = favoriteItem.provider,
                                 select = favoriteItem.model.id == currentModel,
                                 inGroup = true,

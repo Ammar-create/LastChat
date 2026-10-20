@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -151,8 +154,13 @@ fun SettingLorebookDetailPage(
     var searchQuery by remember { mutableStateOf("") }
     
     // Filter entries based on search query (name and keywords only)
-    val filteredEntries = remember(lorebook?.entries, searchQuery) {
-        val entries = lorebook?.entries ?: emptyList()
+    val entryOrder = rememberReorderableItems(lorebook?.entries.orEmpty(), key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(lorebooks = latest.lorebooks.map { book ->
+            if (book.id == lorebook?.id) book.copy(entries = book.entries.reorderedByKeys(order) { it.id }) else book
+        }) }
+    }
+    val filteredEntries = remember(entryOrder.items, searchQuery) {
+        val entries = entryOrder.items
         if (searchQuery.isBlank()) {
             entries
         } else {
@@ -251,19 +259,7 @@ fun SettingLorebookDetailPage(
     }
     
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (isFiltering) {
-            return@rememberReorderableLazyListState
-        }
-        val fromIndex = from.index - 1
-        val toIndex = to.index - 1
-        if (fromIndex !in lorebook.entries.indices || toIndex !in 0..lorebook.entries.size) {
-            return@rememberReorderableLazyListState
-        }
-        val newEntries = lorebook.entries.toMutableList().apply {
-            add(toIndex, removeAt(fromIndex))
-        }
-        updateLorebook(lorebook.copy(entries = newEntries))
-        haptics.perform(HapticPattern.Pop)
+        if (!isFiltering) entryOrder.move(from.key, to.key)
     }
     
     Scaffold(

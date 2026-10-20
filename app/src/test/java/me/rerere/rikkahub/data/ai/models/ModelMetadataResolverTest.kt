@@ -122,7 +122,7 @@ class ModelMetadataResolverTest {
         val resolved = resolver.applyToModel(Model(modelId = "custom-model"))
 
         assertEquals("custom-model", resolved.canonicalModelId)
-        assertEquals(emptyList<ModelAbility>(), resolved.abilities)
+        assertEquals(listOf(ModelAbility.TOOL), resolved.abilities)
         assertEquals(listOf(Modality.TEXT), resolved.inputModalities)
     }
 
@@ -183,6 +183,7 @@ class ModelMetadataResolverTest {
             model = Model(
                 modelId = "gpt-5-mini",
                 displayName = "GPT-5 mini from API",
+                abilities = emptyList(),
             ),
             providerHint = ProviderSetting.OpenAI(baseUrl = "https://api.openai.com/v1"),
             options = ModelResolutionOptions(
@@ -313,7 +314,7 @@ class ModelMetadataResolverTest {
         val resolved = resolver.applyToModel(Model(modelId = "gpt-5-mini-custom"))
 
         assertEquals("gpt-5-mini-custom", resolved.canonicalModelId)
-        assertEquals(emptyList<ModelAbility>(), resolved.abilities)
+        assertEquals(listOf(ModelAbility.TOOL), resolved.abilities)
     }
 
     @Test

@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.assistant
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -186,8 +189,11 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
     var selectedTagIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
     
     // Filter assistants by both search query and tags
-    val filteredAssistants = remember(settings.assistants, searchQuery, selectedTagIds) {
-        var result = settings.assistants
+    val assistantOrder = rememberReorderableItems(settings.assistants, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(assistants = latest.assistants.reorderedByKeys(order) { it.id }) }
+    }
+    val filteredAssistants = remember(assistantOrder.items, searchQuery, selectedTagIds) {
+        var result = assistantOrder.items
         
         // Filter by search query
         if (searchQuery.isNotBlank()) {
@@ -337,12 +343,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     }
                 } else {
                     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                        if (!isFiltering) {
-                            val newAssistants = settings.assistants.toMutableList().apply {
-                                add(to.index, removeAt(from.index))
-                            }
-                            vm.updateSettings { settings -> settings.copy(assistants = newAssistants) }
-                        }
+                        if (!isFiltering) assistantOrder.move(from.key, to.key)
                     }
 
                 // State for swipe neighbor tracking.

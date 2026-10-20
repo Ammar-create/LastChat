@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.annotation.StringRes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -325,19 +328,11 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
+    val orderedServices = rememberReorderableItems(settings.searchServices, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(searchServices = latest.searchServices.reorderedByKeys(order) { it.id }) }
+    }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val offset = 0
-        val fromIndex = from.index - offset
-        val toIndex = to.index - offset
-
-        if (fromIndex >= 0 && toIndex >= 0 && fromIndex < settings.searchServices.size && toIndex < settings.searchServices.size) {
-            val newServices = settings.searchServices.toMutableList().apply {
-                add(toIndex, removeAt(fromIndex))
-            }
-            vm.updateSettings { settings -> settings.copy(
-                    searchServices = newServices
-                ) }
-        }
+        orderedServices.move(from.key, to.key)
     }
 
     Scaffold(
@@ -409,7 +404,7 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 state = lazyListState
             ) {
-                if (settings.searchServices.isEmpty()) {
+                if (orderedServices.items.isEmpty()) {
                     item(key = "empty") {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -452,11 +447,11 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 } else {
-                itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
+                itemsIndexed(orderedServices.items, key = { _, service -> service.id }) { index, service ->
                 val position = when {
-                    settings.searchServices.size == 1 -> ItemPosition.ONLY
+                    orderedServices.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.searchServices.lastIndex -> ItemPosition.LAST
+                    index == orderedServices.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 
@@ -775,13 +770,11 @@ internal fun SearchProvidersContent(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val density = LocalDensity.current
     val lazyListState = rememberLazyListState()
+    val orderedServices = rememberReorderableItems(settings.searchServices, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(searchServices = latest.searchServices.reorderedByKeys(order) { it.id }) }
+    }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (from.index >= 0 && to.index >= 0 && from.index < settings.searchServices.size && to.index < settings.searchServices.size) {
-            val newServices = settings.searchServices.toMutableList().apply {
-                add(to.index, removeAt(from.index))
-            }
-            vm.updateSettings { settings -> settings.copy(searchServices = newServices) }
-        }
+        orderedServices.move(from.key, to.key)
     }
 
     var editingService by remember { mutableStateOf<SearchServiceOptions?>(null) }
@@ -805,7 +798,7 @@ internal fun SearchProvidersContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
-            if (settings.searchServices.isEmpty()) {
+            if (orderedServices.items.isEmpty()) {
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
@@ -848,11 +841,11 @@ internal fun SearchProvidersContent(
                     }
                 }
             } else {
-            itemsIndexed(settings.searchServices, key = { _, service -> service.id }) { index, service ->
+            itemsIndexed(orderedServices.items, key = { _, service -> service.id }) { index, service ->
                 val position = when {
-                    settings.searchServices.size == 1 -> ItemPosition.ONLY
+                    orderedServices.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.searchServices.lastIndex -> ItemPosition.LAST
+                    index == orderedServices.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
 

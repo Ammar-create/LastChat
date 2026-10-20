@@ -35,6 +35,7 @@ val viewModelModule = module {
     viewModel<SettingVM> {
         SettingVM(
             settingsStore = get(),
+            appScope = get(),
             mcpManager = get(),
             context = get(),
             platformHttpClient = get(),
@@ -52,12 +53,13 @@ val viewModelModule = module {
         )
     }
 
-    viewModel { me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountVM(get(), get(), get()) }
+    viewModel { me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountVM(get(), get()) }
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(
             id = it[0],
             settingsStore = get(),
+            appScope = get(),
             memoryRepository = get(),
             conversationRepository = get(),
             chatEpisodeDAO = get(),
@@ -109,6 +111,7 @@ val viewModelModule = module {
             embedder = get(),
             inferenceManager = get(),
             settingsStore = get(),
+            appScope = get(),
             modelCatalogService = get(),
             secretKeyManager = get(),
         )
@@ -121,6 +124,7 @@ val viewModelModule = module {
             install = get(),
             runtime = get(),
             settingsStore = get(),
+            appScope = get(),
         )
     }
     viewModel { me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceVM(get()) }

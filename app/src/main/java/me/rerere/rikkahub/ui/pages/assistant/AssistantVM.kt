@@ -35,7 +35,10 @@ class AssistantVM(
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 
-    fun updateSettings(settings: Settings) = updateSettings { settings }
+    fun updateSettings(edited: Settings) {
+        val base = settings.value
+        updateSettings { latest -> me.rerere.rikkahub.data.datastore.mergeSettingsEdit(base, edited, latest) }
+    }
 
     /** Applies [transform] to the latest settings via the store's ordered queue. */
     fun updateSettings(transform: (Settings) -> Settings) {

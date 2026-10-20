@@ -203,7 +203,7 @@ data class CatalogModel(
     val inputModalities: List<Modality> = listOf(Modality.TEXT),
     @SerialName("output_modalities")
     val outputModalities: List<Modality> = listOf(Modality.TEXT),
-    val abilities: List<ModelAbility> = emptyList(),
+    val abilities: List<ModelAbility> = if (type == ModelType.CHAT) listOf(ModelAbility.TOOL) else emptyList(),
     @SerialName("context_window")
     val contextWindow: Int? = null,
     @SerialName("max_images_in_context")
@@ -241,7 +241,7 @@ data class CatalogModelFamily(
     val inputModalities: List<Modality> = listOf(Modality.TEXT),
     @SerialName("output_modalities")
     val outputModalities: List<Modality> = listOf(Modality.TEXT),
-    val abilities: List<ModelAbility> = emptyList(),
+    val abilities: List<ModelAbility> = if (type == ModelType.CHAT) listOf(ModelAbility.TOOL) else emptyList(),
     @SerialName("context_window")
     val contextWindow: Int? = null,
     @SerialName("max_images_in_context")

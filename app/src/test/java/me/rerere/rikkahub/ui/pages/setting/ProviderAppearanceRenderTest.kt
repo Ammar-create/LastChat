@@ -13,6 +13,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import me.rerere.rikkahub.ui.components.ai.ProviderUsageSummaryContent
+import org.junit.Assert.assertEquals
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -48,6 +53,53 @@ class ProviderAppearanceRenderTest {
         for (dark in listOf(false, true)) {
             for (connected in listOf(false, true)) render(output, dark, connected, 1f)
             render(output, dark, true, 1.3f)
+        }
+    }
+
+    @Test fun usageLoadingKeepsSettingsAndPickerGeometryStable() {
+        for (go in listOf(false, true)) for (textScale in listOf(1f, 1.3f)) {
+            val controller = Robolectric.buildActivity(ComponentActivity::class.java).setup()
+            val activity = controller.get()
+            val density = activity.resources.displayMetrics.density
+            val result = mutableStateOf<Result<ProviderUsage?>?>(null)
+            val provider = if (go) ProviderSetting.OpenAI(baseUrl = "https://opencode.ai/inference/go")
+                else ProviderSetting.OpenAI(subscriptionAccount = SubscriptionAccountType.CHATGPT)
+            val windows = listOf(ProviderUsageWindow("5-hour window", 20.0, Instant.parse("2026-10-21T01:00:00Z")),
+                ProviderUsageWindow("Weekly", 51.0, Instant.parse("2026-10-24T01:00:00Z"))) +
+                if (go) listOf(ProviderUsageWindow("Monthly", 10.0, Instant.parse("2026-11-01T01:00:00Z"))) else emptyList()
+            var cardHeight = 0
+            var pickerHeight = 0
+            activity.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(density, textScale)) {
+                    MaterialTheme(colorScheme = presetColorScheme("ocean", true).withLastChatContrast(true),
+                        typography = me.rerere.rikkahub.ui.theme.Typography, shapes = Shapes) {
+                        Column(Modifier.requiredWidth(360.dp).padding(16.dp)) {
+                            ProviderUsageContent(provider, result.value, onRefresh = {}, onBrowse = {},
+                                modifier = Modifier.onGloballyPositioned { cardHeight = it.size.height })
+                            Box(Modifier.onGloballyPositioned { pickerHeight = it.size.height }) {
+                                ProviderUsageSummaryContent(provider, result.value, onManage = {})
+                            }
+                        }
+                    }
+                }
+            }
+            val view = activity.window.decorView.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+            fun layout() {
+                repeat(6) {
+                    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+                    view.measure(View.MeasureSpec.makeMeasureSpec((360 * density).toInt(), View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec((1200 * density).toInt(), View.MeasureSpec.EXACTLY))
+                    view.layout(0, 0, (360 * density).toInt(), (1200 * density).toInt())
+                }
+            }
+            layout()
+            val loadingCard = cardHeight
+            val loadingPicker = pickerHeight
+            result.value = Result.success(ProviderUsage(windows))
+            layout()
+            assertEquals("settings go=$go scale=$textScale", loadingCard, cardHeight)
+            assertEquals("picker go=$go scale=$textScale", loadingPicker, pickerHeight)
+            controller.pause().stop().destroy()
         }
     }
 

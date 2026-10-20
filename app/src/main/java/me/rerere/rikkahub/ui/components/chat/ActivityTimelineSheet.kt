@@ -1029,15 +1029,6 @@ private fun TimelineAccordionEntry(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .then(
-                if (animateRowSize) {
-                    Modifier.animateContentSize(
-                        animationSpec = TimelineSizeSpring
-                    )
-                } else {
-                    Modifier
-                }
-            )
             .combinedClickable(
                 onClick = onToggleExpanded,
                 onLongClick = onCopyEntry,
@@ -1116,7 +1107,7 @@ private fun TimelineAccordionEntry(
                 }
             }
 
-            if (expanded && hasContent) {
+            me.rerere.rikkahub.ui.motion.ExpandableContent(visible = expanded && hasContent, animate = animateRowSize) {
                 val detailRadius = AppShapes.concentric(
                     TimelineAccordionRowRadius,
                     TimelineAccordionDetailInset,

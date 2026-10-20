@@ -314,10 +314,18 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                         val provider = selectedGuidedProvider ?: return@PasteKeyPage
                         haptics.perform(HapticPattern.Pop)
                         guidedModelsLoading = true
-                        vm.completeGuided(provider, apiKey) {
+                        val keyedProvider = vm.providerWithKey(provider.toProviderSetting(), apiKey)
+                            .copyProvider(enabled = true, models = emptyList())
+                        manualProvider = keyedProvider
+                        manualProviderPreset = provider
+                        vm.fetchModels(keyedProvider) { models ->
+                            if (manualProvider != keyedProvider) return@fetchModels
                             guidedModelsLoading = false
-                            haptics.perform(HapticPattern.Success)
-                            goTo(SetupPage.Success)
+                            if (pageHistory.lastOrNull() != SetupPage.GuidedPasteKey) return@fetchModels
+                            manualModels = models
+                            selectedModels.clear()
+                            roleModels = SetupRoleModels()
+                            goTo(SetupPage.ManualModels)
                         }
                     },
                 )
@@ -362,14 +370,20 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                 SetupPage.ManualKey -> {
                     val accountProvider = manualProvider as? ProviderSetting.OpenAI
                     if (accountProvider?.subscriptionAccount != null) {
-                        AccountSetupPage(provider = accountProvider,
+                        AccountSetupPage(provider = accountProvider, loading = manualModelsLoading,
                             onEdit = { manualProvider = it; vm.accountSetupDraft = it },
                             onContinue = {
                                 val connected = manualProvider ?: return@AccountSetupPage
-                                manualModels = connected.models
-                                selectedModels.clear()
-                                roleModels = SetupRoleModels()
-                                goTo(SetupPage.ManualModels)
+                                manualModelsLoading = true
+                                vm.fetchModels(connected) { models ->
+                                    if (manualProvider != connected) return@fetchModels
+                                    manualModelsLoading = false
+                                    if (pageHistory.lastOrNull() != SetupPage.ManualKey) return@fetchModels
+                                    manualModels = models
+                                    selectedModels.clear()
+                                    roleModels = SetupRoleModels()
+                                    goTo(SetupPage.ManualModels)
+                                }
                             })
                     } else if (manualProvider?.name == "Custom provider") {
                         CustomProviderKeyPage(
@@ -385,7 +399,9 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                                 manualProvider = keyedProvider
                                 manualModelsLoading = true
                                 vm.fetchModels(keyedProvider) { models ->
+                                    if (manualProvider != keyedProvider) return@fetchModels
                                     manualModelsLoading = false
+                                    if (pageHistory.lastOrNull() != SetupPage.ManualKey) return@fetchModels
                                     manualModels = models
                                     selectedModels.clear()
                                     roleModels = SetupRoleModels()
@@ -406,7 +422,9 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                                 manualProvider = keyedProvider
                                 manualModelsLoading = true
                                 vm.fetchModels(keyedProvider) { models ->
+                                    if (manualProvider != keyedProvider) return@fetchModels
                                     manualModelsLoading = false
+                                    if (pageHistory.lastOrNull() != SetupPage.ManualKey) return@fetchModels
                                     manualModels = models
                                     selectedModels.clear()
                                     roleModels = SetupRoleModels()
@@ -845,11 +863,16 @@ private fun LinkOutPage(
 @Composable
 private fun AccountSetupPage(
     provider: ProviderSetting.OpenAI,
+    loading: Boolean = false,
     onEdit: (ProviderSetting.OpenAI) -> Unit,
     onContinue: () -> Unit,
 ) {
+    val accountVm = org.koin.androidx.compose.koinViewModel<me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountVM>(
+        key = "subscription-${provider.id}")
+    val account by accountVm.state.collectAsStateWithLifecycle()
     SetupScaffold(bottom = {
-        CenteredSetupButton(text = "Choose models", enabled = provider.models.isNotEmpty(), onClick = onContinue)
+        CenteredSetupButton(text = if (loading) "Loading models…" else "Choose models",
+            enabled = account.account != null && !account.busy && !loading, onClick = onContinue)
     }) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = SetupEdgePadding).padding(top = 96.dp, bottom = 160.dp),

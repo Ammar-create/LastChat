@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MemoryContextPlannerTest {
-    private val model = Model(modelId = "private-model", contextWindowTokens = 16_384)
+    private val model = Model(modelId = "private-model", contextWindowTokens = 16_384, abilities = emptyList())
 
     @Test
     fun fixedMemoryUsesExactRenderedPromptAndAvailableSurplus() {

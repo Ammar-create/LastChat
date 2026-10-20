@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-10-19",
+  "updated_at": "2026-10-20",
   "search_providers": [
     {
       "id": "keyless",
@@ -3975,7 +3975,8 @@
         "hunyuan"
       ],
       "match_patterns": [
-        "hunyuan"
+        "hunyuan",
+        "(^|[/._-])hy[34](?=$|[-_.])"
       ],
       "icon": "icons/tencent.svg",
       "type": "CHAT",
@@ -5781,6 +5782,100 @@
           ]
         }
       ]
+    },
+    {
+      "id": "muse",
+      "match_patterns": [
+        "muse[-_]spark"
+      ],
+      "icon": "icons/meta.svg",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "provider_slug": "meta",
+      "versions": [],
+      "context_window": 1048576
+    },
+    {
+      "id": "longcat",
+      "match_patterns": [
+        "longcat"
+      ],
+      "icon": "icons/opencode.svg",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "provider_slug": "opencode",
+      "versions": [
+        {
+          "id": "longcat-2.5",
+          "match_patterns": [
+            "longcat[-_.]2[._-]5"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ]
+        }
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "reflection-beam",
+      "match_patterns": [
+        "(^|[/._-])beam($|[-_.])"
+      ],
+      "icon": "icons/opencode.svg",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "provider_slug": "opencode",
+      "versions": [],
+      "context_window": 1048576
+    },
+    {
+      "id": "opencode-previews",
+      "match_patterns": [
+        "^(?:big-pickle|omen-alpha|jev-1\\.13|test)(?:-free)?$"
+      ],
+      "icon": "icons/opencode.svg",
+      "type": "CHAT",
+      "input_modalities": [
+        "TEXT"
+      ],
+      "output_modalities": [
+        "TEXT"
+      ],
+      "abilities": [
+        "TOOL"
+      ],
+      "provider_slug": "opencode",
+      "versions": []
     }
   ],
   "models": [],
@@ -6737,7 +6832,8 @@
       "canonical_model_id": "gpt-5.6-sol",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "input_cost_per_token": 4e-06,
       "output_cost_per_token": 2e-05,
@@ -6774,7 +6870,8 @@
       "canonical_model_id": "gpt-5.6-terra",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "input_cost_per_token": 2e-06,
       "output_cost_per_token": 1.2e-05,
@@ -6850,7 +6947,8 @@
       "canonical_model_id": "gpt-5",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "context_window": 1000000,
       "type": "CHAT",
@@ -7056,7 +7154,8 @@
       "canonical_model_id": "claude-fable-5",
       "provider_ids": [
         "1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "input_cost_per_token": 1e-05,
       "output_cost_per_token": 5e-05,
@@ -7093,7 +7192,8 @@
       "canonical_model_id": "claude-opus-5",
       "provider_ids": [
         "1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "input_cost_per_token": 5e-06,
       "output_cost_per_token": 2.5e-05,
@@ -7130,7 +7230,8 @@
       "canonical_model_id": "claude-sonnet-5",
       "provider_ids": [
         "1fd6005f-a4a7-4b2e-81b2-2d4fa97d5123",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "input_cost_per_token": 2e-06,
       "output_cost_per_token": 1e-05,
@@ -7361,7 +7462,8 @@
       "canonical_model_id": "gemini-3.7-flash",
       "provider_ids": [
         "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "type": "CHAT",
       "input_modalities": [
@@ -7545,7 +7647,9 @@
       ],
       "context_window": 1000000,
       "max_images_in_context": 50,
-      "provider_ids": []
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
     },
     {
       "id": "qwq-32b",
@@ -7690,7 +7794,8 @@
       "canonical_model_id": "glm-5",
       "provider_ids": [
         "e4fce9f0-b4d2-453f-90b6-e1c5b615269c",
-        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "context_window": 1000000,
       "type": "CHAT",
@@ -7843,7 +7948,9 @@
     {
       "id": "kimi-k2.5",
       "canonical_model_id": "kimi-k2.5",
-      "provider_ids": [],
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ],
       "context_window": 256000,
       "type": "CHAT",
       "input_modalities": [
@@ -7949,6 +8056,1301 @@
         "584e2459-7933-4acb-8f8a-3a9e48764708",
         "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ]
+    },
+    {
+      "id": "glm-5.1",
+      "canonical_model_id": "glm-5.1",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "glm-5.2",
+      "canonical_model_id": "glm-5.2",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "grok-4.6",
+      "canonical_model_id": "grok-4.6",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "grok-4.7",
+      "canonical_model_id": "grok-4.7",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "muse-spark-1.2-contributor",
+      "canonical_model_id": "muse-spark-1.2-contributor",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "muse-spark-1.3-contributor",
+      "canonical_model_id": "muse-spark-1.3-contributor",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "omen-alpha",
+      "canonical_model_id": "omen-alpha",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "canonical_model_id": "claude-haiku-5-5",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "hy3",
+      "canonical_model_id": "hy3",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "hy4-preview",
+      "canonical_model_id": "hy4-preview",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "kimi-k2.6",
+      "canonical_model_id": "kimi-k2.6",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "mimo-v2.5",
+      "canonical_model_id": "mimo-v2.5",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "mimo-v2.6-flash",
+      "canonical_model_id": "mimo-v2.6-flash",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "mimo-v2.5-pro",
+      "canonical_model_id": "mimo-v2.5-pro",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "mimo-v2.6-pro",
+      "canonical_model_id": "mimo-v2.6-pro",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "minimax-m2.5",
+      "canonical_model_id": "minimax-m2.5",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "minimax-m2.7",
+      "canonical_model_id": "minimax-m2.7",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-4-argon-contributor",
+      "canonical_model_id": "gemini-4-argon-contributor",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "minimax-m3.1-flash-free",
+      "canonical_model_id": "minimax-m3.1-flash-free",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "longcat-2.0",
+      "canonical_model_id": "longcat-2.0",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "longcat-2.5-preview-free",
+      "canonical_model_id": "longcat-2.5-preview-free",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "step-5-preview",
+      "canonical_model_id": "step-5-preview",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "beam-free",
+      "canonical_model_id": "beam-free",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "qwen3.6-plus",
+      "canonical_model_id": "qwen3.6-plus",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "qwen3.7-max",
+      "canonical_model_id": "qwen3.7-max",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "qwen3.7-plus",
+      "canonical_model_id": "qwen3.7-plus",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708"
+      ]
+    },
+    {
+      "id": "big-pickle",
+      "canonical_model_id": "big-pickle",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "mimo-v2.6-flash-free",
+      "canonical_model_id": "mimo-v2.6-flash-free",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "nemotron-3.5-super-vl-free",
+      "canonical_model_id": "nemotron-3.5-super-vl-free",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "nemotron-3.5-lightning-free",
+      "canonical_model_id": "nemotron-3.5-lightning-free",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "jev-1.13-free",
+      "canonical_model_id": "jev-1.13-free",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "deepseek-v4.1-flash-free",
+      "canonical_model_id": "deepseek-v4.1-flash-free",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "glm-5.3-flash-free",
+      "canonical_model_id": "glm-5.3-flash-free",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "test",
+      "canonical_model_id": "test",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "jev-1.13",
+      "canonical_model_id": "jev-1.13",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-fable-5-1",
+      "canonical_model_id": "claude-fable-5-1",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "canonical_model_id": "claude-haiku-4-5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-opus-4-5",
+      "canonical_model_id": "claude-opus-4-5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-opus-4-6",
+      "canonical_model_id": "claude-opus-4-6",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-opus-4-7",
+      "canonical_model_id": "claude-opus-4-7",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-opus-4-8",
+      "canonical_model_id": "claude-opus-4-8",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-opus-5-5",
+      "canonical_model_id": "claude-opus-5-5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-opus-5-5-backup",
+      "canonical_model_id": "claude-opus-5-5-backup",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "canonical_model_id": "claude-sonnet-4-5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "canonical_model_id": "claude-sonnet-4-6",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "canonical_model_id": "claude-sonnet-5-5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-3-flash",
+      "canonical_model_id": "gemini-3-flash",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "canonical_model_id": "gemini-3.1-pro",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "canonical_model_id": "gemini-3.5-flash",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "canonical_model_id": "gemini-3.5-flash-lite",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-3.6-flash",
+      "canonical_model_id": "gemini-3.6-flash",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "canonical_model_id": "gemini-3.8-flash",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5-codex",
+      "canonical_model_id": "gpt-5-codex",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5-nano",
+      "canonical_model_id": "gpt-5-nano",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.1",
+      "canonical_model_id": "gpt-5.1",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.1-codex",
+      "canonical_model_id": "gpt-5.1-codex",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.1-codex-max",
+      "canonical_model_id": "gpt-5.1-codex-max",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.1-codex-mini",
+      "canonical_model_id": "gpt-5.1-codex-mini",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.2",
+      "canonical_model_id": "gpt-5.2",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.2-codex",
+      "canonical_model_id": "gpt-5.2-codex",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "canonical_model_id": "gpt-5.3-codex",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.3-codex-spark",
+      "canonical_model_id": "gpt-5.3-codex-spark",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.4",
+      "canonical_model_id": "gpt-5.4",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "canonical_model_id": "gpt-5.4-mini",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "canonical_model_id": "gpt-5.4-nano",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.4-pro",
+      "canonical_model_id": "gpt-5.4-pro",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.5",
+      "canonical_model_id": "gpt-5.5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-5.5-pro",
+      "canonical_model_id": "gpt-5.5-pro",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "grok-4.5",
+      "canonical_model_id": "grok-4.5",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "grok-build-0.1",
+      "canonical_model_id": "grok-build-0.1",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "muse-spark-1.2",
+      "canonical_model_id": "muse-spark-1.2",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "muse-spark-1.3",
+      "canonical_model_id": "muse-spark-1.3",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "mistral-large-4",
+      "canonical_model_id": "mistral-large-4",
+      "provider_ids": [
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "deepseek-v4.1-flash",
+      "canonical_model_id": "deepseek-v4.1-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "glm-5.1",
+      "canonical_model_id": "glm-5.1",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "context_window": 202752
+    },
+    {
+      "id": "grok-4.6",
+      "canonical_model_id": "grok-4.6",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "context_window": 500000
+    },
+    {
+      "id": "muse-spark-1.2-contributor",
+      "canonical_model_id": "muse-spark-1.2-contributor",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "muse-spark-1.3-contributor",
+      "canonical_model_id": "muse-spark-1.3-contributor",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "canonical_model_id": "gpt-5.6-luna",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "hy3",
+      "canonical_model_id": "hy3",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ]
+    },
+    {
+      "id": "hy4-preview",
+      "canonical_model_id": "hy4-preview",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1024000
+    },
+    {
+      "id": "kimi-k2.7-code",
+      "canonical_model_id": "kimi-k2.7-code",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "kimi-k3",
+      "canonical_model_id": "kimi-k3",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "mimo-v2.5",
+      "canonical_model_id": "mimo-v2.5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "mimo-v2.6-flash",
+      "canonical_model_id": "mimo-v2.6-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "mimo-v2.5-pro",
+      "canonical_model_id": "mimo-v2.5-pro",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "mimo-v2.6-pro",
+      "canonical_model_id": "mimo-v2.6-pro",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "minimax-m2.5",
+      "canonical_model_id": "minimax-m2.5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "context_window": 196000
+    },
+    {
+      "id": "longcat-2.0",
+      "canonical_model_id": "longcat-2.0",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "longcat-2.5-preview-free",
+      "canonical_model_id": "longcat-2.5-preview-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "step-5-preview",
+      "canonical_model_id": "step-5-preview",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "beam-free",
+      "canonical_model_id": "beam-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "qwen3.7-max",
+      "canonical_model_id": "qwen3.7-max",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference/go(?:/.*)?|zen/go/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT"
+      ]
+    },
+    {
+      "id": "big-pickle",
+      "canonical_model_id": "big-pickle",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 200000
+    },
+    {
+      "id": "beam-free",
+      "canonical_model_id": "beam-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "mimo-v2.6-flash-free",
+      "canonical_model_id": "mimo-v2.6-flash-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 200000
+    },
+    {
+      "id": "nemotron-3.5-super-vl-free",
+      "canonical_model_id": "nemotron-3.5-super-vl-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "nemotron-3.5-lightning-free",
+      "canonical_model_id": "nemotron-3.5-lightning-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "longcat-2.5-preview-free",
+      "canonical_model_id": "longcat-2.5-preview-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "deepseek-v4.1-flash-free",
+      "canonical_model_id": "deepseek-v4.1-flash-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 200000
+    },
+    {
+      "id": "glm-5.3-flash-free",
+      "canonical_model_id": "glm-5.3-flash-free",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 200000
+    },
+    {
+      "id": "claude-opus-4-6",
+      "canonical_model_id": "claude-opus-4-6",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "claude-opus-4-7",
+      "canonical_model_id": "claude-opus-4-7",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "claude-opus-4-8",
+      "canonical_model_id": "claude-opus-4-8",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "claude-sonnet-4-5",
+      "canonical_model_id": "claude-sonnet-4-5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "canonical_model_id": "claude-sonnet-4-6",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "deepseek-v4.1-flash",
+      "canonical_model_id": "deepseek-v4.1-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1000000
+    },
+    {
+      "id": "gemini-3-flash",
+      "canonical_model_id": "gemini-3-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gemini-3.1-pro",
+      "canonical_model_id": "gemini-3.1-pro",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "canonical_model_id": "gemini-3.5-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "canonical_model_id": "gemini-3.5-flash-lite",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gemini-3.6-flash",
+      "canonical_model_id": "gemini-3.6-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gemini-3.7-flash",
+      "canonical_model_id": "gemini-3.7-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "canonical_model_id": "gemini-3.8-flash",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "glm-5",
+      "canonical_model_id": "glm-5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 204800
+    },
+    {
+      "id": "glm-5.1",
+      "canonical_model_id": "glm-5.1",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 204800
+    },
+    {
+      "id": "gpt-5",
+      "canonical_model_id": "gpt-5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5-codex",
+      "canonical_model_id": "gpt-5-codex",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5-nano",
+      "canonical_model_id": "gpt-5-nano",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.1",
+      "canonical_model_id": "gpt-5.1",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.1-codex",
+      "canonical_model_id": "gpt-5.1-codex",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.1-codex-max",
+      "canonical_model_id": "gpt-5.1-codex-max",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.1-codex-mini",
+      "canonical_model_id": "gpt-5.1-codex-mini",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.2",
+      "canonical_model_id": "gpt-5.2",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.2-codex",
+      "canonical_model_id": "gpt-5.2-codex",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "canonical_model_id": "gpt-5.3-codex",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.3-codex-spark",
+      "canonical_model_id": "gpt-5.3-codex-spark",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT"
+      ],
+      "context_window": 128000
+    },
+    {
+      "id": "gpt-5.4",
+      "canonical_model_id": "gpt-5.4",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "canonical_model_id": "gpt-5.4-mini",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "canonical_model_id": "gpt-5.4-nano",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 400000
+    },
+    {
+      "id": "gpt-5.4-pro",
+      "canonical_model_id": "gpt-5.4-pro",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "gpt-5.5",
+      "canonical_model_id": "gpt-5.5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "gpt-5.5-pro",
+      "canonical_model_id": "gpt-5.5-pro",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "canonical_model_id": "gpt-5.6-luna",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "canonical_model_id": "gpt-5.6-sol",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "canonical_model_id": "gpt-5.6-terra",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1050000
+    },
+    {
+      "id": "grok-4.5",
+      "canonical_model_id": "grok-4.5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "context_window": 500000
+    },
+    {
+      "id": "grok-4.6",
+      "canonical_model_id": "grok-4.6",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "context_window": 500000
+    },
+    {
+      "id": "grok-build-0.1",
+      "canonical_model_id": "grok-build-0.1",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 256000
+    },
+    {
+      "id": "kimi-k2.5",
+      "canonical_model_id": "kimi-k2.5",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "kimi-k2.6",
+      "canonical_model_id": "kimi-k2.6",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "kimi-k2.7-code",
+      "canonical_model_id": "kimi-k2.7-code",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "kimi-k3",
+      "canonical_model_id": "kimi-k3",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "minimax-m3",
+      "canonical_model_id": "minimax-m3",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 512000
+    },
+    {
+      "id": "muse-spark-1.2",
+      "canonical_model_id": "muse-spark-1.2",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "muse-spark-1.3",
+      "canonical_model_id": "muse-spark-1.3",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 1048576
+    },
+    {
+      "id": "mistral-large-4",
+      "canonical_model_id": "mistral-large-4",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "input_modalities": [
+        "TEXT",
+        "IMAGE"
+      ],
+      "abilities": [
+        "TOOL",
+        "REASONING"
+      ],
+      "context_window": 524288
+    },
+    {
+      "id": "qwen3.5-plus",
+      "canonical_model_id": "qwen3.5-plus",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "qwen3.6-plus",
+      "canonical_model_id": "qwen3.6-plus",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
+    },
+    {
+      "id": "qwen3.8-max",
+      "canonical_model_id": "qwen3.8-max",
+      "base_url_patterns": [
+        "^https://opencode\\.ai/(?:inference(?:/(?!go(?:/|$)).*)?|zen/v1/?)$"
+      ],
+      "context_window": 262144
     }
   ],
   "stt_providers": [

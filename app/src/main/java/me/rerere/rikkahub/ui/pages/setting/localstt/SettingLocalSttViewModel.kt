@@ -40,6 +40,7 @@ class SettingLocalSttViewModel(
     private val install: SherpaModelInstall,
     private val runtime: SherpaSttRuntime,
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
 ) : ViewModel() {
     private val catalogFlow = MutableStateFlow(SherpaModelCatalog())
 
@@ -100,6 +101,12 @@ class SettingLocalSttViewModel(
     fun rename(id: String, displayName: String) {
         viewModelScope.launch {
             store.rename(id, displayName.trim().ifBlank { id })
+        }
+    }
+
+    fun reorderInstalledModels(ids: List<Any>) {
+        appScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            store.reorder(ids.map { it.toString().removePrefix("sherpa-installed-") })
         }
     }
 

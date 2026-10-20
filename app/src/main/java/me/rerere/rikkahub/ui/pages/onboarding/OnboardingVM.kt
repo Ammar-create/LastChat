@@ -127,28 +127,6 @@ class OnboardingVM(
         }
     }
 
-    fun completeGuided(preset: ProviderPreset, apiKey: String, onDone: () -> Unit) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val keyedProvider = providerWithKey(preset.toProviderSetting(), apiKey)
-                val providerModels = fetchProviderModels(keyedProvider)
-                val setupModels = providerModels.orderedSetupModels(preset.setupModelIds)
-                val configuredProvider = keyedProvider
-                    .copyProvider(models = setupModels)
-                settingsStore.update { latest ->
-                    applyDefaults(
-                        settings = latest,
-                        provider = configuredProvider,
-                        defaults = preset.setupDefaults,
-                        setupSearchService = preset.setupSearchService,
-                        apiKey = apiKey,
-                    ).copy(setupCompleted = true)
-                }
-            }
-            onDone()
-        }
-    }
-
     fun saveManualProvider(
         provider: ProviderSetting,
         selectedModels: List<Model>,
@@ -197,33 +175,6 @@ class OnboardingVM(
         return preset.toProviderSetting()
     }
 
-    private fun applyDefaults(
-        settings: Settings,
-        provider: ProviderSetting,
-        defaults: me.rerere.rikkahub.data.ai.models.CatalogSetupDefaults?,
-        setupSearchService: String?,
-        apiKey: String,
-    ): Settings {
-        val modelsById = provider.models.associateBy { it.modelId }
-        val searchServices = when (setupSearchService?.lowercase()) {
-            "ollama" -> listOf(SearchServiceOptions.OllamaOptions(apiKey = apiKey)) +
-                settings.searchServices.filterNot { it is SearchServiceOptions.OllamaOptions }
-            else -> settings.searchServices
-        }
-        fun modelIdFor(apiId: String?): Uuid? {
-            return apiId?.let(modelsById::get)?.id
-        }
-        return settings.copy(
-            providers = listOf(provider),
-            chatModelId = modelIdFor(defaults?.chat) ?: settings.chatModelId,
-            titleModelId = modelIdFor(defaults?.title) ?: settings.titleModelId,
-            summarizerModelId = modelIdFor(defaults?.summarizer) ?: settings.summarizerModelId,
-            ocrModelId = modelIdFor(defaults?.ocr) ?: settings.ocrModelId,
-            searchServices = searchServices,
-            searchServiceSelected = if (setupSearchService?.lowercase() == "ollama") 0 else settings.searchServiceSelected,
-        )
-    }
-
     private suspend fun fetchProviderModels(provider: ProviderSetting): List<Model> {
         return runCatching {
             providerManager.getProviderByType(provider)
@@ -237,11 +188,7 @@ class OnboardingVM(
         }
     }
 
-    private fun List<Model>.orderedSetupModels(setupModelIds: List<String>): List<Model> {
-        if (setupModelIds.isEmpty()) return this
-        val modelsById = associateBy { it.modelId }
-        return setupModelIds.mapNotNull(modelsById::get)
-    }
+
 }
 
 /** Account providers and OpenCode are available before the bundled catalog finishes loading. */

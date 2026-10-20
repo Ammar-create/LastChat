@@ -48,6 +48,7 @@ data class MemoryRetrievalDebugState(
 class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
     private val memoryRepository: MemoryRepository,
     private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
     private val chatEpisodeDAO: ChatEpisodeDAO,
@@ -228,45 +229,24 @@ class AssistantDetailVM(
         }
     }
 
-    private val assistantUpdateMutex = Mutex()
-    private val assistantUpdateGeneration = HashMap<Uuid, Int>()
-
     fun update(assistant: Assistant) {
-        // A newer save must win. Prompt edits used to launch overlapping writes that each
-        // read settings first and then replaced the whole assistant, so a slow first-message
-        // save could land after the system prompt and wipe it (or the other way around).
-        val generation = synchronized(assistantUpdateGeneration) {
-            val next = (assistantUpdateGeneration[assistant.id] ?: 0) + 1
-            assistantUpdateGeneration[assistant.id] = next
-            next
-        }
-        // App-lifetime scope: the prompt page flushes its draft when it closes, and that save
-        // was cancelled along with viewModelScope, so the old prompt stayed in use.
-        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
-            assistantUpdateMutex.withLock {
-                val latest = synchronized(assistantUpdateGeneration) {
-                    assistantUpdateGeneration[assistant.id]
-                }
-                if (generation != latest) return@withLock
-                val currentSettings = settingsStore.settingsFlow.value
-                val oldAssistant = currentSettings.assistants.find { it.id == assistant.id }
-                if (oldAssistant != null) {
-                    checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
-                    checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
-                }
-                settingsStore.update { currentSettings -> currentSettings.copy(
-                        assistants = currentSettings.assistants.map {
-                            if (it.id == assistant.id) {
-                                assistant
-                            } else {
-                                it
-                            }
-                        }) }
-                appStorageRepository.deleteFilesIfUnreferenced(
-                    oldAssistant?.collectRemovedMediaRefs(new = assistant).orEmpty()
-                )
-            }
+        val base = this.assistant.value.takeIf { it.id == assistant.id }
+            ?: settingsStore.settingsFlow.value.assistants.firstOrNull { it.id == assistant.id }
+            ?: return
+        // Queue each edit as a delta. Dropping an older whole snapshot could lose an edit to
+        // another field/list, while saving it later could restore the old ordering.
+        val write = settingsStore.enqueueUpdate { current -> current.copy(
+            assistants = current.assistants.map {
+                if (it.id == assistant.id) me.rerere.rikkahub.data.datastore.mergeAssistantEdit(base, assistant, it) else it
+            },
+        ) }
+        appScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+            val (before, after) = runCatching { write.await() }.getOrNull() ?: return@launch
+            val old = before.assistants.firstOrNull { it.id == assistant.id } ?: return@launch
+            val saved = after.assistants.firstOrNull { it.id == assistant.id } ?: return@launch
+            checkAvatarDelete(old = old, new = saved)
+            checkBackgroundDelete(old = old, new = saved)
+            appStorageRepository.deleteFilesIfUnreferenced(old.collectRemovedMediaRefs(new = saved))
         }
     }
 

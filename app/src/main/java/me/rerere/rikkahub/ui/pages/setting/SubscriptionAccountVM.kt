@@ -13,10 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
-import me.rerere.ai.provider.Model
-import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.data.ai.subscription.SubscriptionAuthManager
 import me.rerere.rikkahub.data.ai.subscription.SubscriptionLoginPrompt
@@ -27,14 +24,12 @@ internal data class SubscriptionAccountState(
     val prompt: SubscriptionLoginPrompt? = null,
     val error: String? = null,
     val completed: Boolean = false,
-    val models: List<Model>? = null,
     val dnsFailure: Boolean = false,
 )
 
 /** The browser transaction survives activity recreation and recomposition. */
 internal class SubscriptionAccountVM(
     private val auth: SubscriptionAuthManager,
-    private val providers: ProviderManager,
     context: Context,
 ) : ViewModel() {
     private val appContext = context.applicationContext
@@ -54,7 +49,7 @@ internal class SubscriptionAccountVM(
 
     fun connect(setting: ProviderSetting.OpenAI, deviceCode: Boolean = false) {
         if (mutableState.value.busy) return
-        mutableState.update { it.copy(busy = true, prompt = null, error = null, completed = false, models = null, dnsFailure = false) }
+        mutableState.update { it.copy(busy = true, prompt = null, error = null, completed = false, dnsFailure = false) }
         login = viewModelScope.launch {
             val service = Intent(appContext, me.rerere.rikkahub.data.ai.subscription.SubscriptionLoginService::class.java)
             try {
@@ -66,20 +61,8 @@ internal class SubscriptionAccountVM(
                     }
                 }
                 mutableState.update { it.copy(account = auth.accountLabel(setting), prompt = null) }
-                val models = try {
-                    withTimeout(30_000) { withContext(Dispatchers.IO) { providers.getProviderByType(setting).listModels(setting) } }
-                } catch (_: TimeoutCancellationException) {
-                    mutableState.update { it.copy(error = "Connected. Model loading timed out; refresh in the Models tab.") }
-                    null
-                } catch (e: CancellationException) { throw e
-                } catch (e: Exception) {
-                    val dns = generateSequence<Throwable>(e) { it.cause }.any { it is java.net.UnknownHostException }
-                    mutableState.update { it.copy(dnsFailure = dns, error = if (dns)
-                        "Connected. Your DNS or ad blocker blocked model loading. Check connection options, then refresh the Models tab."
-                        else "Connected. Models could not be loaded; refresh them in the Models tab.") }
-                    null
-                }
-                mutableState.update { it.copy(completed = true, models = models) }
+                // Authentication does not select models or depend on discovery succeeding.
+                mutableState.update { it.copy(completed = true) }
             } catch (_: TimeoutCancellationException) {
                 mutableState.update { it.copy(error = "Sign-in timed out. Please try again.") }
             } catch (e: CancellationException) { throw e
@@ -99,10 +82,10 @@ internal class SubscriptionAccountVM(
     }
 
     fun cancel() { login?.cancel() }
-    fun consumeCompletion() { mutableState.update { it.copy(completed = false, models = null) } }
+    fun consumeCompletion() { mutableState.update { it.copy(completed = false) } }
 
     fun signOut(setting: ProviderSetting.OpenAI) = viewModelScope.launch {
         auth.signOut(setting.id)
-        mutableState.update { it.copy(account = null, error = null, completed = true, models = null) }
+        mutableState.update { it.copy(account = null, error = null, completed = true) }
     }
 }

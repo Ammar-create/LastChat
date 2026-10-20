@@ -26,6 +26,7 @@ import me.rerere.common.platform.PlatformHttpClient
 
 class SettingVM(
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
     private val mcpManager: McpManager,
     private val context: Context,
     private val platformHttpClient: PlatformHttpClient,
@@ -74,12 +75,17 @@ class SettingVM(
     /** The provider being edited on the detail page, ahead of its debounced save. */
     val pendingProviderEdit: StateFlow<me.rerere.ai.provider.ProviderSetting?> = _pendingProviderEdit
     private var providerSaveJob: Job? = null
+    private var pendingProviderBase: me.rerere.ai.provider.ProviderSetting? = null
 
     /**
      * Typing in provider fields (API key, base URL, headers…) updates local state at once and is
      * saved after a short pause, applied to the latest settings so other changes aren't lost.
      */
     fun editProvider(provider: me.rerere.ai.provider.ProviderSetting) {
+        if (_pendingProviderEdit.value?.id != provider.id) {
+            flushProviderEditNow()
+            pendingProviderBase = settingsStore.settingsFlow.value.providers.firstOrNull { it.id == provider.id }
+        }
         _pendingProviderEdit.value = provider
         providerSaveJob?.cancel()
         providerSaveJob = viewModelScope.launch(Dispatchers.Default) {
@@ -95,8 +101,11 @@ class SettingVM(
     private fun enqueueProviderFlush(): kotlinx.coroutines.Deferred<Pair<Settings, Settings>>? {
         val pending = _pendingProviderEdit.value ?: return null
         providerSaveJob?.cancel()
+        val base = pendingProviderBase ?: pending
         val result = settingsStore.enqueueUpdate { latest ->
-            latest.copy(providers = latest.providers.map { if (it.id == pending.id) pending else it })
+            latest.copy(providers = latest.providers.map {
+                if (it.id == pending.id) me.rerere.rikkahub.data.datastore.mergeProviderEdit(base, pending, it) else it
+            })
         }
         _pendingProviderEdit.compareAndSet(pending, null)
         return result
@@ -139,8 +148,7 @@ class SettingVM(
         transform: (Settings) -> Settings,
     ) {
         val result = settingsStore.enqueueUpdate(transform)
-        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main.immediate) {
+        appScope.launch(Dispatchers.Main.immediate) {
             val (oldSettings, newSettings) = runCatching { result.await() }.getOrNull() ?: return@launch
             afterPersist?.invoke()
             val oldProviderIds = oldSettings.providers.map { it.id }.toSet()

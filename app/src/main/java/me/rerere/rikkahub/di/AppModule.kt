@@ -21,6 +21,12 @@ import org.koin.dsl.module
 val appModule = module {
     single<Json> { JsonInstant }
 
+    single {
+        val providers = get<me.rerere.ai.provider.ProviderManager>()
+        me.rerere.rikkahub.ui.hooks.ProviderUsageRepository(get<AppScope>(),
+            fetch = { providers.getProviderByType(it).getUsage(it) })
+    }
+
     single<Highlighter> {
         AndroidHighlighter(get())
     }

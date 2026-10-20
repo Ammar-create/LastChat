@@ -211,12 +211,7 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             name = name,
             baseUrl = baseUrl,
             customIconUri = customIconUri,
-            models = listOf(
-                Model(
-                    modelId = "model.safetensors",
-                    displayName = "ComfyUI model",
-                ).withComfyDefaults()
-            ),
+            models = emptyList(),
         )
 
         ProviderSetting.LiteRtLocal::class -> ProviderSetting.LiteRtLocal(

@@ -65,6 +65,7 @@ class SettingLocalLlmViewModel(
     private val embedder: LiteRtEmbedder,
     private val inferenceManager: LocalInferenceManager,
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
     private val modelCatalogService: ModelCatalogService,
     private val secretKeyManager: me.rerere.rikkahub.data.datastore.SecretKeyManager,
 ) : ViewModel() {
@@ -177,6 +178,12 @@ class SettingLocalLlmViewModel(
 
     fun updateConfig(id: String, config: LocalModelConfig) {
         viewModelScope.launch { store.updateConfig(id, config) }
+    }
+
+    fun reorderInstalledModels(ids: List<Any>) {
+        appScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            store.reorder(ids.map { it.toString().removePrefix("sherpa-installed-") })
+        }
     }
 
     fun moveInstalledModel(from: Int, to: Int) {

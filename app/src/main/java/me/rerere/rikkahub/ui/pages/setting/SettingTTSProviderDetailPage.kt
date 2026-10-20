@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -130,7 +133,9 @@ fun SettingTTSProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
 
     fun updateProvider(updated: TTSProviderSetting) {
         vm.updateSettings { settings -> settings.copy(
-                ttsProviders = settings.ttsProviders.map { if (it.id == updated.id) updated else it }
+                ttsProviders = settings.ttsProviders.map {
+                    if (it.id == updated.id) me.rerere.rikkahub.data.datastore.mergeTtsProviderEdit(provider, updated, it) else it
+                }
             ) }
     }
 
@@ -296,9 +301,10 @@ private fun TtsVoiceTab(
     contentPadding: PaddingValues,
 ) {
     val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onUpdateProvider(provider.moveVoice(from.index, to.index))
+    val voiceOrder = rememberReorderableItems(provider.voices, key = { it.id }) { order ->
+        onUpdateProvider(provider.copyProvider(voices = provider.voices.reorderedByKeys(order) { it.id }))
     }
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to -> voiceOrder.move(from.key, to.key) }
     var editingVoice by remember(provider.id) { mutableStateOf<TTSVoice?>(null) }
     var showManualVoiceSheet by remember(provider.id) { mutableStateOf(false) }
     var showProviderVoicesSheet by remember(provider.id) { mutableStateOf(false) }
@@ -354,7 +360,7 @@ private fun TtsVoiceTab(
                     }
                 }
             }
-            itemsIndexed(provider.voices, key = { _, voice -> voice.id }) { index, voice ->
+            itemsIndexed(voiceOrder.items, key = { _, voice -> voice.id }) { index, voice ->
                 val position = when {
                     provider.voices.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST

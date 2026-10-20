@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -102,13 +105,10 @@ fun ApiKeyPoolBottomSheet(
 
     val pool = provider.apiKeyPool
     val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newList = pool.toMutableList().apply {
-            add(to.index, removeAt(from.index))
-        }
-        onEdit(provider.withApiKeyPool(newList))
-        haptics.perform(HapticPattern.Selection)
+    val poolOrder = rememberReorderableItems(pool, key = { it.id }, eagerCommit = true) { order ->
+        onEdit(provider.withApiKeyPool(provider.apiKeyPool.reorderedByKeys(order) { it.id }))
     }
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to -> poolOrder.move(from.key, to.key) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -225,7 +225,7 @@ fun ApiKeyPoolBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
-                    itemsIndexed(pool, key = { _, item -> item.id }) { index, entry ->
+                    itemsIndexed(poolOrder.items, key = { _, item -> item.id }) { index, entry ->
                         val health = roulette.getKeyHealth(entry.id)
                         val hasAuthError = health.hasAuthError
                         val hasQuotaError = health.hasQuotaError

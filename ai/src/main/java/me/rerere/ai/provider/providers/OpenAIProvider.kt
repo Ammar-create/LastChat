@@ -250,7 +250,8 @@ class OpenAIProvider(
             val displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: id
             val contextLimits = parseOpenAIProviderContextLimits(modelObj)
             val abilities = buildList {
-                if (supportedParameters.any { it == "tools" || it == "tool_choice" }) {
+                if (!isEmbedding && !isImageModel &&
+                    (supportedParameters.isEmpty() || supportedParameters.any { it == "tools" || it == "tool_choice" })) {
                     add(ModelAbility.TOOL)
                 }
                 if ((modelObj["effort"] as? JsonObject)?.get("supported_levels")?.jsonArray?.isNotEmpty() == true ||

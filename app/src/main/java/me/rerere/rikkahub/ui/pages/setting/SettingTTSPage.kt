@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.layout.Arrangement
@@ -142,11 +145,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
+    val orderedProviders = rememberReorderableItems(settings.ttsProviders, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(ttsProviders = latest.ttsProviders.reorderedByKeys(order) { it.id }) }
+    }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newProviders = settings.ttsProviders.toMutableList().apply {
-            add(to.index, removeAt(from.index))
-        }
-        vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
+        orderedProviders.move(from.key, to.key)
     }
 
     // State for TTS text filter settings dialog
@@ -233,7 +236,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 state = lazyListState
             ) {
-                if (settings.ttsProviders.isEmpty()) {
+                if (orderedProviders.items.isEmpty()) {
                     item(key = "empty") {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -276,11 +279,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 } else {
-                itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+                itemsIndexed(orderedProviders.items, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
-                    settings.ttsProviders.size == 1 -> ItemPosition.ONLY
+                    orderedProviders.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.ttsProviders.lastIndex -> ItemPosition.LAST
+                    index == orderedProviders.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 
@@ -556,11 +559,11 @@ internal fun TtsProvidersContent(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val lazyListState = rememberLazyListState()
     val density = androidx.compose.ui.platform.LocalDensity.current
+    val orderedProviders = rememberReorderableItems(settings.ttsProviders, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(ttsProviders = latest.ttsProviders.reorderedByKeys(order) { it.id }) }
+    }
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newProviders = settings.ttsProviders.toMutableList().apply {
-            add(to.index, removeAt(from.index))
-        }
-        vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
+        orderedProviders.move(from.key, to.key)
     }
 
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
@@ -597,7 +600,7 @@ internal fun TtsProvidersContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
-            if (settings.ttsProviders.isEmpty()) {
+            if (orderedProviders.items.isEmpty()) {
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
@@ -640,11 +643,11 @@ internal fun TtsProvidersContent(
                     }
                 }
             } else {
-            itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+            itemsIndexed(orderedProviders.items, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
-                    settings.ttsProviders.size == 1 -> ItemPosition.ONLY
+                    orderedProviders.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.ttsProviders.lastIndex -> ItemPosition.LAST
+                    index == orderedProviders.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
 

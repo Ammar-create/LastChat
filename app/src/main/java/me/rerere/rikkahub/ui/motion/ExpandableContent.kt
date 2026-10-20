@@ -41,8 +41,13 @@ private const val SECTION_EXPAND_MILLIS = 240
 fun ExpandableContent(
     visible: Boolean,
     modifier: Modifier = Modifier,
+    animate: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    if (!animate) {
+        if (visible) Box(modifier) { content() }
+        return
+    }
     val motionPolicy = LocalMotionPolicy.current
     if (motionPolicy.sectionExpandFadesOnly()) {
         AnimatedVisibility(

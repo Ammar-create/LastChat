@@ -38,9 +38,8 @@ fun SubscriptionAccountCard(provider: ProviderSetting.OpenAI, onEdit: (ProviderS
     LaunchedEffect(state.completed) {
         if (state.completed) {
             val current = latestProvider
-            val existing = current.models.associateBy { it.modelId }
             latestEdit(current.copy(subscriptionAccountVersion = current.subscriptionAccountVersion + 1,
-                models = state.models?.map { existing[it.modelId]?.copy(providerOverwrite = null) ?: it } ?: current.models))
+                models = current.models))
             vm.consumeCompletion()
             haptics.perform(HapticPattern.Success)
         }
@@ -75,7 +74,8 @@ internal fun SubscriptionAccountContent(
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Card(shape = AppShapes.CardLarge, colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn(
+                modifier = Modifier.fillMaxWidth().padding(16.dp), spacing = 12.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Account", style = MaterialTheme.typography.titleMedium)
@@ -148,7 +148,8 @@ internal fun SubscriptionAccountContent(
                     Icon(if (connectionOptions) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                         contentDescription = if (connectionOptions) "Hide connection options" else "Show connection options")
                 }
-                if (connectionOptions) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                me.rerere.rikkahub.ui.motion.ExpandableContent(visible = connectionOptions) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Secure DNS fallback", style = MaterialTheme.typography.bodyMedium)
                         Text("If your DNS blocks account services, try Cloudflare for those hostnames. Other app traffic keeps system DNS.",
@@ -156,6 +157,7 @@ internal fun SubscriptionAccountContent(
                     }
                     HapticSwitch(checked = provider.subscriptionDnsFallback, enabled = !state.busy,
                         onCheckedChange = { latestEdit(latestProvider.copy(subscriptionDnsFallback = it)) })
+                }
                 }
             }
         }

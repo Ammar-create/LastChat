@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -440,14 +443,8 @@ fun SettingProviderPage(
                     providerToDelete = provider
                     showDeleteDialog = true
                 },
-                onReorder = { fromProvider, toProvider ->
-                    val reorderedProviders = settings.providers.toMutableList()
-                    val from = reorderedProviders.indexOfFirst { it.id == fromProvider.id }
-                    val to = reorderedProviders.indexOfFirst { it.id == toProvider.id }
-                    if (from >= 0 && to >= 0 && from != to) {
-                        reorderedProviders.add(to, reorderedProviders.removeAt(from))
-                        vm.updateSettings { settings -> settings.copy(providers = reorderedProviders) }
-                    }
+                onReorder = { order ->
+                    vm.updateSettings { latest -> latest.copy(providers = latest.providers.reorderedByKeys(order) { it.id }) }
                 },
                 onAddProvider = { provider ->
                     addProvider(provider)
@@ -606,18 +603,15 @@ private fun ProviderListView(
     providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
     onNavigateToDetail: (ProviderSetting) -> Unit,
     onDeleteRequest: (ProviderSetting) -> Unit,
-    onReorder: (ProviderSetting, ProviderSetting) -> Unit,
+    onReorder: (List<Any>) -> Unit,
     onAddProvider: (ProviderSetting) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
 
+    val orderedProviders = rememberReorderableItems(providers, key = { it.id }, onCommit = onReorder)
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val fromProvider = providers.getOrNull(from.index)
-        val toProvider = providers.getOrNull(to.index)
-        if (fromProvider != null && toProvider != null) {
-            onReorder(fromProvider, toProvider)
-        }
+        orderedProviders.move(from.key, to.key)
     }
     
     // State for swipe neighbor tracking
@@ -762,11 +756,11 @@ private fun ProviderListView(
                 }
             }
 
-            itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+            itemsIndexed(orderedProviders.items, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
-                    providers.size == 1 -> ItemPosition.ONLY
+                    orderedProviders.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == providers.lastIndex -> ItemPosition.LAST
+                    index == orderedProviders.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 

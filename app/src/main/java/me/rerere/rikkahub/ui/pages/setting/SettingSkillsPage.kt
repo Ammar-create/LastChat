@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -350,35 +353,17 @@ fun SkillsPageContent(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
-    var orderedSkills by remember { mutableStateOf(settings.skills) }
-    var isReordering by remember { mutableStateOf(false) }
-    var awaitingPersistedOrder by remember { mutableStateOf(false) }
-    val canDelete = true
-
-    LaunchedEffect(settings.skills, isReordering) {
-        if (!isReordering) {
-            if (awaitingPersistedOrder && settings.skills.map { it.id } != orderedSkills.map { it.id }) {
-                return@LaunchedEffect
-            }
-            awaitingPersistedOrder = false
-            orderedSkills = settings.skills
-        }
+    val itemOrder = rememberReorderableItems(settings.skills, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(skills = latest.skills.reorderedByKeys(order) { it.id }) }
     }
+    val orderedSkills = itemOrder.items
+    val canDelete = true
 
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
     }
 
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index
-        val toIndex = to.index
-        if (fromIndex !in orderedSkills.indices || toIndex !in 0..orderedSkills.size) {
-            return@rememberReorderableLazyListState
-        }
-        orderedSkills = orderedSkills.toMutableList().apply {
-            add(toIndex, removeAt(fromIndex))
-        }
-    }
+    val reorderableState = rememberReorderableLazyListState(listState) { from, to -> itemOrder.move(from.key, to.key) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -515,15 +500,9 @@ fun SkillsPageContent(
                                             onClick = {},
                                             modifier = Modifier.longPressDraggableHandle(
                                                 onDragStarted = {
-                                                    isReordering = true
                                                     haptics.perform(HapticPattern.Pop)
                                                 },
                                                 onDragStopped = {
-                                                    isReordering = false
-                                                    if (orderedSkills.map { it.id } != settings.skills.map { it.id }) {
-                                                        awaitingPersistedOrder = true
-                                                        vm.updateSettings { settings -> settings.copy(skills = orderedSkills) }
-                                                    }
                                                     haptics.perform(HapticPattern.Thud)
                                                 }
                                             )

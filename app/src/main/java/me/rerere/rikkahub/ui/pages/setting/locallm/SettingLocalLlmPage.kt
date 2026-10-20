@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting.locallm
 
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -119,26 +121,14 @@ fun SettingLocalLlmPage(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val runtimeStatus = runtimeStatusText(state.runtime, state.activeWorkload, state.queuedTasks)
-    val installedModelsStartIndex = (if (runtimeStatus != null) 1 else 0) + 1
+    val installedOrder = rememberReorderableItems(state.installed, key = { it.id }, onCommit = vm::reorderInstalledModels)
+    val sttInstalledOrder = rememberReorderableItems(sttState.installed,
+        key = { "sherpa-installed-${it.id}" }, onCommit = sttVm::reorderInstalledModels)
     val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index - installedModelsStartIndex
-        val toIndex = to.index - installedModelsStartIndex
-        if (fromIndex in state.installed.indices && toIndex in state.installed.indices) {
-            vm.moveInstalledModel(fromIndex, toIndex)
-        }
+        installedOrder.move(from.key, to.key)
     }
-    val sttInstalledStartIndex =
-        (if (runtimeStatus != null) 1 else 0) +
-            (if (state.installed.isNotEmpty()) 1 + state.installed.size else 0) +
-            (if (state.importedDownloads.isNotEmpty()) 1 + state.importedDownloads.size else 0) +
-            1 + state.downloadable.size +
-            1
     val sttReorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index - sttInstalledStartIndex
-        val toIndex = to.index - sttInstalledStartIndex
-        if (fromIndex in sttState.installed.indices && toIndex in sttState.installed.indices) {
-            sttVm.moveInstalledModel(fromIndex, toIndex)
-        }
+        sttInstalledOrder.move(from.key, to.key)
     }
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
@@ -211,7 +201,7 @@ fun SettingLocalLlmPage(
                     Spacer(Modifier.height(8.dp))
                     SectionHeader("Language and embedding models")
                 }
-                itemsIndexed(state.installed, key = { _, it -> it.id }) { index, model ->
+                itemsIndexed(installedOrder.items, key = { _, it -> it.id }) { index, model ->
                     val position = when {
                         state.installed.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
@@ -345,7 +335,7 @@ fun SettingLocalLlmPage(
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             }
-            itemsIndexed(sttState.installed, key = { _, model -> "sherpa-installed-${model.id}" }) { index, model ->
+            itemsIndexed(sttInstalledOrder.items, key = { _, model -> "sherpa-installed-${model.id}" }) { index, model ->
                 val position = when {
                     sttState.installed.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
