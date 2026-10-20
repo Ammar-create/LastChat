@@ -52,6 +52,7 @@ val viewModelModule = module {
         )
     }
 
+    viewModel { me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountVM(get(), get(), get()) }
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(

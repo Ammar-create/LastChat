@@ -9,6 +9,10 @@ object ModelRegistry {
         ModelMatcher.containsRegex("gpt-(?!.*\\.)(?:5)") and ModelMatcher.containsRegex("gpt-5-chat", negated = true)
     val GPT_5_6 = ModelMatcher.containsRegex("gpt-5\\.[6-9]|gpt-5\\.6-(?:sol|terra|luna)")
 
+    val GPT_6 = ModelMatcher.containsRegex("gpt-6(?:[./_-]|$)")
+    val GEMINI_4 = ModelMatcher.containsRegex("gemini-4(?:[./_-]|$)")
+    private val DEEPSEEK_FLASH_VISION = ModelMatcher.containsRegex("deepseek-(?:flash|v4[.]1-flash)(?:[./_-]|$)")
+
     private val GEMINI_20_FLASH = ModelMatcher.containsRegex("gemini-2.0-flash")
     val GEMINI_2_5_FLASH = ModelMatcher.containsRegex("gemini-2.5-flash") and ModelMatcher.containsRegex("image", negated = true)
     val GEMINI_2_5_PRO = ModelMatcher.containsRegex("gemini-2.5-pro")
@@ -19,7 +23,7 @@ object ModelRegistry {
     val GEMINI_PRO_LATEST = ModelMatcher.exact("gemini-pro-latest")
     val GEMINI_LATEST = GEMINI_FLASH_LATEST + GEMINI_PRO_LATEST
     val GEMINI_3_SERIES = ModelMatcher.containsRegex("gemini-3")
-    val GEMINI_SERIES = GEMINI_20_FLASH + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST
+    val GEMINI_SERIES = GEMINI_20_FLASH + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_4 + GEMINI_LATEST
 
     private val CLAUDE_SONNET_3_5 = ModelMatcher.containsRegex("claude-3.5-sonnet")
     private val CLAUDE_SONNET_3_7 = ModelMatcher.containsRegex("claude-3.7-sonnet")
@@ -61,11 +65,11 @@ object ModelRegistry {
     private val COMMAND_A = ModelMatcher.containsRegex("command[-_ ]?a")
 
     val VISION_MODELS =
-        GPT4O + GPT_4_1 + GPT_5 + GPT_5_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 + SEED_2 + GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + GLM_5 + QVQ + QWEN_3_8 + KIMI_K3 + GEMMA_3 + GEMMA_4 + MINIMAX_M3 + MISTRAL_SMALL_4 + LLAMA_4 + COMMAND_A
+        GPT4O + GPT_4_1 + GPT_5 + GPT_5_6 + GPT_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 + SEED_2 + DEEPSEEK_FLASH_VISION + GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + GLM_5 + QVQ + QWEN_3_8 + KIMI_K3 + GEMMA_3 + GEMMA_4 + MINIMAX_M3 + MISTRAL_SMALL_4 + LLAMA_4 + COMMAND_A
     val TOOL_MODELS =
-        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + GPT_5_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + QWEN_3 + QWEN_3_8 + QWQ + QVQ + DOUBAO_1_6 + SEED_2 + GROK_3 + GROK_4 + KIMI_K2 + KIMI_K3 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_4_6V + GLM_5 + MINIMAX_M2 + MINIMAX_M3 + HUNYUAN_T1 + GEMMA_3 + GEMMA_4 + MISTRAL_SMALL_4 + DEVSTRAL + LLAMA_4 + COMMAND_A
+        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + GPT_5_6 + GPT_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + QWEN_3 + QWEN_3_8 + QWQ + QVQ + DOUBAO_1_6 + SEED_2 + GROK_3 + GROK_4 + KIMI_K2 + KIMI_K3 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 + DEEPSEEK_FLASH_VISION + GLM_4_6 + GLM_4_6V + GLM_5 + MINIMAX_M2 + MINIMAX_M3 + HUNYUAN_T1 + GEMMA_3 + GEMMA_4 + MISTRAL_SMALL_4 + DEVSTRAL + LLAMA_4 + COMMAND_A
     val REASONING_MODELS =
-        GPT_OSS + GPT_5 + GPT_5_6 + OPENAI_O_MODELS + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + QWEN_3_8 + QWQ + QVQ + DOUBAO_1_6 + SEED_2 + GROK_3 + GROK_4 + KIMI_K2 + KIMI_K3 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_5 + MINIMAX_M2 + MINIMAX_M3 + HUNYUAN_T1 + GEMMA_4 + MISTRAL_SMALL_4 + DEVSTRAL + LLAMA_4 + COMMAND_A
+        GPT_OSS + GPT_5 + GPT_5_6 + GPT_6 + OPENAI_O_MODELS + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_4 + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + QWEN_3_8 + QWQ + QVQ + DOUBAO_1_6 + SEED_2 + GROK_3 + GROK_4 + KIMI_K2 + KIMI_K3 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 + DEEPSEEK_FLASH_VISION + GLM_4_6 + GLM_5 + MINIMAX_M2 + MINIMAX_M3 + HUNYUAN_T1 + GEMMA_4 + MISTRAL_SMALL_4 + DEVSTRAL + LLAMA_4 + COMMAND_A
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
 }
 

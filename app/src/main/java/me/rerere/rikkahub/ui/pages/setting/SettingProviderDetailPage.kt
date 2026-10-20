@@ -179,6 +179,8 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ModelReasoningConfigEditor
+import me.rerere.rikkahub.ui.pages.setting.components.ProviderUsageCard
+import me.rerere.rikkahub.ui.pages.setting.components.SubscriptionAccountCard
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
 import me.rerere.rikkahub.ui.theme.extendColors
@@ -279,6 +281,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             baseUrl,
             chatCompletionsPath,
             useResponseApi.toString(),
+            subscriptionAccountVersion.toString(),
             apiKey.hashCode().toString(),
             apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
@@ -319,7 +322,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
 
 private fun ProviderSetting.canFetchApiModels(): Boolean {
     return when (this) {
-        is ProviderSetting.OpenAI -> apiKeyPool.any { it.enabled } || apiKey.isNotBlank() || isLikelyOllama()
+        is ProviderSetting.OpenAI -> subscriptionAccount != null || apiKeyPool.any { it.enabled } || apiKey.isNotBlank() || isLikelyOllama()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
         } else {
@@ -682,6 +685,7 @@ private fun SettingProviderConfigPage(
                     provider = internalProvider,
                     modifier = Modifier.padding(16.dp),
                     showSavingIndicator = isSaving,
+                    showSubscriptionAccount = false,
                     onEdit = {
                         internalProvider = it
                         // Auto-save immediately
@@ -690,6 +694,17 @@ private fun SettingProviderConfigPage(
                 )
             }
             
+            (internalProvider as? ProviderSetting.OpenAI)?.takeIf { it.subscriptionAccount != null }?.let { subscription ->
+                SubscriptionAccountCard(subscription) {
+                    internalProvider = it
+                    onEdit(it)
+                }
+            }
+
+            (internalProvider as? ProviderSetting.OpenAI)?.takeIf {
+                it.subscriptionAccount == null && me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(it.baseUrl) != null
+            }?.let { ProviderUsageCard(it) }
+
             // Tags section
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
@@ -721,7 +736,8 @@ private fun SettingProviderConfigPage(
                 }
             }
 
-            if (internalProvider is ProviderSetting.OpenAI) {
+            if (internalProvider is ProviderSetting.OpenAI &&
+                (internalProvider as ProviderSetting.OpenAI).subscriptionAccount == null) {
                 SettingProviderBalanceOption(
                     provider = internalProvider,
                     balanceOption = internalProvider.balanceOption,

@@ -1,5 +1,7 @@
 package me.rerere.ai.provider.providers
 
+import me.rerere.ai.util.toProviderError
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import me.rerere.common.platform.PlatformLog
@@ -280,6 +282,10 @@ class ClaudeProvider(
                         }
                     }
                     is PlatformServerEvent.Event -> {
+                        if (event.event == "error") {
+                            close(me.rerere.ai.util.providerHttpError(null, event.data))
+                            return@collect
+                        }
                         PlatformLog.d(TAG, "onEvent: type=${event.event}, data=${event.data}")
                         if (event.event == "message_stop") {
                             PlatformLog.d(TAG, "Stream ended")
@@ -681,25 +687,7 @@ class ClaudeProvider(
         )
     }
 
-    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
-        val fallback = RuntimeException(
-            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}"
-        )
-        val bodyRaw = event.body
-        return try {
-            if (!bodyRaw.isNullOrBlank()) {
-                val bodyElement = Json.parseToJsonElement(bodyRaw)
-                PlatformLog.i(TAG, "Error response: $bodyElement")
-                bodyElement.parseErrorDetail()
-            } else {
-                fallback
-            }
-        } catch (e: Throwable) {
-            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
-            e.printStackTrace()
-            e
-        }
-    }
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable = event.toProviderError()
 }
 
 private fun List<CustomHeader>.toHeaderMap(): Map<String, String> {

@@ -3,6 +3,8 @@ package me.rerere.ai.provider
 import me.rerere.ai.provider.providers.ClaudeProvider
 import me.rerere.ai.provider.providers.ComfyUIProvider
 import me.rerere.ai.provider.providers.GoogleProvider
+import me.rerere.ai.provider.providers.opencode.OpenCodeProvider
+import me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint
 import me.rerere.ai.provider.providers.OpenAIProvider
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformJwtSigner
@@ -22,6 +24,7 @@ class ProviderManager(
     init {
         // 注册默认Provider
         registerProvider("openai", OpenAIProvider(platformHttpClient, platformMediaEncoder))
+        registerProvider("opencode", OpenCodeProvider(platformHttpClient, platformMediaEncoder, platformJwtSigner))
         registerProvider("google", GoogleProvider(platformHttpClient, platformMediaEncoder, platformJwtSigner))
         registerProvider("claude", ClaudeProvider(platformHttpClient, platformMediaEncoder))
         registerProvider("comfyui", ComfyUIProvider(platformHttpClient))
@@ -56,7 +59,11 @@ class ProviderManager(
     fun <T : ProviderSetting> getProviderByType(setting: T): Provider<T> {
         @Suppress("UNCHECKED_CAST")
         return when (setting) {
-            is ProviderSetting.OpenAI -> getProvider("openai")
+            is ProviderSetting.OpenAI -> getProvider(when {
+                setting.subscriptionAccount != null -> "subscription"
+                OpenCodeEndpoint.from(setting.baseUrl) != null -> "opencode"
+                else -> "openai"
+            })
             is ProviderSetting.Google -> getProvider("google")
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ComfyUI -> getProvider("comfyui")

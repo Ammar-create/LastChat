@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-09-21",
+  "updated_at": "2026-10-19",
   "search_providers": [
     {
       "id": "keyless",
@@ -1273,17 +1273,34 @@
     },
     {
       "id": "584e2459-7933-4acb-8f8a-3a9e48764708",
-      "name": "OpenCode",
-      "description": "OpenCode API provider.",
+      "name": "OpenCode Go",
+      "description": "OpenCode Go subscription with per-model API routing and usage windows.",
       "type": "openai",
-      "base_url": "https://opencode.ai/zen/go/v1",
+      "base_url": "https://opencode.ai/inference/go/openai/v1",
       "chat_completions_path": "/chat/completions",
       "use_response_api": false,
       "balance_option": {},
       "icon": "icons/opencode.svg",
       "preset": true,
-      "signup_url": "https://opencode.ai",
-      "api_key_url": "https://opencode.ai",
+      "signup_url": "https://opencode.ai/docs/go/",
+      "api_key_url": "https://opencode.ai/console",
+      "stream_options_mode": "auto",
+      "image_response_modalities_mode": "auto",
+      "reasoning_content_replay_mode": "auto"
+    },
+    {
+      "id": "3993c257-b4be-502b-9bf0-90bfcccf92ca",
+      "name": "OpenCode Zen",
+      "description": "OpenCode pay-as-you-go models with automatic API routing.",
+      "type": "openai",
+      "base_url": "https://opencode.ai/inference/openai/v1",
+      "chat_completions_path": "/chat/completions",
+      "use_response_api": false,
+      "balance_option": {},
+      "icon": "icons/opencode.svg",
+      "preset": true,
+      "signup_url": "https://opencode.ai/docs/zen/",
+      "api_key_url": "https://opencode.ai/console",
       "stream_options_mode": "auto",
       "image_response_modalities_mode": "auto",
       "reasoning_content_replay_mode": "auto"
@@ -1566,6 +1583,57 @@
       ],
       "provider_slug": "openai",
       "versions": [
+        {
+          "id": "gpt-6-required-reasoning",
+          "match_patterns": [
+            "(^|[/._-])gpt-(?:6[.]1-sol|6-astra)(?=$|[:/._-])"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ],
+          "context_window": 1050000,
+          "reasoning_config": {
+            "type": "effort",
+            "supported_levels": [
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "max"
+            ]
+          }
+        },
+        {
+          "id": "gpt-6",
+          "match_patterns": [
+            "(^|[/._-])gpt-6-(?:sol|luna)(?=$|[:/._-])"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ],
+          "context_window": 1050000,
+          "reasoning_config": {
+            "type": "effort",
+            "supported_levels": [
+              "off",
+              "auto",
+              "low",
+              "medium",
+              "high",
+              "max"
+            ]
+          }
+        },
         {
           "id": "gpt-reasoning",
           "aliases": [
@@ -1897,6 +1965,26 @@
       "provider_slug": "google",
       "versions": [
         {
+          "id": "gemini-4",
+          "match_patterns": [
+            "(^|[/._-])gemini-4(?=$|[._/-])"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ],
+          "context_window": 1048576,
+          "reasoning_config": {
+            "type": "effort",
+            "supported_levels": [
+              "auto",
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        {
           "id": "gemini-image",
           "aliases": [
             "gemini-image",
@@ -2047,6 +2135,36 @@
       "provider_slug": "deepseek",
       "versions": [
         {
+          "id": "deepseek-v4.1-flash",
+          "aliases": [
+            "deepseek-flash",
+            "deepseek-v4.1-flash"
+          ],
+          "match_patterns": [
+            "(^|[/._-])deepseek-(?:flash|v4[._-]1-flash)(?=$|[:/._-])"
+          ],
+          "input_modalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "abilities": [
+            "TOOL",
+            "REASONING"
+          ],
+          "context_window": 1048576,
+          "max_images_in_context": 50,
+          "reasoning_config": {
+            "type": "effort",
+            "supported_levels": [
+              "off",
+              "auto",
+              "low",
+              "high",
+              "max"
+            ]
+          }
+        },
+        {
           "id": "deepseek-v4-vision",
           "aliases": [
             "deepseek-v4-flash-vision-exp",
@@ -2084,7 +2202,7 @@
             "deepseek-v4-flash"
           ],
           "match_patterns": [
-            "(^|[/._-])deepseek-v4.*"
+            "(^|[/._-])deepseek-v4(?![._-]1-flash).*"
           ],
           "abilities": [
             "TOOL",
@@ -6693,7 +6811,9 @@
       "canonical_model_id": "gpt-5.6-luna",
       "provider_ids": [
         "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "input_cost_per_token": 2e-07,
       "output_cost_per_token": 1.2e-06,
@@ -7350,7 +7470,11 @@
         "TEXT"
       ],
       "context_window": 1000000,
-      "max_images_in_context": 50
+      "max_images_in_context": 50,
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
     },
     {
       "id": "qwen3.8-27b",
@@ -7373,7 +7497,8 @@
         "TEXT"
       ],
       "context_window": 262144,
-      "max_images_in_context": 50
+      "max_images_in_context": 50,
+      "provider_ids": []
     },
     {
       "id": "qwen3.8-flash-next",
@@ -7395,7 +7520,8 @@
         "TEXT"
       ],
       "context_window": 262144,
-      "max_images_in_context": 50
+      "max_images_in_context": 50,
+      "provider_ids": []
     },
     {
       "id": "qwen3.5-plus",
@@ -7418,7 +7544,8 @@
         "TEXT"
       ],
       "context_window": 1000000,
-      "max_images_in_context": 50
+      "max_images_in_context": 50,
+      "provider_ids": []
     },
     {
       "id": "qwq-32b",
@@ -7527,7 +7654,9 @@
       "provider_ids": [
         "448c27de-c5e0-4434-8efa-932d0613dd9b",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "context_window": 1000000,
       "type": "CHAT",
@@ -7544,7 +7673,8 @@
       "provider_ids": [
         "448c27de-c5e0-4434-8efa-932d0613dd9b",
         "b38e1192-5b47-4d2a-a163-f622a2eaf717",
-        "c5e85cbb-8e28-454c-96d0-0585750d081c"
+        "c5e85cbb-8e28-454c-96d0-0585750d081c",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "context_window": 1000000,
       "type": "CHAT",
@@ -7594,7 +7724,9 @@
       "canonical_model_id": "glm-5.3",
       "provider_ids": [
         "e4fce9f0-b4d2-453f-90b6-e1c5b615269c",
-        "b38e1192-5b47-4d2a-a163-f622a2eaf717"
+        "b38e1192-5b47-4d2a-a163-f622a2eaf717",
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "type": "CHAT",
       "input_modalities": [
@@ -7609,7 +7741,9 @@
       "id": "kimi-k3",
       "canonical_model_id": "kimi-k3",
       "provider_ids": [
-        "0ff8e630-f703-4f95-a2f2-95f0cf52b202"
+        "0ff8e630-f703-4f95-a2f2-95f0cf52b202",
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
       ],
       "context_window": 1000000,
       "type": "CHAT",
@@ -7720,6 +7854,101 @@
         "TEXT"
       ],
       "max_images_in_context": 10
+    },
+    {
+      "id": "deepseek-flash",
+      "canonical_model_id": "deepseek-flash",
+      "provider_ids": [
+        "448c27de-c5e0-4434-8efa-932d0613dd9b"
+      ]
+    },
+    {
+      "id": "deepseek-v4.1-flash",
+      "canonical_model_id": "deepseek-v4.1-flash",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "deepseek-v4-flash-vision-exp",
+      "canonical_model_id": "deepseek-v4-flash-vision-exp",
+      "provider_ids": [
+        "448c27de-c5e0-4434-8efa-932d0613dd9b"
+      ]
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "canonical_model_id": "gpt-6.1-sol",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-6-sol",
+      "canonical_model_id": "gpt-6-sol",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-6-astra",
+      "canonical_model_id": "gpt-6-astra",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gpt-6-luna",
+      "canonical_model_id": "gpt-6-luna",
+      "provider_ids": [
+        "8f9d0c75-8f29-4a27-9c2b-f8d4fd5f3e91",
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "gemini-4-argon",
+      "canonical_model_id": "gemini-4-argon",
+      "provider_ids": [
+        "4e28ef61-8b96-4a1e-9f91-15b32ce6d886",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "glm-5.3-flash",
+      "canonical_model_id": "glm-5.3-flash",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "kimi-k2.7-code",
+      "canonical_model_id": "kimi-k2.7-code",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "minimax-m3",
+      "canonical_model_id": "minimax-m3",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
+    },
+    {
+      "id": "qwen3.8-flash",
+      "canonical_model_id": "qwen3.8-flash",
+      "provider_ids": [
+        "584e2459-7933-4acb-8f8a-3a9e48764708",
+        "3993c257-b4be-502b-9bf0-90bfcccf92ca"
+      ]
     }
   ],
   "stt_providers": [

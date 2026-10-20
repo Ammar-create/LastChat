@@ -79,6 +79,7 @@ import kotlin.time.Duration.Companion.seconds
 
 const val SEARCH_PLATFORM_HTTP_CLIENT = "searchPlatformHttpClient"
 private const val MCP_OKHTTP_CLIENT = "mcpOkHttpClient"
+private const val SUBSCRIPTION_FALLBACK_HTTP_CLIENT = "subscriptionFallbackHttpClient"
 private const val MCP_PLATFORM_HTTP_CLIENT = "mcpPlatformHttpClient"
 
 val dataSourceModule = module {
@@ -316,6 +317,18 @@ val dataSourceModule = module {
     }
 
 
+    single<PlatformHttpClient>(named(SUBSCRIPTION_FALLBACK_HTTP_CLIENT)) {
+        OkHttpPlatformHttpClient(get<OkHttpClient>(named(MCP_OKHTTP_CLIENT)).newBuilder()
+            .dns(me.rerere.rikkahub.data.ai.subscription.SubscriptionDns.create()).build())
+    }
+
+    single {
+        me.rerere.rikkahub.data.ai.subscription.SubscriptionAuthManager(
+            client = get<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT)), secrets = get(),
+            fallbackClient = get(named(SUBSCRIPTION_FALLBACK_HTTP_CLIENT)),
+        )
+    }
+
     single<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT)) {
         OkHttpPlatformHttpClient(get<OkHttpClient>(named(MCP_OKHTTP_CLIENT)))
     }
@@ -468,6 +481,12 @@ val dataSourceModule = module {
             platformMediaEncoder = AndroidPlatformMediaEncoder(),
             platformJwtSigner = AndroidPlatformJwtSigner(),
         ).apply {
+            registerProvider("subscription", me.rerere.ai.provider.providers.SubscriptionProvider(
+                client = get<PlatformHttpClient>(named(MCP_PLATFORM_HTTP_CLIENT)),
+                fallbackClient = get(named(SUBSCRIPTION_FALLBACK_HTTP_CLIENT)),
+                mediaEncoder = AndroidPlatformMediaEncoder(),
+                tokens = get<me.rerere.rikkahub.data.ai.subscription.SubscriptionAuthManager>(),
+            ))
             // The on-device provider lives in :local-llm, so register it here (see ProviderManager).
             registerProvider(
                 me.rerere.locallm.litert.LiteRtProvider.NAME,

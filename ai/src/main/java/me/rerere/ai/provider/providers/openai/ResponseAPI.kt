@@ -1,5 +1,7 @@
 package me.rerere.ai.provider.providers.openai
 
+import me.rerere.ai.util.toProviderError
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import me.rerere.common.platform.PlatformLog
@@ -27,6 +29,7 @@ import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ProviderProxy
+import me.rerere.ai.provider.SubscriptionAccountType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.selectProviderKey
 import me.rerere.ai.provider.TextGenerationParams
@@ -152,12 +155,20 @@ class ResponseAPI(
 
         PlatformLog.i(TAG, "streamText: $encodedRequestBody")
 
+        var completed = false
+        val requiresCompletion = providerSetting.subscriptionAccount != null ||
+            me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(providerSetting.baseUrl) != null
+        val service = providerSetting.subscriptionAccount?.displayName ?: "OpenCode"
         var hasEmittedChunk = false
         val job = launch {
             httpClient.streamEvents(request).collect { event ->
                 when (event) {
                     is PlatformServerEvent.Open -> Unit
                     PlatformServerEvent.Closed -> {
+                        if (requiresCompletion && !completed) {
+                            close(IllegalStateException("$service response was interrupted. Please try again."))
+                            return@collect
+                        }
                         if (hasEmittedChunk) {
                             keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
                         }
@@ -186,21 +197,41 @@ class ResponseAPI(
                     }
                     is PlatformServerEvent.Event -> {
                         PlatformLog.d(TAG, "onEvent: ${event.id}/${event.event} ${event.data}")
+                        if (event.event == "error") {
+                            close(me.rerere.ai.util.providerHttpError(null, event.data))
+                            return@collect
+                        }
                         if (event.data.isNotBlank()) {
                             val eventJson = json.parseToJsonElement(event.data).jsonObject
+                            val type = eventJson["type"]?.jsonPrimitive?.contentOrNull
+                            if (requiresCompletion && type in setOf("response.failed", "response.incomplete", "error")) {
+                                val detail = eventJson["response"]?.jsonObjectOrNull?.get("error")?.jsonObjectOrNull
+                                    ?: eventJson["error"]?.jsonObjectOrNull
+                                val code = detail?.get("code")?.jsonPrimitive?.contentOrNull.orEmpty()
+                                val message = if (code.contains("usage") || code.contains("rate_limit") || code.contains("quota"))
+                                    "$service usage is unavailable or its limit has been reached. Check Usage in provider settings."
+                                else detail?.get("message")?.jsonPrimitive?.contentOrNull?.take(300)
+                                    ?: "$service could not complete this response. Please try again ($type)."
+                                close(IllegalStateException(message))
+                                return@collect
+                            }
+                            if (type == "response.completed") completed = true
                             val chunk = parseResponseDelta(eventJson)
                             if (chunk != null) {
                                 hasEmittedChunk = true
                                 trySend(chunk)
                             }
                         }
-                        if (event.event == "response.completed") {
+                        if (completed || event.event == "response.completed") {
                             keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
                             close()
                         }
                     }
                 }
             }
+            if (requiresCompletion && !completed) {
+                close(IllegalStateException("$service response was interrupted. Please try again."))
+            } else close()
         }
 
         awaitClose {
@@ -251,7 +282,14 @@ class ResponseAPI(
             }
 
             // messages
-            put("input", buildMessages(messages))
+            val encryptedHistory = providerSetting?.subscriptionUsesCodex == true || providerSetting?.subscriptionAccount == SubscriptionAccountType.GROK ||
+                (providerSetting != null && me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(providerSetting.baseUrl) != null &&
+                    (params.model.modelId.startsWith("gpt-", true) || params.model.modelId.startsWith("grok-", true)))
+            put("input", buildMessages(messages, encryptedHistory))
+            if (encryptedHistory) {
+                put("store", false)
+                put("include", buildJsonArray { add(JsonPrimitive("reasoning.encrypted_content")) })
+            }
 
             // reasoning
             if (params.model.abilities.contains(ModelAbility.REASONING)) {
@@ -284,10 +322,21 @@ class ResponseAPI(
                     }
                 }
             }
-        }.mergeCustomBody(params.customBody)
+        }.mergeCustomBody(params.customBody).let { body ->
+            if (providerSetting?.subscriptionAccount == SubscriptionAccountType.GROK ||
+                (providerSetting != null && me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(providerSetting.baseUrl) != null &&
+                    params.model.modelId.startsWith("grok-", true))) {
+                grokSubscriptionBody(body, params.model.modelId,
+                    params.thinkingBudget.takeIf { params.model.abilities.contains(ModelAbility.REASONING) })
+            } else if (providerSetting?.subscriptionUsesCodex == true) {
+                codexSubscriptionBody(body)
+            } else if (providerSetting?.subscriptionAccount == SubscriptionAccountType.CHATGPT) {
+                chatGptSubscriptionBody(body)
+            } else body
+        }
     }
 
-    private fun buildMessages(messages: List<UIMessage>) = buildJsonArray {
+    private fun buildMessages(messages: List<UIMessage>, encryptedReasoning: Boolean = false) = buildJsonArray {
         val uploadable = messages.filter {
             it.isValidToUpload() && it.role != MessageRole.SYSTEM
         }
@@ -349,6 +398,12 @@ class ResponseAPI(
                 continue
             }
 
+            if (encryptedReasoning && message.role == MessageRole.ASSISTANT) {
+                message.parts.filterIsInstance<UIMessagePart.Reasoning>().mapNotNull {
+                    it.metadata?.get("openai_reasoning_item") as? JsonObject
+                }.filter { it["encrypted_content"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true }
+                    .distinctBy { it["id"] }.forEach { add(it) }
+            }
             val contentParts = buildResponseContent(message)
             add(buildJsonObject {
                 put("role", JsonPrimitive(message.role.name.lowercase()))
@@ -489,10 +544,11 @@ class ResponseAPI(
                 )
             }
 
-            "response.output_item.added" -> {
+            "response.output_item.added", "response.output_item.done" -> {
                 val item = jsonObject["item"]?.jsonObject ?: error("chunk item not found")
                 val type = item["type"]?.jsonPrimitive?.content ?: error("chunk type not found")
                 val id = item["id"]?.jsonPrimitive?.content ?: error("chunk id not found")
+                if (chunkType == "response.output_item.done" && type != "reasoning") return null
                 if (type == "function_call") {
                     return MessageChunk(
                         id = id,
@@ -533,6 +589,7 @@ class ResponseAPI(
                                             finishedAt = null,
                                             metadata = buildJsonObject {
                                                 put("reasoning_kind", "summary")
+                                                put("openai_reasoning_item", item)
                                             }
                                         )
                                     )
@@ -738,29 +795,12 @@ class ResponseAPI(
         return null
     }
 
-    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
-        val bodySnippet = event.body?.takeIf { it.isNotBlank() }?.take(500)
-        val fallback = RuntimeException(
-            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}" +
-                (bodySnippet?.let { " (body: $it)" } ?: "")
-        )
-        val bodyRaw = event.body
-        return try {
-            if (!bodyRaw.isNullOrBlank()) {
-                val bodyElement = Json.parseToJsonElement(bodyRaw)
-                bodyElement.parseErrorDetail()
-            } else {
-                fallback
-            }
-        } catch (e: Throwable) {
-            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
-            fallback
-        }
-    }
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable = event.toProviderError()
 }
 
 private fun isModelAllowTemperature(model: Model): Boolean {
-    return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
+    return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId) &&
+        !ModelRegistry.GPT_6.match(model.modelId) && !ModelRegistry.GPT_5_6.match(model.modelId)
 }
 
 private fun logWarning(message: String) {
@@ -820,4 +860,77 @@ private fun ProviderProxy.toPlatformProxy(): PlatformHttpProxy? {
             password = password
         )
     }
+}
+
+/** Enforce the ChatGPT plan route requirements after user custom-body overrides. */
+internal fun chatGptSubscriptionBody(body: JsonObject): JsonObject {
+    val unsupported = setOf("background", "conversation", "max_output_tokens", "max_tool_calls", "metadata",
+        "moderation", "multi_agent", "prompt", "prompt_cache_retention", "safety_identifier", "temperature",
+        "top_logprobs", "top_p", "truncation", "user", "previous_response_id")
+    return JsonObject(body.filterKeys { it !in unsupported }.toMutableMap().apply {
+        put("store", JsonPrimitive(false))
+        put("stream", JsonPrimitive(true))
+        // History must retain the namespace used by the declared local tools.
+        val input = get("input") as? JsonArray
+        if (input != null) put("input", JsonArray(input.map { item ->
+            val obj = item as? JsonObject
+            if (obj?.get("type")?.jsonPrimitive?.contentOrNull in setOf("function_call", "function_call_output")) {
+                JsonObject(obj.orEmpty() + ("namespace" to JsonPrimitive("lastchat")))
+            } else item
+        }))
+        val tools = get("tools") as? JsonArray
+        if (tools != null && tools.isNotEmpty()) {
+            put("tools", buildJsonArray {
+                add(buildJsonObject {
+                    put("type", "namespace")
+                    put("name", "lastchat")
+                    put("description", "Tools available in LastChat")
+                    put("tools", tools)
+                })
+            })
+        }
+    })
+}
+
+/** Codex uses stateless Responses streaming, plain function tools and encrypted reasoning replay. */
+internal fun codexSubscriptionBody(body: JsonObject): JsonObject {
+    val unsupported = setOf("temperature", "top_p", "max_output_tokens", "previous_response_id", "store",
+        "background", "conversation", "truncation", "prompt_cache_retention")
+    return JsonObject(body.filterKeys { it !in unsupported }.toMutableMap().apply {
+        put("store", JsonPrimitive(false))
+        put("stream", JsonPrimitive(true))
+        val includes = (get("include") as? JsonArray).orEmpty().toMutableList()
+        if (includes.none { it.jsonPrimitive.contentOrNull == "reasoning.encrypted_content" })
+            includes += JsonPrimitive("reasoning.encrypted_content")
+        put("include", JsonArray(includes))
+        // Match current Codex/RikkaHub: system context is a leading developer input message.
+        val instructions = remove("instructions")?.jsonPrimitive?.contentOrNull.orEmpty()
+        val input = (get("input") as? JsonArray).orEmpty()
+        if (instructions.isNotBlank()) put("input", JsonArray(listOf(buildJsonObject {
+            put("role", "developer"); put("content", instructions)
+        }) + input))
+    })
+}
+
+/** xAI account Responses differs from Codex in system role and reasoning options. */
+internal fun grokSubscriptionBody(body: JsonObject, modelId: String, budget: Int?): JsonObject {
+    return JsonObject(body.toMutableMap().apply {
+        put("store", JsonPrimitive(false)); put("stream", JsonPrimitive(true))
+        val context = remove("instructions")?.jsonPrimitive?.contentOrNull.orEmpty()
+        if (context.isNotBlank()) put("input", JsonArray(listOf(buildJsonObject {
+            put("role", "system"); put("content", context)
+        }) + (get("input") as? JsonArray).orEmpty()))
+        val reasoning = get("reasoning") as? JsonObject
+        val unsupportedEffort = Regex("^grok-4[.]20(-[0-9]{4})?-(non-)?reasoning$").matches(modelId)
+        if (reasoning != null) {
+            val values = reasoning.toMutableMap().apply {
+                remove("summary")
+                if (unsupportedEffort) remove("effort")
+                else if (get("effort")?.jsonPrimitive?.contentOrNull == "max")
+                    put("effort", JsonPrimitive(if (modelId == "grok-4.6") "xhigh" else "high"))
+            }
+            if (values.isEmpty()) remove("reasoning") else put("reasoning", JsonObject(values))
+        }
+        if (budget == 0 && !unsupportedEffort) put("reasoning", buildJsonObject { put("effort", "none") })
+    })
 }
