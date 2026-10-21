@@ -309,7 +309,8 @@ class SettingsStore(
                 ttsProviders = ttsProviders,
                 selectedTTSVoiceId = selectedTtsVoiceId,
             ).normalizeWebServerSettings().normalizeFontSettings().normalizeTtsSettings()
-                .normalizeLocalProvider().normalizeAccountProviderNames().normalizeSearchServices().normalizeMemorySettings()
+                .normalizeLocalProvider().normalizeAccountProviderNames().normalizeSearchServices()
+                .normalizeMemorySettings().normalizeContextManagement()
         }
         .map { settings ->
             // 去重并清理无效引用
@@ -637,7 +638,7 @@ class SettingsStore(
             .normalizeLocalProvider()
             .normalizeAccountProviderNames()
             .normalizeSearchServices()
-            .normalizeMemorySettings()
+            .normalizeMemorySettings().normalizeContextManagement()
             .clearMissingModelReferences()
 
         // Handle explicit secret deletions (user cleared a field that had a value)
