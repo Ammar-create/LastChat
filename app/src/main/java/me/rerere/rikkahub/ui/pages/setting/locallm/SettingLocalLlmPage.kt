@@ -1,9 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting.locallm
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,19 +57,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
-import me.rerere.rikkahub.utils.plus
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LocalAccelerator
 import me.rerere.locallm.LocalDownload
@@ -99,8 +98,8 @@ import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelDragHandle
 import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelSettingsSheet
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 
 @Composable
 fun SettingLocalLlmPage(
@@ -124,26 +123,10 @@ fun SettingLocalLlmPage(
     val installedOrder = rememberReorderableItems(state.installed, key = { it.id }, onCommit = vm::reorderInstalledModels)
     val sttInstalledOrder = rememberReorderableItems(sttState.installed,
         key = { "sherpa-installed-${it.id}" }, onCommit = sttVm::reorderInstalledModels)
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        installedOrder.move(from.key, to.key)
-    }
-    val sttReorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        sttInstalledOrder.move(from.key, to.key)
-    }
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
-    var sttDraggingIndex by remember { mutableStateOf(-1) }
-    var sttDragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    var sttIsUnlocked by remember { mutableStateOf(false) }
-    var sttNeighborsUnlocked by remember { mutableStateOf(false) }
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
-    if (sttDragOffset == 0f && sttNeighborsUnlocked) {
-        sttNeighborsUnlocked = false
-    }
+    val reorderableState = rememberAppReorderableLazyListState(listState, installedOrder)
+    val sttReorderableState = rememberAppReorderableLazyListState(listState, sttInstalledOrder)
+    val swipeNeighbors = rememberSwipeNeighborState()
+    val sttSwipeNeighbors = rememberSwipeNeighborState()
 
     Scaffold(
         topBar = {
@@ -208,43 +191,19 @@ fun SettingLocalLlmPage(
                         index == state.installed.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
-                    val thresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 35.dp.toPx() }
-                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                        neighborsUnlocked = true
-                    }
-                    val neighborOffset = if (
-                        draggingIndex >= 0 && draggingIndex != index && !isUnlocked && !neighborsUnlocked
-                    ) {
-                        when (kotlin.math.abs(index - draggingIndex)) {
-                            1 -> dragOffset * 0.35f
-                            2 -> dragOffset * 0.12f
-                            else -> 0f
-                        }
-                    } else {
-                        0f
-                    }
+                    val neighborOffset = swipeNeighbors.offsetFor(index, installedOrder.items) { it.id }
                     val iconUrl = remember(model.id, catalogSnapshot) {
                         catalogSnapshot?.inferFamilyEntry(model.displayName)?.iconUrl
                     }
-                    ReorderableItem(state = reorderableState, key = model.id) { isDragging ->
+                    AppReorderableItem(state = reorderableState, key = model.id) { isDragging ->
                         PhysicsSwipeToDelete(
                             position = position,
                             neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(model.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(model.id) },
                             onDelete = { modelPendingDelete = model },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .scale(if (isDragging) 0.95f else 1f),
+                                .fillMaxWidth(),
                         ) { shape ->
                             InstalledModelCard(
                                 model = model,
@@ -342,40 +301,16 @@ fun SettingLocalLlmPage(
                     index == sttState.installed.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
-                val thresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 35.dp.toPx() }
-                if (sttDraggingIndex >= 0 && !sttNeighborsUnlocked && kotlin.math.abs(sttDragOffset) >= thresholdPx) {
-                    sttNeighborsUnlocked = true
-                }
-                val neighborOffset = if (
-                    sttDraggingIndex >= 0 && sttDraggingIndex != index && !sttIsUnlocked && !sttNeighborsUnlocked
-                ) {
-                    when (kotlin.math.abs(index - sttDraggingIndex)) {
-                        1 -> sttDragOffset * 0.35f
-                        2 -> sttDragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-                ReorderableItem(state = sttReorderableState, key = "sherpa-installed-${model.id}") { isDragging ->
+                val neighborOffset = sttSwipeNeighbors.offsetFor(index, sttInstalledOrder.items) { it.id }
+                AppReorderableItem(state = sttReorderableState, key = "sherpa-installed-${model.id}") { isDragging ->
                     PhysicsSwipeToDelete(
                         position = position,
                         neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            sttDraggingIndex = index
-                            sttDragOffset = offset
-                            sttIsUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            if (sttDraggingIndex == index) {
-                                sttDraggingIndex = -1
-                                sttDragOffset = 0f
-                            }
-                        },
+                        onDragProgress = { offset, unlocked -> sttSwipeNeighbors.update(model.id, offset, unlocked) },
+                        onDragEnd = { sttSwipeNeighbors.end(model.id) },
                         onDelete = { sherpaModelPendingDelete = model },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .scale(if (isDragging) 0.95f else 1f),
+                            .fillMaxWidth(),
                     ) { shape ->
                         SherpaInstalledModelCard(
                             model = model,

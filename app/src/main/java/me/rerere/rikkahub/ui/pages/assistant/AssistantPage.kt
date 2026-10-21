@@ -1,11 +1,13 @@
 package me.rerere.rikkahub.ui.pages.assistant
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -27,7 +29,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,20 +39,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 
@@ -63,24 +59,18 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.FileOpen
-import androidx.compose.material.icons.rounded.PowerOff
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.OutlinedButton
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantMemory
@@ -89,23 +79,18 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
-import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantImporter
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlin.uuid.Uuid
 import androidx.compose.foundation.lazy.items as lazyItems
 
-import androidx.compose.material3.Slider
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.lazy.itemsIndexed
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.listItemShape
@@ -116,7 +101,6 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.pages.setting.LocalSettingsWideLayout
 import me.rerere.rikkahub.utils.AssistantExportImport
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.rounded.Upload
 
 
 @Composable
@@ -302,62 +286,50 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                 initialValue = emptyList(),
                             )
 
-                            androidx.compose.runtime.key(canDelete) {
-                                PhysicsSwipeToDelete(
+                            PhysicsSwipeToDelete(
+                                position = position,
+                                deleteEnabled = canDelete,
+                                onDelete = {
+                                    requestDeleteAssistant(assistant)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { _ ->
+                                AssistantItemContent(
+                                    assistant = assistant,
+                                    settings = settings,
+                                    memories = memories,
                                     position = position,
-                                    deleteEnabled = canDelete,
-                                    onDelete = {
-                                        requestDeleteAssistant(assistant)
+                                    haptics = haptics,
+                                    onClick = {
+                                        navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
                                     },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) { _ ->
-                                    AssistantItemContent(
-                                        assistant = assistant,
-                                        settings = settings,
-                                        memories = memories,
-                                        position = position,
-                                        haptics = haptics,
-                                        onClick = {
-                                            navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                                        },
-                                        onCopy = {
-                                            vm.copyAssistant(assistant)
-                                        },
-                                        dragHandle = {
-                                            IconButton(
-                                                onClick = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                                                }
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Settings,
-                                                    contentDescription = stringResource(R.string.settings)
-                                                )
+                                    onCopy = {
+                                        vm.copyAssistant(assistant)
+                                    },
+                                    dragHandle = {
+                                        IconButton(
+                                            onClick = {
+                                                haptics.perform(HapticPattern.Pop)
+                                                navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
                                             }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Settings,
+                                                contentDescription = stringResource(R.string.settings)
+                                            )
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
                     }
                 } else {
-                    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                        if (!isFiltering) assistantOrder.move(from.key, to.key)
-                    }
+                    val reorderableState = rememberAppReorderableLazyListState(
+                        lazyListState, assistantOrder,
+                        enabled = !isFiltering,
+                    )
 
-                // State for swipe neighbor tracking.
-                var draggingIndex by remember { mutableStateOf(-1) }
-                var dragOffset by remember { mutableFloatStateOf(0f) }
-                var isUnlocked by remember { mutableStateOf(false) }
-                var neighborsUnlocked by remember { mutableStateOf(false) }
-                val density = androidx.compose.ui.platform.LocalDensity.current
-
-                androidx.compose.runtime.LaunchedEffect(dragOffset, neighborsUnlocked) {
-                    if (dragOffset == 0f && neighborsUnlocked) {
-                        neighborsUnlocked = false
-                    }
-                }
+                val swipeNeighbors = rememberSwipeNeighborState()
 
                 LazyColumn(
                 modifier = Modifier
@@ -375,27 +347,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         else -> ItemPosition.MIDDLE
                     }
                     
-                    // Calculate neighbor offset for swipe effect
-                    val thresholdPx = with(density) { 35.dp.toPx() }
-                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                        neighborsUnlocked = true
-                    }
-                    
-                    val shouldNeighborFollow = draggingIndex >= 0 && 
-                        draggingIndex != index && 
-                        !isUnlocked && 
-                        !neighborsUnlocked
-                    
-                    val neighborOffset = if (shouldNeighborFollow) {
-                        val distance = kotlin.math.abs(index - draggingIndex)
-                        when (distance) {
-                            1 -> dragOffset * 0.35f
-                            2 -> dragOffset * 0.12f
-                            else -> 0f
-                        }
-                    } else {
-                        0f
-                    }
+                    val neighborOffset = swipeNeighbors.offsetFor(index, filteredAssistants) { it.id }
                     
 
                     // Collect memories OUTSIDE of ReorderableItem to prevent recomposition issues during drag
@@ -403,68 +355,55 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         initialValue = emptyList(),
                     )
 
-                    ReorderableItem(
+                    AppReorderableItem(
                         state = reorderableState,
                         key = assistant.id
                     ) { isDragging ->
-                        // Key on canDelete to force complete PhysicsSwipeToDelete recreation when list size changes
-                        androidx.compose.runtime.key(canDelete) {
-                            PhysicsSwipeToDelete(
-                                position = position,
-                                deleteEnabled = canDelete,
-                                neighborOffset = neighborOffset,
-                                onDragProgress = { offset, unlocked ->
-                                    draggingIndex = index
-                                    dragOffset = offset
-                                    isUnlocked = unlocked
-                                },
-                                onDragEnd = {
-                                    if (draggingIndex == index) {
-                                        draggingIndex = -1
-                                        dragOffset = 0f
-                                    }
-                                },
-                                onDelete = {
-                                    requestDeleteAssistant(assistant)
-                                },
-                                modifier = Modifier
-                                    .scale(if (isDragging) 0.95f else 1f)
-                                    .fillMaxWidth()
-                        ) { _ ->
-                            AssistantItemContent(
-                                assistant = assistant,
-                                settings = settings,
-                                memories = memories,
-                                haptics = haptics,
-                                onClick = {
-                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                                },
-                                onCopy = {
-                                    vm.copyAssistant(assistant)
-                                },
-                                dragHandle = {
-                                    if (!isFiltering) {
-                                        IconButton(
-                                            onClick = {},
-                                            modifier = Modifier.longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
-                                            )
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.DragIndicator,
-                                                contentDescription = null
-                                            )
-                                        }
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = canDelete,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(assistant.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(assistant.id) },
+                            onDelete = {
+                                requestDeleteAssistant(assistant)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                    ) { _ ->
+                        AssistantItemContent(
+                            assistant = assistant,
+                            settings = settings,
+                            memories = memories,
+                            haptics = haptics,
+                            onClick = {
+                                navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                            },
+                            onCopy = {
+                                vm.copyAssistant(assistant)
+                            },
+                            dragHandle = {
+                                if (!isFiltering) {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.Pop)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.Thud)
+                                            }
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragIndicator,
+                                            contentDescription = null
+                                        )
                                     }
                                 }
-                            )
-                            }  // end PhysicsSwipeToDelete content
-                        }  // key(canDelete)
+                            }
+                        )
+                        }  // end PhysicsSwipeToDelete content
                     }  // ReorderableItem
                 }
             }

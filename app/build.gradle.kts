@@ -435,6 +435,7 @@ dependencies {
 
     // tests
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.ui.test.junit4)
     // Avatar render harness: Robolectric native-graphics screenshots of the mark.
     testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation(libs.androidx.junit)

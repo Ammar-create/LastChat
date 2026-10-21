@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
@@ -12,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,15 +45,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -76,8 +73,8 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlin.uuid.Uuid
 
 /**
@@ -108,7 +105,7 @@ fun ApiKeyPoolBottomSheet(
     val poolOrder = rememberReorderableItems(pool, key = { it.id }, eagerCommit = true) { order ->
         onEdit(provider.withApiKeyPool(provider.apiKeyPool.reorderedByKeys(order) { it.id }))
     }
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to -> poolOrder.move(from.key, to.key) }
+    val reorderableState = rememberAppReorderableLazyListState(lazyListState, poolOrder)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -247,7 +244,7 @@ fun ApiKeyPoolBottomSheet(
                             else -> "••••••••"
                         }
 
-                        ReorderableItem(state = reorderableState, key = entry.id) { isDragging ->
+                        AppReorderableItem(state = reorderableState, key = entry.id) { isDragging ->
                             PhysicsSwipeToDelete(
                                 position = position,
                                 deleteEnabled = true,
@@ -272,7 +269,6 @@ fun ApiKeyPoolBottomSheet(
                                     )
                                 },
                                 modifier = Modifier
-                                    .scale(if (isDragging) 0.95f else 1f)
                                     .fillMaxWidth()
                             ) { shape ->
                                 ApiKeyCard(

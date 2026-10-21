@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
@@ -33,19 +37,14 @@ import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.Book
-import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.DragIndicator
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -56,22 +55,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,8 +80,6 @@ import me.rerere.rikkahub.data.model.collectMediaFileRefs
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.ToastAction
@@ -102,11 +93,10 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.OwnedFileDirectory
 import me.rerere.rikkahub.utils.importOwnedFile
-import me.rerere.rikkahub.utils.plus
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 
 @Composable
 fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
@@ -288,23 +278,19 @@ fun LorebooksPageContent(
     val navController = LocalNavController.current
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    val density = LocalDensity.current
 
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
     val itemOrder = rememberReorderableItems(settings.lorebooks, key = { it.id }) { order ->
         vm.updateSettings { latest -> latest.copy(lorebooks = latest.lorebooks.reorderedByKeys(order) { it.id }) }
     }
     val orderedLorebooks = itemOrder.items
     val canDelete = true
 
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to -> itemOrder.move(from.key, to.key) }
+    val reorderableState = rememberAppReorderableLazyListState(
+        listState, itemOrder,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 40.dp),
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -364,103 +350,73 @@ fun LorebooksPageContent(
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val thresholdPx = with(density) { 35.dp.toPx() }
-                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                        neighborsUnlocked = true
-                    }
+                    val neighborOffset = swipeNeighbors.offsetFor(index, orderedLorebooks) { it.id }
 
-                    val shouldNeighborFollow = draggingIndex >= 0 &&
-                        draggingIndex != index &&
-                        !isUnlocked &&
-                        !neighborsUnlocked
-
-                    val neighborOffset = if (shouldNeighborFollow) {
-                        when (kotlin.math.abs(index - draggingIndex)) {
-                            1 -> dragOffset * 0.35f
-                            2 -> dragOffset * 0.12f
-                            else -> 0f
-                        }
-                    } else {
-                        0f
-                    }
-
-                    ReorderableItem(
+                    AppReorderableItem(
                         state = reorderableState,
                         key = lorebook.id
                     ) { isDragging ->
-                        androidx.compose.runtime.key(canDelete) {
-                            PhysicsSwipeToDelete(
-                                position = position,
-                                deleteEnabled = canDelete,
-                                neighborOffset = neighborOffset,
-                                onDragProgress = { offset, unlocked ->
-                                    draggingIndex = index
-                                    dragOffset = offset
-                                    isUnlocked = unlocked
-                                },
-                                onDragEnd = {
-                                    if (draggingIndex == index) {
-                                        draggingIndex = -1
-                                        dragOffset = 0f
-                                    }
-                                },
-                                onDelete = {
-                                    val deletedLorebook = lorebook
-                                    val cleanupKey = "lorebook:${deletedLorebook.id}"
-                                    vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id }) }
-                                    vm.cleanupFilesIfUnreferenced(
-                                        fileRefs = deletedLorebook.collectMediaFileRefs(),
-                                        delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
-                                        cleanupKey = cleanupKey,
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = canDelete,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(lorebook.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(lorebook.id) },
+                            onDelete = {
+                                val deletedLorebook = lorebook
+                                val cleanupKey = "lorebook:${deletedLorebook.id}"
+                                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.filter { it.id != lorebook.id }) }
+                                vm.cleanupFilesIfUnreferenced(
+                                    fileRefs = deletedLorebook.collectMediaFileRefs(),
+                                    delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+                                    cleanupKey = cleanupKey,
+                                )
+                                toaster.show(
+                                    message = context.getString(
+                                        R.string.lorebooks_page_deleted,
+                                        lorebook.name.ifEmpty { context.getString(R.string.lorebooks_page_unnamed) }
+                                    ),
+                                    duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+                                    action = ToastAction(
+                                        label = context.getString(R.string.undo),
+                                        onClick = {
+                                            vm.cancelUnreferencedFileCleanup(cleanupKey)
+                                            vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
+                                                    add(index.coerceAtMost(size), deletedLorebook)
+                                                }) }
+                                        }
                                     )
-                                    toaster.show(
-                                        message = context.getString(
-                                            R.string.lorebooks_page_deleted,
-                                            lorebook.name.ifEmpty { context.getString(R.string.lorebooks_page_unnamed) }
-                                        ),
-                                        duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
-                                        action = ToastAction(
-                                            label = context.getString(R.string.undo),
-                                            onClick = {
-                                                vm.cancelUnreferencedFileCleanup(cleanupKey)
-                                                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks.toMutableList().apply {
-                                                        add(index.coerceAtMost(size), deletedLorebook)
-                                                    }) }
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                        ) { _ ->
+                            LorebookCard(
+                                lorebook = lorebook,
+                                position = position,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Tick)
+                                    navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
+                                },
+                                dragHandle = {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.Pop)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.Thud)
                                             }
                                         )
-                                    )
-                                },
-                                modifier = Modifier
-                                    .scale(if (isDragging) 0.95f else 1f)
-                                    .fillMaxWidth()
-                            ) { _ ->
-                                LorebookCard(
-                                    lorebook = lorebook,
-                                    position = position,
-                                    onClick = {
-                                        haptics.perform(HapticPattern.Tick)
-                                        navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
-                                    },
-                                    dragHandle = {
-                                        IconButton(
-                                            onClick = {},
-                                            modifier = Modifier.longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
-                                            )
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.DragIndicator,
-                                                contentDescription = stringResource(R.string.drag_to_reorder)
-                                            )
-                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragIndicator,
+                                            contentDescription = stringResource(R.string.drag_to_reorder)
+                                        )
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }

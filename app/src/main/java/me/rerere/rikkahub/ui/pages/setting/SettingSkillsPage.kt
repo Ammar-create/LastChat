@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
@@ -64,21 +68,16 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -116,10 +115,9 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.SkillExportImport
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 
 @Composable
 fun SettingSkillsPage(
@@ -347,23 +345,19 @@ fun SkillsPageContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
-    val density = LocalDensity.current
 
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
     val itemOrder = rememberReorderableItems(settings.skills, key = { it.id }) { order ->
         vm.updateSettings { latest -> latest.copy(skills = latest.skills.reorderedByKeys(order) { it.id }) }
     }
     val orderedSkills = itemOrder.items
     val canDelete = true
 
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to -> itemOrder.move(from.key, to.key) }
+    val reorderableState = rememberAppReorderableLazyListState(
+        listState, itemOrder,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 45.dp),
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -427,94 +421,64 @@ fun SkillsPageContent(
                         else -> ItemPosition.MIDDLE
                     }
 
-                    val thresholdPx = with(density) { 35.dp.toPx() }
-                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                        neighborsUnlocked = true
-                    }
+                    val neighborOffset = swipeNeighbors.offsetFor(index, orderedSkills) { it.id }
 
-                    val shouldNeighborFollow = draggingIndex >= 0 &&
-                        draggingIndex != index &&
-                        !isUnlocked &&
-                        !neighborsUnlocked
-
-                    val neighborOffset = if (shouldNeighborFollow) {
-                        when (kotlin.math.abs(index - draggingIndex)) {
-                            1 -> dragOffset * 0.35f
-                            2 -> dragOffset * 0.12f
-                            else -> 0f
-                        }
-                    } else {
-                        0f
-                    }
-
-                    ReorderableItem(
+                    AppReorderableItem(
                         state = reorderableState,
                         key = skill.id
                     ) { isDragging ->
-                        androidx.compose.runtime.key(canDelete) {
-                            PhysicsSwipeToDelete(
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = canDelete,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(skill.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(skill.id) },
+                            onDelete = {
+                                val deletedSkill = skill
+                                vm.updateSettings { settings -> settings.copy(skills = settings.skills.filter { it.id != skill.id }) }
+                                toaster.show(
+                                    message = context.getString(
+                                        R.string.skills_page_deleted,
+                                        skill.name.ifEmpty { context.getString(R.string.skills_page_unnamed) }
+                                    ),
+                                    action = ToastAction(
+                                        label = context.getString(R.string.undo),
+                                        onClick = {
+                                            vm.updateSettings { settings -> settings.copy(
+                                                    skills = settings.skills.toMutableList().apply {
+                                                        add(index.coerceAtMost(size), deletedSkill)
+                                                    }
+                                                ) }
+                                        }
+                                    )
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                        ) {
+                            SkillCard(
+                                skill = skill,
                                 position = position,
-                                deleteEnabled = canDelete,
-                                neighborOffset = neighborOffset,
-                                onDragProgress = { offset, unlocked ->
-                                    draggingIndex = index
-                                    dragOffset = offset
-                                    isUnlocked = unlocked
-                                },
-                                onDragEnd = {
-                                    if (draggingIndex == index) {
-                                        draggingIndex = -1
-                                        dragOffset = 0f
-                                    }
-                                },
-                                onDelete = {
-                                    val deletedSkill = skill
-                                    vm.updateSettings { settings -> settings.copy(skills = settings.skills.filter { it.id != skill.id }) }
-                                    toaster.show(
-                                        message = context.getString(
-                                            R.string.skills_page_deleted,
-                                            skill.name.ifEmpty { context.getString(R.string.skills_page_unnamed) }
-                                        ),
-                                        action = ToastAction(
-                                            label = context.getString(R.string.undo),
-                                            onClick = {
-                                                vm.updateSettings { settings -> settings.copy(
-                                                        skills = settings.skills.toMutableList().apply {
-                                                            add(index.coerceAtMost(size), deletedSkill)
-                                                        }
-                                                    ) }
+                                onEdit = { onEditSkill(skill) },
+                                dragHandle = {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = {
+                                                haptics.perform(HapticPattern.Pop)
+                                            },
+                                            onDragStopped = {
+                                                haptics.perform(HapticPattern.Thud)
                                             }
                                         )
-                                    )
-                                },
-                                modifier = Modifier
-                                    .scale(if (isDragging) 0.95f else 1f)
-                                    .fillMaxWidth()
-                            ) {
-                                SkillCard(
-                                    skill = skill,
-                                    position = position,
-                                    onEdit = { onEditSkill(skill) },
-                                    dragHandle = {
-                                        IconButton(
-                                            onClick = {},
-                                            modifier = Modifier.longPressDraggableHandle(
-                                                onDragStarted = {
-                                                    haptics.perform(HapticPattern.Pop)
-                                                },
-                                                onDragStopped = {
-                                                    haptics.perform(HapticPattern.Thud)
-                                                }
-                                            )
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.DragIndicator,
-                                                contentDescription = stringResource(R.string.drag_to_reorder)
-                                            )
-                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.DragIndicator,
+                                            contentDescription = stringResource(R.string.drag_to_reorder)
+                                        )
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }

@@ -32,6 +32,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -48,13 +51,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import me.rerere.rikkahub.ui.hooks.LocalListReordering
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -79,6 +84,30 @@ fun ItemPosition.listItemShape(): RoundedCornerShape = when (this) {
     ItemPosition.LAST -> AppShapes.ListItemLast
 }
 
+/** A single offset owner: dragging never queues snap coroutines behind a settling animation. */
+@Stable
+internal class SwipeOffsetState {
+    var value by mutableFloatStateOf(0f)
+        private set
+    private var animation: Job? = null
+
+    fun dragTo(value: Float) {
+        animation?.cancel()
+        animation = null
+        this.value = value
+    }
+
+    fun settle(scope: CoroutineScope, target: Float, damping: Float = 0.85f, stiffness: Float = 400f) {
+        animation?.cancel()
+        val start = value
+        animation = scope.launch {
+            Animatable(start).animateTo(target, spring(dampingRatio = damping, stiffness = stiffness)) {
+                this@SwipeOffsetState.value = value
+            }
+        }
+    }
+}
+
 /**
  * Physics-based swipe-to-delete component with:
  * - Heavy drag resistance (item moves slower than finger)
@@ -89,7 +118,7 @@ fun ItemPosition.listItemShape(): RoundedCornerShape = when (this) {
  * - Edge fade gradient
  * - Haptic feedback on unlock/lock
  * - Neighbor drag influence support
- * 
+ *
  * @param deleteEnabled Whether delete is allowed. When false, swipe is very difficult and always springs back.
  * @param neighborOffset Offset from a neighboring item being dragged (0 = not influenced)
  * @param onDragProgress Callback reporting current drag offset and unlock state for neighbor coordination
@@ -110,38 +139,41 @@ fun PhysicsSwipeToDelete(
     val density = LocalDensity.current
     val haptics = rememberPremiumHaptics()
     val scope = rememberCoroutineScope()
-    
+    val reordering = LocalListReordering.current
+    val latestDragProgress = rememberUpdatedState(onDragProgress)
+    val latestDragEnd = rememberUpdatedState(onDragEnd)
+
     // Physics parameters - when delete is disabled, make it much harder to move
     val dragFriction = if (deleteEnabled) 0.6f else 0.15f // Item moves at 60% or 15% of finger speed
     val revealDistancePx = with(density) { 140.dp.toPx() }
     val unlockThresholdPx = revealDistancePx * 0.25f // 1/4 of reveal distance = 35dp
     val magneticPullStrength = 0.3f // How strongly item "sticks" before unlock
-    
+
     // Animation state
-    val offsetX = remember { Animatable(0f) }
+    val offsetX = remember { SwipeOffsetState() }
     var isUnlocked by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
-    
-    // Reset state when deleteEnabled changes (e.g., when item becomes selected)
-    LaunchedEffect(deleteEnabled) {
-        if (!deleteEnabled) {
-            offsetX.snapTo(0f)
+
+    // A vertical reorder must not carry an open swipe, or compete with horizontal recognition.
+    LaunchedEffect(deleteEnabled, reordering) {
+        if (!deleteEnabled || reordering) {
+            if (isDragging || isUnlocked || offsetX.value != 0f) latestDragEnd.value?.invoke()
+            offsetX.dragTo(0f)
             isUnlocked = false
             isDragging = false
         }
     }
-    
-    // Report drag progress for neighbor coordination
-    LaunchedEffect(offsetX.value, isUnlocked, isDragging) {
-        if (isDragging && !isUnlocked) {
-            onDragProgress?.invoke(offsetX.value, isUnlocked)
+
+    LaunchedEffect(offsetX) {
+        snapshotFlow { Triple(offsetX.value, isUnlocked, isDragging) }.collect { (offset, unlocked, dragging) ->
+            if (dragging && !unlocked) latestDragProgress.value?.invoke(offset, unlocked)
         }
     }
-    
+
     // Animate neighbor offset with spring
     val animatedNeighborOffset = remember { Animatable(0f) }
     var wasNeighborInfluenced by remember { mutableStateOf(false) }
-    
+
     LaunchedEffect(neighborOffset) {
         if (neighborOffset != 0f) {
             animatedNeighborOffset.snapTo(neighborOffset)
@@ -155,21 +187,18 @@ fun PhysicsSwipeToDelete(
             )
         }
     }
-    
-    // Total offset is own drag + neighbor influence
-    val totalOffset = offsetX.value + animatedNeighborOffset.value
-    
+
     // Calculate unlock progress (0 = locked, 1 = unlocked) - only for own drag, not neighbor
-    val unlockProgress by remember {
+    val unlockProgress by remember(unlockThresholdPx) {
         derivedStateOf {
             (offsetX.value.absoluteValue / unlockThresholdPx).coerceIn(0f, 1f)
         }
     }
-    
+
     // Position-based corner radius with smooth animation on position change and unlock
     val groupRadiusPx = with(density) { groupCornerRadius.toPx() }
     val itemRadiusPx = with(density) { itemCornerRadius.toPx() }
-    
+
     // Animate base radii when position changes
     val targetTopRadius = when (position) {
         ItemPosition.ONLY, ItemPosition.FIRST -> groupRadiusPx
@@ -179,7 +208,7 @@ fun PhysicsSwipeToDelete(
         ItemPosition.ONLY, ItemPosition.LAST -> groupRadiusPx
         ItemPosition.MIDDLE, ItemPosition.FIRST -> itemRadiusPx
     }
-    
+
     val animatedTopRadius by androidx.compose.animation.core.animateFloatAsState(
         targetValue = targetTopRadius,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
@@ -190,19 +219,19 @@ fun PhysicsSwipeToDelete(
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "bottomRadius"
     )
-    
+
     // Calculate shape based on animated position and unlock progress
     // Only apply unlock progress if this item is being dragged (not neighbor influence)
-    val shape by remember {
+    val shape by remember(density, groupRadiusPx, itemRadiusPx) {
         derivedStateOf {
             // Only interpolate corners for own unlock progress (not neighbor influence)
-            val ownUnlockProgress = if (neighborOffset == 0f) unlockProgress else 0f
-            
+            val ownUnlockProgress = unlockProgress
+
             val finalTopStart = animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress
             val finalTopEnd = animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress
             val finalBottomEnd = animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress
             val finalBottomStart = animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress
-            
+
             RoundedCornerShape(
                 topStart = with(density) { finalTopStart.toDp() },
                 topEnd = with(density) { finalTopEnd.toDp() },
@@ -211,11 +240,11 @@ fun PhysicsSwipeToDelete(
             )
         }
     }
-    
+
     // Background color
     val backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
     val fadeColor = MaterialTheme.colorScheme.surfaceContainerLow
-    
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -233,19 +262,11 @@ fun PhysicsSwipeToDelete(
                 PhysicsSwipeActionButton(
                     onClick = {
                         haptics.perform(HapticPattern.Cancel)
-                        scope.launch {
-                            offsetX.animateTo(
-                                targetValue = 0f,
-                                animationSpec = spring(
-                                    dampingRatio = 0.5f,
-                                    stiffness = Spring.StiffnessMedium
-                                )
-                            )
-                            isUnlocked = false
-                        }
+                        isUnlocked = false
+                        offsetX.settle(scope, 0f)
                     },
                     containerColor = MaterialTheme.colorScheme.surface,
-                    alpha = (offsetX.value.absoluteValue / unlockThresholdPx).coerceIn(0f, 1f)
+                    alpha = { (offsetX.value.absoluteValue / unlockThresholdPx).coerceIn(0f, 1f) }
                 ) {
                     Icon(
                         Icons.Rounded.Close,
@@ -254,7 +275,7 @@ fun PhysicsSwipeToDelete(
                     )
                 }
             }
-            
+
             // Delete button - only show when delete is enabled
             if (deleteEnabled) {
                 PhysicsSwipeActionButton(
@@ -263,7 +284,7 @@ fun PhysicsSwipeToDelete(
                         onDelete()
                     },
                     containerColor = MaterialTheme.colorScheme.errorContainer,
-                    alpha = (offsetX.value.absoluteValue / unlockThresholdPx).coerceIn(0f, 1f)
+                    alpha = { (offsetX.value.absoluteValue / unlockThresholdPx).coerceIn(0f, 1f) }
                 ) {
                     Icon(
                         Icons.Rounded.Delete,
@@ -274,109 +295,57 @@ fun PhysicsSwipeToDelete(
                 }
             }
         }
-        
+
         // Foreground content with swipe gesture
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset { IntOffset(totalOffset.roundToInt(), 0) }
+                .graphicsLayer {
+                    translationX = offsetX.value + animatedNeighborOffset.value
+                }
                 .clip(shape)
                 .background(fadeColor)
-                .pointerInput(Unit) {
+                .pointerInput(deleteEnabled, reordering, revealDistancePx, dragFriction) {
+                    if (reordering) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = {
+                            offsetX.dragTo(offsetX.value) // Interrupt settling before reading the next delta.
                             isDragging = true
                         },
                         onDragEnd = {
                             isDragging = false
-                            onDragEnd?.invoke() // Call immediately so neighbors reset right away
-                            scope.launch {
-                                // When delete is disabled, always spring back regardless of threshold
-                                if (!deleteEnabled) {
-                                    // Spring back with haptic feedback
-                                    if (offsetX.value.absoluteValue > 10f) {
-                                        haptics.perform(HapticPattern.Thud)
-                                    }
-                                    offsetX.animateTo(
-                                        targetValue = 0f,
-                                        animationSpec = spring(
-                                            dampingRatio = 0.55f,
-                                            stiffness = Spring.StiffnessMediumLow
-                                        )
-                                    )
-                                } else if (offsetX.value.absoluteValue > unlockThresholdPx) {
-                                    // Snap to reveal position
-                                    if (!isUnlocked) {
-                                        haptics.perform(HapticPattern.Pop)
-                                        isUnlocked = true
-                                    }
-                                    offsetX.animateTo(
-                                        targetValue = -revealDistancePx,
-                                        animationSpec = spring(
-                                            dampingRatio = 0.6f, // Bouncy/Clicky for snap
-                                            stiffness = 300f     // Consistent stiffness
-                                        )
-                                    )
-                                } else {
-                                    // Snap back to locked
-                                    if (isUnlocked) {
-                                        haptics.perform(HapticPattern.Thud)
-                                        isUnlocked = false
-                                    }
-                                    offsetX.animateTo(
-                                        targetValue = 0f,
-                                        animationSpec = spring(
-                                            dampingRatio = 0.55f,
-                                            stiffness = Spring.StiffnessLow // Slower lock animation
-                                        )
-                                    )
-                                }
+                            latestDragEnd.value?.invoke()
+                            if (deleteEnabled && offsetX.value.absoluteValue > unlockThresholdPx) {
+                                if (!isUnlocked) haptics.perform(HapticPattern.Pop)
+                                isUnlocked = true
+                                offsetX.settle(scope, -revealDistancePx)
+                            } else {
+                                if (isUnlocked) haptics.perform(HapticPattern.Thud)
+                                isUnlocked = false
+                                offsetX.settle(scope, 0f)
                             }
                         },
                         onDragCancel = {
                             isDragging = false
-                            scope.launch {
-                                offsetX.animateTo(
-                                    targetValue = if (isUnlocked) -revealDistancePx else 0f,
-                                    animationSpec = spring(dampingRatio = 0.6f)
-                                )
-                            }
-                            onDragEnd?.invoke()
+                            offsetX.settle(scope, if (isUnlocked) -revealDistancePx else 0f)
+                            latestDragEnd.value?.invoke()
                         },
                         onHorizontalDrag = { change, dragAmount ->
                             change.consume()
-                            
                             val currentOffset = offsetX.value
-                            val newOffset: Float
-                            
-                            // Only allow left swipe (negative direction)
                             if (dragAmount < 0 || currentOffset < 0) {
-                                // Apply friction - movement is slower than finger
                                 val friction = if (currentOffset.absoluteValue < unlockThresholdPx && !isUnlocked) {
-                                    // Extra resistance before unlock threshold (magnetic pull)
                                     dragFriction * (1f - magneticPullStrength * (currentOffset.absoluteValue / unlockThresholdPx))
-                                } else {
-                                    dragFriction
-                                }
-                                
-                                newOffset = (currentOffset + dragAmount * friction)
+                                } else dragFriction
+                                val next = (currentOffset + dragAmount * friction)
                                     .coerceIn(-revealDistancePx * 1.2f, 0f)
-                                
-                                scope.launch {
-                                    offsetX.snapTo(newOffset)
-                                }
-                                
-                                // Haptic feedback when crossing threshold
-                                val wasUnderThreshold = currentOffset.absoluteValue < unlockThresholdPx
-                                val isOverThreshold = newOffset.absoluteValue >= unlockThresholdPx
-                                
-                                if (wasUnderThreshold && isOverThreshold && !isUnlocked) {
-                                    haptics.perform(HapticPattern.Pop)
-                                } else if (!wasUnderThreshold && !isOverThreshold && currentOffset.absoluteValue > 0) {
-                                    haptics.perform(HapticPattern.Tick)
-                                }
+                                offsetX.dragTo(next)
+                                val wasUnder = currentOffset.absoluteValue < unlockThresholdPx
+                                val isOver = next.absoluteValue >= unlockThresholdPx
+                                if (wasUnder && isOver && !isUnlocked) haptics.perform(HapticPattern.Pop)
+                                else if (!wasUnder && !isOver) haptics.perform(HapticPattern.Tick)
                             }
-                        }
+                        },
                     )
                 }
         ) {
@@ -392,13 +361,13 @@ fun PhysicsSwipeToDelete(
 private fun PhysicsSwipeActionButton(
     onClick: () -> Unit,
     containerColor: Color,
-    alpha: Float,
+    alpha: () -> Float,
     content: @Composable () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
-    val scale by animateFloatAsState(
+
+    val scale = animateFloatAsState(
         targetValue = if (isPressed) 0.85f else 1f,
         animationSpec = spring(
             dampingRatio = 0.6f, // Round/Clicky Standard
@@ -406,7 +375,7 @@ private fun PhysicsSwipeActionButton(
         ),
         label = "button_scale"
     )
-    val pressAlpha by animateFloatAsState(
+    val pressAlpha = animateFloatAsState(
         targetValue = if (isPressed) 0.7f else 1f,
         animationSpec = spring(
             dampingRatio = 0.6f,
@@ -414,9 +383,12 @@ private fun PhysicsSwipeActionButton(
         ),
         label = "button_alpha"
     )
-    
+
+    val latestAlpha = rememberUpdatedState(alpha)
+    val visible by remember { derivedStateOf { latestAlpha.value() > 0.01f } }
     Surface(
         onClick = onClick,
+        enabled = visible,
         shape = CircleShape,
         color = containerColor,
         tonalElevation = 4.dp,
@@ -424,9 +396,9 @@ private fun PhysicsSwipeActionButton(
         modifier = Modifier
             .size(44.dp)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                this.alpha = alpha * pressAlpha
+                scaleX = scale.value
+                scaleY = scale.value
+                this.alpha = latestAlpha.value() * pressAlpha.value
             }
     ) {
         Box(

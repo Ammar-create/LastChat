@@ -1,17 +1,17 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
 import androidx.annotation.StringRes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +41,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -63,25 +62,18 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -110,15 +102,14 @@ import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.utils.plus
 import me.rerere.search.KeylessSearchService
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
 import me.rerere.search.R as SearchR
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlinx.coroutines.launch
 
 /**
@@ -331,9 +322,6 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
     val orderedServices = rememberReorderableItems(settings.searchServices, key = { it.id }) { order ->
         vm.updateSettings { latest -> latest.copy(searchServices = latest.searchServices.reorderedByKeys(order) { it.id }) }
     }
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        orderedServices.move(from.key, to.key)
-    }
 
     Scaffold(
         topBar = {
@@ -375,20 +363,8 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) {
-        val density = LocalDensity.current
         
-        // State for swipe neighbor tracking
-        var draggingIndex by remember { mutableStateOf(-1) }
-        var dragOffset by remember { mutableFloatStateOf(0f) }
-        var isUnlocked by remember { mutableStateOf(false) }
-        var neighborsUnlocked by remember { mutableStateOf(false) }
-        
-        
-        // Reset neighborsUnlocked when offset returns to 0
-        if (dragOffset == 0f && neighborsUnlocked) {
-            neighborsUnlocked = false
-        }
-        
+        val swipeNeighbors = rememberSwipeNeighborState()
 
         
         // Delete confirmation state
@@ -396,6 +372,9 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var serviceToDelete by remember { mutableStateOf<SearchServiceOptions?>(null) }
 
         Box(modifier = Modifier.fillMaxSize()) {
+            val reorderableState = rememberAppReorderableLazyListState(
+                lazyListState, orderedServices, scrollThresholdPadding = it + PaddingValues(bottom = 120.dp),
+            )
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -455,30 +434,10 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                     else -> ItemPosition.MIDDLE
                 }
                 
-                // Calculate neighbor offset
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
-                
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
-                    !neighborsUnlocked
-                
-                val neighborOffset = if (shouldNeighborFollow) {
-                    val distance = kotlin.math.abs(index - draggingIndex)
-                    when (distance) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, orderedServices.items) { it.id }
                 
 
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableState,
                     key = service.id
                 ) { isDragging ->
@@ -486,23 +445,13 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
                         position = position,
                         deleteEnabled = true,
                         neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            if (draggingIndex == index) {
-                                draggingIndex = -1
-                                dragOffset = 0f
-                            }
-                        },
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(service.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(service.id) },
                         onDelete = {
                             serviceToDelete = service
                             showDeleteDialog = true
                         },
                         modifier = Modifier
-                            .scale(if (isDragging) 0.95f else 1f)
                             .fillMaxWidth()
                     ) { _ ->
                         SearchServiceItemContent(
@@ -768,26 +717,20 @@ internal fun SearchProvidersContent(
     val settings by vm.settings.collectAsStateWithLifecycle()
     val catalogSnapshot by vm.modelCatalogSnapshot.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-    val density = LocalDensity.current
     val lazyListState = rememberLazyListState()
     val orderedServices = rememberReorderableItems(settings.searchServices, key = { it.id }) { order ->
         vm.updateSettings { latest -> latest.copy(searchServices = latest.searchServices.reorderedByKeys(order) { it.id }) }
     }
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        orderedServices.move(from.key, to.key)
-    }
+    val reorderableState = rememberAppReorderableLazyListState(
+        lazyListState, orderedServices,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 120.dp),
+    )
 
     var editingService by remember { mutableStateOf<SearchServiceOptions?>(null) }
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var serviceToDelete by remember { mutableStateOf<SearchServiceOptions?>(null) }
 
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -849,27 +792,9 @@ internal fun SearchProvidersContent(
                     else -> ItemPosition.MIDDLE
                 }
 
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, orderedServices.items) { it.id }
 
-                val shouldNeighborFollow = draggingIndex >= 0 &&
-                    draggingIndex != index &&
-                    !isUnlocked &&
-                    !neighborsUnlocked
-
-                val neighborOffset = if (shouldNeighborFollow) {
-                    when (kotlin.math.abs(index - draggingIndex)) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableState,
                     key = service.id
                 ) { isDragging ->
@@ -877,23 +802,13 @@ internal fun SearchProvidersContent(
                         position = position,
                         deleteEnabled = true,
                         neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            if (draggingIndex == index) {
-                                draggingIndex = -1
-                                dragOffset = 0f
-                            }
-                        },
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(service.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(service.id) },
                         onDelete = {
                             serviceToDelete = service
                             showDeleteDialog = true
                         },
                         modifier = Modifier
-                            .scale(if (isDragging) 0.95f else 1f)
                             .fillMaxWidth()
                     ) { _ ->
                         SearchServiceItemContent(

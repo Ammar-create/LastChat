@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
 import me.rerere.rikkahub.ui.hooks.reorderedByKeys
 
@@ -7,7 +11,6 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -27,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -39,8 +41,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -51,12 +51,10 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FloatingActionButton
@@ -71,7 +69,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.Tab
@@ -82,15 +79,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -113,7 +107,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
@@ -159,8 +152,6 @@ import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ModelTypeTag
 import me.rerere.rikkahub.ui.components.ai.ProviderBalanceText
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
@@ -186,16 +177,12 @@ import me.rerere.rikkahub.ui.pages.setting.components.ProviderUsageCard
 import me.rerere.rikkahub.ui.pages.setting.components.SubscriptionAccountCard
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.ImageUtils
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import org.koin.core.parameter.parametersOf
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
-import java.util.Locale
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -435,7 +422,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val providerLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(id, providerLifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) vm.flushProviderEditNow()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE ||
+                event == androidx.lifecycle.Lifecycle.Event.ON_STOP) vm.flushProviderEditNow()
         }
         providerLifecycle.lifecycle.addObserver(observer)
         onDispose {
@@ -903,12 +891,13 @@ private fun ModelList(
     val scope = rememberCoroutineScope()
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()
-    val modelItemIndexOffset = 0
     val modelOrder = rememberReorderableItems(providerSetting.models, key = { it.id }, eagerCommit = true) { order ->
         onUpdateProvider(providerSetting.copyProvider(models = providerSetting.models.reorderedByKeys(order) { it.id }))
     }
-    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to -> modelOrder.move(from.key, to.key) }
-    val density = LocalDensity.current
+    val reorderableLazyListState = rememberAppReorderableLazyListState(
+        lazyListState, modelOrder,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 104.dp),
+    )
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     val apiModelSource = rememberApiModelSource(providerSetting)
@@ -955,20 +944,11 @@ private fun ModelList(
         }
     }
     
-    // State for swipe neighbor tracking
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
     var pendingDeleteModel by remember { mutableStateOf<me.rerere.ai.provider.Model?>(null) }
     
     
     val canDelete = true
-    
-    // Reset neighborsUnlocked when offset returns to 0
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -995,87 +975,47 @@ private fun ModelList(
                     else -> ItemPosition.MIDDLE
                 }
                 
-                // Calculate neighbor offset
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, modelOrder.items) { it.id }
                 
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
-                    !neighborsUnlocked
-                
-                val neighborOffset = if (shouldNeighborFollow) {
-                    val distance = kotlin.math.abs(index - draggingIndex)
-                    when (distance) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-                
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableLazyListState,
                     key = item.id
                 ) { isDragging ->
 
-                    androidx.compose.runtime.key(canDelete) {
-                        ModelCard(
-                            model = item,
-                            position = position,
-                            canDelete = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                pendingDeleteModel = item
-                            },
-                            onEdit = { editedModel ->
-                                onUpdateProvider(providerSetting.editModel(editedModel))
-                            },
-                            parentProvider = providerSetting,
-                            dragHandle = {
-                                IconButton(
-                                    onClick = {},
-                                    modifier = Modifier.longPressDraggableHandle(
-                                        onDragStarted = {
-                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                                        },
-                                        onDragStopped = {
-                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Thud)
-                                        }
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.DragIndicator,
-                                        contentDescription = null
-                                    )
-                                }
-                            },
-                            modifier = Modifier
-                                .graphicsLayer {
-                                    if (isDragging) {
-                                        scaleX = 0.95f
-                                        scaleY = 0.95f
-                                    } else {
-                                        scaleX = 1f
-                                        scaleY = 1f
+                    ModelCard(
+                        model = item,
+                        position = position,
+                        canDelete = canDelete,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(item.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(item.id) },
+                        onDelete = {
+                            pendingDeleteModel = item
+                        },
+                        onEdit = { editedModel ->
+                            onUpdateProvider(providerSetting.editModel(editedModel))
+                        },
+                        parentProvider = providerSetting,
+                        dragHandle = {
+                            IconButton(
+                                onClick = {},
+                                modifier = Modifier.longPressDraggableHandle(
+                                    onDragStarted = {
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                    },
+                                    onDragStopped = {
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Thud)
                                     }
-                                },
-                        )
-                    }
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DragIndicator,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        modifier = Modifier,
+                    )
                 }
             }
             
