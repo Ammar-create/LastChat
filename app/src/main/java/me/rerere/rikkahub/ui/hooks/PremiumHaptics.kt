@@ -6,7 +6,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -257,14 +257,15 @@ fun rememberPremiumHaptics(enabled: Boolean? = null): PremiumHaptics {
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
     
-    // Read enableUIHaptics from settings if not explicitly provided
-    val settingsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
-    val settings by settingsStore.settingsFlow.collectAsState(
-        initial = me.rerere.rikkahub.data.datastore.Settings(init = true, providers = emptyList())
-    )
-    val isEnabled = enabled ?: settings.displaySetting.enableUIHaptics
-    
-    val vibrator = remember {
+    // Controls only depend on this one flag. A full-settings read here would wake
+    // every button and switch for any provider/model/text edit anywhere in the app.
+    val isEnabled = enabled ?: run {
+        val settings = rememberUserSettingsState()
+        val preference by remember(settings) { derivedStateOf { settings.value.displaySetting.enableUIHaptics } }
+        preference
+    }
+
+    val vibrator = remember(context) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = context.getSystemService(VibratorManager::class.java)

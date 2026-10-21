@@ -23,6 +23,8 @@ can no longer cancel a newer edit's save. The store publishes a flush synchronou
 before the draft is cleared. Turning off master memory also turns off consolidation,
 so normalization cannot immediately turn the switch back on.
 
+Haptic controls observe only the haptics preference; explicit overrides need no
+settings subscription. Unrelated edits no longer recompose those controls.
 Shared preference bindings update Compose synchronously, follow changes of key,
 and reread current preferences when notified. Color-mode reads use the current
 binding rather than the initial derived-state instance. Read-only switches retain
@@ -41,8 +43,8 @@ palette and themed content stable; dynamic palettes are cached against appearanc
 configuration and dark mode, with contrast changes handled separately. Typography
 uses the same appearance snapshot instead of a second full-settings subscription.
 
-Validation: 160 app, 236 AI and 17 UI-core checks passed (413 total). Coverage includes
-six deterministic paused-persistence cases, five native Compose control/theme
+Validation: 161 app, 236 AI and 17 UI-core checks passed (414 total). Coverage includes
+six deterministic paused-persistence cases, six native Compose control/theme
 scenarios, all nine existing native drag/auto-scroll scenarios, settings merges and
 normalization, slow/reordered acknowledgements, lifecycle durability, streaming and
 chat generation/history. Light/dark provider renders at regular and enlarged text

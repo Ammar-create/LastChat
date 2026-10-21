@@ -157,6 +157,27 @@ class ControlInteractionTest {
         assertEquals(0, clicks)
     }
 
+    @Composable
+    private fun HapticControlProbe(onRendered: () -> Unit) {
+        rememberPremiumHaptics()
+        SideEffect(onRendered)
+    }
+
+    @Test fun hapticControlsOnlyRecomposeWhenTheirOwnPreferenceChanges() {
+        var renders = 0
+        compose.setContent { HapticControlProbe { renders++ } }
+        compose.mainClock.autoAdvance = false
+        val before = renders
+        compose.runOnIdle { store.enqueueUpdate { it.copy(learningModePrompt = "unrelated edit") } }
+        frames(100)
+        assertEquals(before, renders)
+        compose.runOnIdle { store.enqueueUpdate { it.copy(displaySetting = it.displaySetting.copy(
+            enableUIHaptics = !it.displaySetting.enableUIHaptics,
+        )) } }
+        frames(100)
+        assertTrue(renders > before)
+    }
+
     @Test fun unrelatedEditsKeepThePaletteAndThemeContentStableButAppearanceEditsStillApply() {
         lateinit var scheme: androidx.compose.material3.ColorScheme
         var appearances = 0
