@@ -2666,10 +2666,13 @@ class ChatService(
                     ?: model.contextCapacityTokens
                     ?: Int.MAX_VALUE
                 val plan = me.rerere.ai.context.ContextPlanner.plan(
-                    messages = messages,
+                    // Covered history is represented by the stored summary, not counted again.
+                    messages = unsummarized,
                     model = model,
                     customBudgetTokens = usable,
-                    systemPromptTokens = ContextTokenEstimator.textTokens(assistant.systemPrompt, model),
+                    systemPromptTokens = ContextTokenEstimator.textTokens(
+                        assistant.systemPrompt + "\n" + conversation.contextSummary.orEmpty(), model,
+                    ),
                 )
                 val unsummarizedGroups = unsummarized.toTurnGroups()
                 val unsummarizedTokens = ContextTokenEstimator.messagesTokens(unsummarized, model)
@@ -2694,7 +2697,7 @@ class ChatService(
                     "Auto-summarization triggered by " +
                         if (smartThresholdReached) "smart context pressure" else "manual history limit",
                 )
-                val result = summarizeAndRefresh(conversationId)
+                val result = summarizeAndRefresh(conversationId, automatic = smartThresholdReached)
                 if (result.success) {
                     Log.i(TAG, "Auto-summarization completed: ${result.messagesSummarized} messages summarized, ${result.tokensSaved} tokens saved")
                 } else {
@@ -2702,12 +2705,16 @@ class ChatService(
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "checkAndAutoSummarize failed", e)
         }
     }
 
     // Summarize and refresh context
-    suspend fun summarizeAndRefresh(conversationId: Uuid): ContextRefreshResult = withContext(Dispatchers.IO) {
+    suspend fun summarizeAndRefresh(
+        conversationId: Uuid,
+        automatic: Boolean = false,
+    ): ContextRefreshResult = withContext(Dispatchers.IO) {
         try {
             val settings = settingsStore.settingsFlow.first()
             val conversation = normalizeConversation(
@@ -2736,21 +2743,25 @@ class ChatService(
             val hasPreviousSummary = !previousSummary.isNullOrBlank() && lastSummaryIndex >= 0
 
             val turnGroups = messages.toTurnGroups()
-            val usable = smartInputBudget(model, assistant.maxTokens)
-                ?: model.contextCapacityTokens
-                ?: 16_000
-            val plan = me.rerere.ai.context.ContextPlanner.plan(
-                messages = messages,
-                model = model,
-                customBudgetTokens = usable,
-            )
-            // Continuous Summary Bridge: only get messages AFTER the last summary index
             val startIndex = if (hasPreviousSummary && lastSummaryIndex in messages.indices) {
-                (lastSummaryIndex + 1).coerceAtMost(messages.size)
+                lastSummaryIndex + 1
             } else {
                 0
             }
-
+            // Retention belongs to the chat model. A small helper model must not make the
+            // chat's recent history smaller; its own input is independently batched below.
+            val chatModel = conversationContext.chatModel ?: model
+            val usable = smartInputBudget(chatModel, assistant.maxTokens)
+                ?: chatModel.contextCapacityTokens
+                ?: 16_000
+            val plan = me.rerere.ai.context.ContextPlanner.plan(
+                messages = messages.drop(startIndex),
+                model = chatModel,
+                customBudgetTokens = usable,
+                systemPromptTokens = ContextTokenEstimator.textTokens(
+                    assistant.systemPrompt + "\n" + previousSummary.orEmpty(), chatModel,
+                ),
+            )
             if (startIndex >= messages.size) {
                 return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
@@ -2761,8 +2772,15 @@ class ChatService(
                 archetype = plan.archetype,
                 pressureTier = plan.pressureTier,
                 messages = messages,
-                model = model,
-                targetRemainingTokens = plan.lowWatermarkTargetTokens,
+                model = chatModel,
+                // Leave room for the new checkpoint as well as existing fixed context.
+                targetRemainingTokens = if (automatic) {
+                    // Budget the expected checkpoint (~1/4 of the removed prefix), including
+                    // multiple batches, rather than reserving only one small summary block.
+                    val rawTokens = ContextTokenEstimator.messagesTokens(messages.drop(startIndex), chatModel)
+                    ((plan.lowWatermarkTargetTokens - rawTokens * 0.25f) / 0.75f)
+                        .toInt().coerceAtLeast(1)
+                } else 0,
             ) ?: return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
 
             val lastIndexToSummarize = slicePlan.lastIndexToSummarize
@@ -2771,13 +2789,10 @@ class ChatService(
                 return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
 
-            // Build summarization prompt with high-fidelity digest (preserving tool calls, results, code, file edits)
-            val messagesText = messagesToSummarize.mapNotNull { msg ->
-                val digest = msg.toSummarizableDigest()
-                if (digest.isNotBlank()) "[${msg.role}]:\n$digest" else null
-            }.joinToString("\n\n")
-
-            if (messagesText.isBlank()) {
+            val summaryRequests = me.rerere.ai.context.ConversationSummarizer.requests(
+                messagesToSummarize, model, settings.summarizerThinkingBudget,
+            )
+            if (summaryRequests.isEmpty()) {
                 return@withContext contextRefreshError(R.string.context_refresh_error_no_new_messages)
             }
 
@@ -2786,42 +2801,24 @@ class ChatService(
             val existingMilestones = milestoneRegex.findAll(previousSummary.orEmpty()).toList()
             val nextMilestoneNumber = (existingMilestones.lastOrNull()?.groupValues?.getOrNull(1)?.toIntOrNull() ?: existingMilestones.size) + 1
 
-            val prompt = """
-                Summarize this conversation segment concisely, preserving key facts, decisions, tool executions, file edits, and user preferences needed to continue the conversation seamlessly. Focus on:
-                - Main topics discussed and decisions made
-                - Tools or commands executed and their outcomes
-                - Current state, pending tasks, or unresolved questions
-                - Important user preferences or constraints
-                
-                Keep the summary concise (under 300 words).
-                
-                Conversation Segment:
-                $messagesText
-                
-                Milestone Summary:
-            """.trimIndent()
-
-            // Estimate tokens saved (based on messages being summarized)
-            val originalTokens = ContextTokenEstimator.messagesTokens(messagesToSummarize, model)
-
-            // Call the model
+            val originalTokens = ContextTokenEstimator.messagesTokens(messagesToSummarize, chatModel)
             val providerHandler = providerManager.getProviderByType(provider)
-            val response = try {
+            val rawSummary = try {
                 setContextManagementActivity(conversationId, ContextManagementActivity.SUMMARIZING)
-                providerHandler.generateText(
-                    providerSetting = provider,
-                    messages = listOf(UIMessage.user(prompt)),
-                    params = settings.buildSummarizerGenerationParams(
-                        model = model,
-                        temperature = 0.3f,
-                    )
-                )
+                me.rerere.ai.context.ConversationSummarizer.summarize(summaryRequests) { request ->
+                    providerHandler.generateText(
+                        providerSetting = provider,
+                        messages = request.messages,
+                        params = settings.buildSummarizerGenerationParams(
+                            model = model,
+                            temperature = 0.2f,
+                            maxTokens = request.maxOutputTokens,
+                        ),
+                    ).choices.firstOrNull()
+                }
             } finally {
                 setContextManagementActivity(conversationId, null)
             }
-
-            val rawSummary = response.choices.firstOrNull()?.message?.toContentText()?.trim()
-                ?: return@withContext contextRefreshError(R.string.context_refresh_error_empty_response)
 
             // Append-only frozen Milestone Block to preserve KV prompt cache across turns
             val milestoneHeader = "### [Milestone $nextMilestoneNumber]"
@@ -2832,7 +2829,10 @@ class ChatService(
                 "$previousSummary\n\n$milestoneBlock"
             }
 
-            val summaryTokens = ContextTokenEstimator.textTokens(rawSummary, model)
+            val summaryTokens = ContextTokenEstimator.textTokens(milestoneBlock, chatModel)
+            check(summaryTokens < originalTokens) {
+                "Checkpoint did not reduce context size; history was retained"
+            }
 
             // A summary may finish after a deletion, regeneration or a newer reply. Wait
             // for the current writer without cancelling it, then validate the summarized prefix.
@@ -2852,6 +2852,7 @@ class ChatService(
             if (!applied) return@withContext contextRefreshError(
                 R.string.context_refresh_error_unexpected,
                 "The conversation changed while its context was being summarized. Please try again.",
+
             )
 
             Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages into Milestone $nextMilestoneNumber, saved ~${originalTokens - summaryTokens} tokens")
