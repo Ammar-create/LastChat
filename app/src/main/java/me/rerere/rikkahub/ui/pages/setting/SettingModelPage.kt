@@ -272,7 +272,7 @@ private fun DefaultSTTModelSetting(
                     label = { Text(stringResource(R.string.setting_stt_replace_model_icon)) },
                     description = { Text(stringResource(R.string.setting_stt_replace_model_icon_desc)) },
                     tail = {
-                        androidx.compose.material3.Switch(
+                        me.rerere.rikkahub.ui.components.ui.HapticSwitch(
                             checked = settings.displaySetting.sttReplaceModelIcon,
                             onCheckedChange = { newValue ->
                                 vm.updateSettings { settings -> settings.copy(

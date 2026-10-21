@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.settings
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.core.generated.resources.Res
 import me.rerere.rikkahub.ui.core.generated.resources.ic_launcher_lastchat_foreground
 import org.jetbrains.compose.resources.painterResource
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 /** Android's production About-page body, shared without platform runtime dependencies. */
 @Composable
@@ -173,11 +172,7 @@ private fun LastChatAboutItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "about_item_scale",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.98f, "about_item_scale")
     Surface(
         onClick = {
             if (onClick != null) {

@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.chat
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
@@ -20,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 /**
  * The shared interaction surface used by the production conversation list.
@@ -38,16 +37,8 @@ fun ConversationRowSurface(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
-        label = "conversation_scale",
-    )
-    val pressAlpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.7f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "conversation_alpha",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.95f, "conversation_scale")
+    val pressAlpha by rememberControlPressValue(isPressed, 0.7f, "conversation_alpha")
     val backgroundColor = if (selected) {
         if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
             MaterialTheme.colorScheme.surfaceContainerHigh

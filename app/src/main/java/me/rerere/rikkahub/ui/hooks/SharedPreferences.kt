@@ -4,66 +4,65 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 
 
+/** Preferences publish to Compose in the tap callback, before asynchronous disk/listener work. */
 @Composable
 fun rememberSharedPreferenceString(
     keyForString: String,
-    defaultValue: String? = null
-): MutableState<String?> {
-    val context = LocalContext.current
-    val prefs = remember {
-        context.getSharedPreferences("rikkahub.preferences", Context.MODE_PRIVATE)
-    }
-    val stateFlow =
-        remember(keyForString, defaultValue) { prefs.getStringFlowForKey(keyForString, defaultValue) }
-    val state by stateFlow.collectAsStateWithLifecycle(prefs.getString(keyForString, defaultValue))
-    return remember {
-        object : MutableState<String?> {
-            override var value: String?
-                get() = state
-                set(value) {
-                    prefs.edit { putString(keyForString, value) }
-                }
-
-            override fun component1(): String? = value
-            override fun component2(): (String?) -> Unit = { value = it }
-        }
-    }
-}
+    defaultValue: String? = null,
+): MutableState<String?> = rememberPreferenceState(
+    keyForString, defaultValue,
+    read = { prefs, key, default -> prefs.getString(key, default) },
+    write = { key, value -> putString(key, value) },
+)
 
 @Composable
 fun rememberSharedPreferenceBoolean(
     keyForBoolean: String,
-    defaultValue: Boolean = false
-): MutableState<Boolean> {
-    val context = LocalContext.current
-    val prefs = remember {
-        context.getSharedPreferences("rikkahub.preferences", Context.MODE_PRIVATE)
-    }
-    val stateFlow =
-        remember(keyForBoolean, defaultValue) { prefs.getBooleanFlowForKey(keyForBoolean, defaultValue) }
-    val state by stateFlow.collectAsStateWithLifecycle(prefs.getBoolean(keyForBoolean, defaultValue))
-    return remember {
-        object : MutableState<Boolean> {
-            override var value: Boolean
-                get() = state
-                set(value) {
-                    prefs.edit { putBoolean(keyForBoolean, value) }
-                }
+    defaultValue: Boolean = false,
+): MutableState<Boolean> = rememberPreferenceState(
+    keyForBoolean, defaultValue,
+    read = { prefs, key, default -> prefs.getBoolean(key, default) },
+    write = { key, value -> putBoolean(key, value) },
+)
 
-            override fun component1(): Boolean = value
-            override fun component2(): (Boolean) -> Unit = { value = it }
+@Composable
+private fun <T> rememberPreferenceState(
+    key: String,
+    defaultValue: T,
+    read: (SharedPreferences, String, T) -> T,
+    write: SharedPreferences.Editor.(String, T) -> Unit,
+): MutableState<T> {
+    val context = LocalContext.current.applicationContext
+    val prefs = remember(context) { context.getSharedPreferences("rikkahub.preferences", Context.MODE_PRIVATE) }
+    val state = remember(prefs, key, defaultValue) { androidx.compose.runtime.mutableStateOf(read(prefs, key, defaultValue)) }
+    androidx.compose.runtime.DisposableEffect(prefs, key, defaultValue) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, changed ->
+            if (changed == null || changed == key) state.value = read(prefs, key, defaultValue)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        // Cover a write between composition and registering the listener.
+        state.value = read(prefs, key, defaultValue)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    return remember(prefs, key, defaultValue) {
+        object : MutableState<T> {
+            override var value: T
+                get() = state.value
+                set(value) {
+                    state.value = value
+                    prefs.edit { write(key, value) }
+                }
+            override fun component1(): T = value
+            override fun component2(): (T) -> Unit = { value = it }
         }
     }
 }
@@ -91,8 +90,8 @@ fun Context.readBooleanPreference(key: String, defaultValue: Boolean = false): B
 fun SharedPreferences.getStringFlowForKey(keyForString: String, defaultValue: String? = null) =
     callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (keyForString == key) {
-                trySend(getString(key, defaultValue))
+            if (key == null || keyForString == key) {
+                trySend(getString(keyForString, defaultValue))
             }
         }
         registerOnSharedPreferenceChangeListener(listener)
@@ -105,13 +104,13 @@ fun SharedPreferences.getStringFlowForKey(keyForString: String, defaultValue: St
             ) // if you want to emit an initial pre-existing value
         }
         awaitClose { unregisterOnSharedPreferenceChangeListener(listener) }
-    }.buffer(Channel.UNLIMITED) // so trySend never fails
+    }.buffer(Channel.CONFLATED) // State consumers only need the latest preference value.
 
 fun SharedPreferences.getBooleanFlowForKey(keyForBoolean: String, defaultValue: Boolean = false) =
     callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (keyForBoolean == key) {
-                trySend(getBoolean(key, defaultValue))
+            if (key == null || keyForBoolean == key) {
+                trySend(getBoolean(keyForBoolean, defaultValue))
             }
         }
         registerOnSharedPreferenceChangeListener(listener)
@@ -124,16 +123,4 @@ fun SharedPreferences.getBooleanFlowForKey(keyForBoolean: String, defaultValue: 
             ) // if you want to emit an initial pre-existing value
         }
         awaitClose { unregisterOnSharedPreferenceChangeListener(listener) }
-    }.buffer(Channel.UNLIMITED) // so trySend never fails
-
-/**
- * Font settings hook - retrieves font settings from display settings
- */
-@Composable
-fun rememberFontSettings(): me.rerere.rikkahub.data.datastore.FontSettings {
-    val settingsStore: me.rerere.rikkahub.data.datastore.SettingsStore = org.koin.compose.koinInject()
-    val settings by settingsStore.settingsFlow.collectAsState(initial = me.rerere.rikkahub.data.datastore.Settings.dummy())
-    return settings.displaySetting.fontSettings
-}
-
-
+    }.buffer(Channel.CONFLATED) // State consumers only need the latest preference value.

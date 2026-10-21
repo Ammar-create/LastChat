@@ -81,17 +81,18 @@ import org.koin.androidx.compose.koinViewModel
 fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val modelCatalogStatus by vm.modelCatalogStatus.collectAsStateWithLifecycle()
-    var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+    var displaySetting by remember(settings.displaySetting) { mutableStateOf(settings.displaySetting) }
     var amoledDarkMode by rememberAmoledDarkMode()
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
     fun updateDisplaySetting(setting: DisplaySetting) {
+        val before = displaySetting
         displaySetting = setting
-        vm.updateSettings { settings -> settings.copy(
-                displaySetting = setting
-            ) }
+        vm.updateSettings { current -> current.copy(
+            displaySetting = me.rerere.rikkahub.data.datastore.mergeSettingsValue(before, setting, current.displaySetting),
+        ) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()

@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -44,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 enum class LastChatMemoryGroupPosition { Single, First, Middle, Last }
 
@@ -116,11 +116,7 @@ fun LastChatMemorySettingsItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (pressed) 0.98f else 1f,
-        spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "memorySettingsScale",
-    )
+    val scale by rememberControlPressValue(pressed, 0.98f, "memorySettingsScale")
     val topCorner by animateDpAsState(
         if (position == LastChatMemoryGroupPosition.Single || position == LastChatMemoryGroupPosition.First) 24.dp else 10.dp,
         spring(dampingRatio = 0.8f, stiffness = 200f),
@@ -190,11 +186,7 @@ fun LastChatMemoryRow(
     var confirmDelete by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        if (pressed) 0.98f else 1f,
-        spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "memoryRowScale",
-    )
+    val scale by rememberControlPressValue(pressed, 0.98f, "memoryRowScale")
     val topCorner by animateDpAsState(
         if (position == LastChatMemoryGroupPosition.Single || position == LastChatMemoryGroupPosition.First) 24.dp else 10.dp,
         spring(dampingRatio = 0.8f, stiffness = 200f),

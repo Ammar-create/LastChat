@@ -1,8 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -15,6 +13,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -38,39 +39,26 @@ fun ToggleSurface(
     content: @Composable () -> Unit
 ) {
     val haptics = rememberPremiumHaptics()
+    val reduceMotion = LocalMotionPolicy.current.reduceMotion
 
-    // Physics-based Color Animation
-    val animatedBackgroundColor by animateColorAsState(
-        targetValue = if (checked) checkedColor else uncheckedColor,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessLow),
-        label = "toggle_bg_color"
+    val backgroundTarget = if (checked) checkedColor else uncheckedColor
+    val contentTarget = if (checked) contentColor else MaterialTheme.colorScheme.onSurface
+    val animatedBackgroundColor by if (reduceMotion) rememberUpdatedState(backgroundTarget) else animateColorAsState(
+        targetValue = backgroundTarget,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 500f),
+        label = "toggle_bg_color",
+    )
+    val animatedContentColor by if (reduceMotion) rememberUpdatedState(contentTarget) else animateColorAsState(
+        targetValue = contentTarget,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 500f),
+        label = "toggle_content_color",
     )
 
-    val animatedContentColor by animateColorAsState(
-        targetValue = if (checked) contentColor else MaterialTheme.colorScheme.onSurface,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessLow),
-        label = "toggle_content_color"
-    )
-
-    // Physics-based press feedback (Round/Clicky Standard)
+    // Scale and alpha share one interruption/reduced-motion policy.
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.92f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f, // Round/Clicky Standard
-            stiffness = 300f     // Round/Clicky Standard
-        ),
-        label = "toggle_scale"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.8f else 1f,
-        animationSpec = spring(
-            dampingRatio = 0.6f, // Consistent with scale
-            stiffness = 300f
-        ),
-        label = "toggle_alpha"
-    )
+    val scale by rememberControlPressValue(isPressed, 0.94f, "toggle_scale")
+    val alpha by rememberControlPressValue(isPressed, 0.8f, "toggle_alpha")
 
     Surface(
         color = animatedBackgroundColor,

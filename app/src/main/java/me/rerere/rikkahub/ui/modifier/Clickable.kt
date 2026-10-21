@@ -14,6 +14,7 @@ fun Modifier.onClick(
     onClick: () -> Unit
 ): Modifier = this.then(Modifier.clickable(
     onClick = onClick,
+    enabled = enabled,
     interactionSource = remember { MutableInteractionSource() },
     indication = LocalIndication.current,
     role = Role.Button,

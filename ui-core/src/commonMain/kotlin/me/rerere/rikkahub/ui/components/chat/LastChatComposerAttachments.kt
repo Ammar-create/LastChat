@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 /** Exact 84 dp production attachment strip, including animated scroll-edge masks. */
 @Composable
@@ -185,11 +185,7 @@ fun LastChatComposerImageAttachment(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.94f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "image_attachment_scale",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.94f, "image_attachment_scale")
     Box(
         modifier = modifier
             .size(60.dp)

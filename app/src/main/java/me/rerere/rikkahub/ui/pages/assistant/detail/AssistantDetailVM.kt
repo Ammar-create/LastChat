@@ -61,7 +61,7 @@ class AssistantDetailVM(
         .getOrElse { me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANT_ID }
 
     val settings: StateFlow<Settings> =
-        settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
+        settingsStore.settingsFlow
 
     val mcpServerConfigs = settingsStore
         .settingsFlow.map { settings ->
@@ -75,7 +75,7 @@ class AssistantDetailVM(
         .map { settings ->
             settings.assistants.find { it.id == assistantId } ?: settings.getCurrentAssistant()
         }.stateIn(
-            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
+            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = settings.value.assistants.firstOrNull { it.id == assistantId } ?: settings.value.getCurrentAssistant()
         )
 
     private val _memorySearchQuery = MutableStateFlow("")

@@ -37,13 +37,14 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+    var displaySetting by remember(settings.displaySetting) { mutableStateOf(settings.displaySetting) }
 
     fun updateDisplaySetting(setting: DisplaySetting) {
+        val before = displaySetting
         displaySetting = setting
-        vm.updateSettings { settings -> settings.copy(
-                displaySetting = setting
-            ) }
+        vm.updateSettings { current -> current.copy(
+            displaySetting = me.rerere.rikkahub.data.datastore.mergeSettingsValue(before, setting, current.displaySetting),
+        ) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()

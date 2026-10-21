@@ -6,9 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
@@ -44,7 +42,6 @@ class SettingVM(
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
     val modelCatalogStatus: StateFlow<ModelCatalogStatus> = modelCatalogService.status
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
@@ -88,9 +85,11 @@ class SettingVM(
         }
         _pendingProviderEdit.value = provider
         providerSaveJob?.cancel()
-        providerSaveJob = viewModelScope.launch(Dispatchers.Default) {
+        // Draft changes and the debounce handoff stay on Main. A background timer could
+        // cancel a newer edit's save job while trying to flush the preceding snapshot.
+        providerSaveJob = viewModelScope.launch {
             delay(PROVIDER_SAVE_DEBOUNCE_MS)
-            flushProviderEdit()
+            enqueueProviderFlush()
         }
     }
 

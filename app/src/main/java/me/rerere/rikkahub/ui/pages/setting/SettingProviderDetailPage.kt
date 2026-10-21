@@ -650,12 +650,8 @@ private fun SettingProviderConfigPage(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     isSaving: Boolean
 ) {
-    // Keyed by id, not value: a save landing mid-typing must not reset the fields (cursor jumps,
-    // dropped keystrokes). Outside edits still arrive through the effect below.
-    var internalProvider by remember(provider.id) { mutableStateOf(provider) }
-    LaunchedEffect(provider) { internalProvider = provider }
-    val scope = rememberCoroutineScope()
-
+    // The parent owns the pending draft and its save handoff. A second local copy
+    // synchronized by LaunchedEffect could replay an older provider after a tap.
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -673,26 +669,23 @@ private fun SettingProviderConfigPage(
                 )
             ) {
                 ProviderConfigure(
-                    provider = internalProvider,
+                    provider = provider,
                     modifier = Modifier.padding(16.dp),
                     showSavingIndicator = isSaving,
                     showSubscriptionAccount = false,
                     onEdit = {
-                        internalProvider = it
-                        // Auto-save immediately
                         onEdit(it)
                     }
                 )
             }
             
-            (internalProvider as? ProviderSetting.OpenAI)?.takeIf { it.subscriptionAccount != null }?.let { subscription ->
+            (provider as? ProviderSetting.OpenAI)?.takeIf { it.subscriptionAccount != null }?.let { subscription ->
                 SubscriptionAccountCard(subscription) {
-                    internalProvider = it
                     onEdit(it)
                 }
             }
 
-            (internalProvider as? ProviderSetting.OpenAI)?.takeIf {
+            (provider as? ProviderSetting.OpenAI)?.takeIf {
                 it.subscriptionAccount == null && me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(it.baseUrl) != null
             }?.let { ProviderUsageCard(it) }
 
@@ -713,12 +706,11 @@ private fun SettingProviderConfigPage(
                         },
                     ) {
                         TagsInput(
-                            value = internalProvider.tags,
+                            value = provider.tags,
                             tags = providerTags,
                             onValueChange = { tagIds, updatedTags ->
-                                // Update internal provider with new tag IDs
-                                val updatedProvider = internalProvider.copyProvider(tags = tagIds)
-                                internalProvider = updatedProvider
+                                // Update the shared provider draft with new tag IDs
+                                val updatedProvider = provider.copyProvider(tags = tagIds)
                                 // Update both provider and global tags
                                 onUpdateTags(updatedProvider, updatedTags)
                             },
@@ -727,14 +719,13 @@ private fun SettingProviderConfigPage(
                 }
             }
 
-            if (internalProvider is ProviderSetting.OpenAI &&
-                (internalProvider as ProviderSetting.OpenAI).subscriptionAccount == null) {
+            if (provider is ProviderSetting.OpenAI &&
+                (provider as ProviderSetting.OpenAI).subscriptionAccount == null) {
                 SettingProviderBalanceOption(
-                    provider = internalProvider,
-                    balanceOption = internalProvider.balanceOption,
+                    provider = provider,
+                    balanceOption = provider.balanceOption,
                     onEdit = { 
-                        val updated = internalProvider.copyProvider(balanceOption = it)
-                        internalProvider = updated
+                        val updated = provider.copyProvider(balanceOption = it)
                         onEdit(updated)  // Auto-save like other config fields
                     }
                 )

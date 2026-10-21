@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,12 +51,13 @@ fun <T> Select(
     var expanded by remember { mutableStateOf(false) }
     val haptics = rememberPremiumHaptics()
 
-    // Physics: Standard spring for rotation
-    val rotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
+    val reduceMotion = LocalMotionPolicy.current.reduceMotion
+    val targetRotation = if (expanded) 180f else 0f
+    val rotation by if (reduceMotion) rememberUpdatedState(targetRotation) else animateFloatAsState(
+        targetValue = targetRotation,
         animationSpec = spring(
-            dampingRatio = 0.5f,
-            stiffness = 400f
+            dampingRatio = 1f,
+            stiffness = 800f
         ),
         label = "select_arrow_rotation"
     )

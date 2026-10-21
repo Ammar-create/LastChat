@@ -29,9 +29,11 @@ fun HapticSwitch(
     
     Switch(
         checked = checked,
-        onCheckedChange = { newValue ->
-            haptics.perform(HapticPattern.Pop)
-            onCheckedChange?.invoke(newValue)
+        onCheckedChange = onCheckedChange?.let { onChange ->
+            { newValue ->
+                haptics.perform(HapticPattern.Pop)
+                onChange(newValue)
+            }
         },
         modifier = modifier,
         thumbContent = thumbContent,

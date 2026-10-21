@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.settings
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +24,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 /** Production compact-settings section shared by Android and iOS. */
 @Composable
@@ -68,11 +67,7 @@ fun LastChatSettingGroupItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "settings_group_item_scale",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.98f, "settings_group_item_scale")
 
     Surface(
         onClick = {

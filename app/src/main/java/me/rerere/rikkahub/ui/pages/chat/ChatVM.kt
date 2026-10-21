@@ -173,7 +173,7 @@ class ChatVM(
 
     // 用户设置
     val settings: StateFlow<Settings> =
-        settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
+        settingsStore.settingsFlow
 
     val conversationContext: StateFlow<ConversationContext> =
         combine(settings, conversation) { currentSettings, currentConversation ->
@@ -181,7 +181,7 @@ class ChatVM(
         }.stateIn(
             viewModelScope,
             SharingStarted.Lazily,
-            Settings.dummy().resolveConversationContext(conversation.value)
+            settings.value.resolveConversationContext(conversation.value)
         )
 
     val conversationAssistant: StateFlow<Assistant> =
@@ -196,31 +196,25 @@ class ChatVM(
             is me.rerere.rikkahub.data.model.AssistantSearchMode.BuiltIn -> true
             is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> true
         }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    }.stateIn(viewModelScope, SharingStarted.Lazily,
+        conversationContext.value.searchMode !is me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
 
     // 获取当前会话助手的searchMode
     val currentSearchMode = conversationContext.map { it.searchMode }
         .stateIn(
             viewModelScope,
             SharingStarted.Lazily,
-            me.rerere.rikkahub.data.model.AssistantSearchMode.Off
+            conversationContext.value.searchMode
         )
 
     // 更新当前会话助手的searchMode
     fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.data.model.AssistantSearchMode) {
-        viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == conversation.value.assistantId) {
-                            it.copy(searchMode = searchMode)
-                        } else {
-                            it
-                        }
-                    }
-                )
-            }
-        }
+        val assistantId = conversation.value.assistantId
+        settingsStore.enqueueUpdate { settings -> settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == assistantId) it.copy(searchMode = searchMode) else it
+            },
+        ) }
     }
 
     // 搜索关键词
@@ -352,26 +346,25 @@ class ChatVM(
     }
 
     fun updateConversationAssistant(updatedAssistant: Assistant) {
-        viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == updatedAssistant.id) {
-                            updatedAssistant
-                        } else {
-                            it
-                        }
-                    })
-            }
-        }
+        val base = conversationAssistant.value.takeIf { it.id == updatedAssistant.id }
+            ?: settings.value.assistants.firstOrNull { it.id == updatedAssistant.id }
+            ?: return
+        settingsStore.enqueueUpdate { settings -> settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == updatedAssistant.id) {
+                    me.rerere.rikkahub.data.datastore.mergeAssistantEdit(base, updatedAssistant, it)
+                } else it
+            },
+        ) }
     }
 
-    // 设置聊天模型
     fun setChatModel(model: Model) {
-        val assistant = conversationAssistant.value
-        updateConversationAssistant(
-            assistant.copy(chatModelId = model.id)
-        )
+        val assistantId = conversation.value.assistantId
+        settingsStore.enqueueUpdate { settings -> settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == assistantId) it.copy(chatModelId = model.id) else it
+            },
+        ) }
     }
 
     // 更新模型上下文限制
@@ -418,8 +411,8 @@ class ChatVM(
     }
 
     fun setSelectedAssistant(assistantId: Uuid) {
-        viewModelScope.launch {
-            settingsStore.updateAssistant(assistantId)
+        settingsStore.enqueueUpdate { current ->
+            if (current.assistants.any { it.id == assistantId }) current.copy(assistantId = assistantId) else current
         }
     }
 

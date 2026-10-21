@@ -13,11 +13,12 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -74,6 +75,7 @@ class SettingsStore(
     scope: AppScope,
     private val quickCache: QuickSettingsCache,
     private val secretKeyManager: SecretKeyManager,
+    private val writeDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) : KoinComponent {
     companion object {
         // 版本号
@@ -437,96 +439,128 @@ class SettingsStore(
         }
         .onEach { settings -> quickCache.updateCache(settings) }
 
-    /**
-     * In-memory settings. [update] writes here first, then to DataStore. DataStore re-emits
-     * through a slow pipeline, so a re-read of an *earlier* write could arrive after a newer
-     * in-memory value and revert it. Every write bumps [Settings.storeRevision] (persisted as
-     * [STORE_REVISION]); a re-read is taken only when no write is in flight and its revision is
-     * at least the last one written. No timers: a newer edit is never dropped and an older
-     * value never comes back.
-     */
-    val settingsFlow: MutableStateFlow<Settings> = MutableStateFlow(quickCache.createCachedSettings())
+    /** The latest user intent is published synchronously; disk work never owns the UI state. */
+    private val mutableSettings = MutableStateFlow(quickCache.createCachedSettings())
+    val settingsFlow: StateFlow<Settings> = mutableSettings.asStateFlow()
 
+    // This lock only protects small in-memory edits and queue insertion. Never suspend or access
+    // SecureStore while holding it. All disk work uses writeMutex on IO.
+    private val editLock = Any()
     private val writeMutex = Mutex()
-    private val pendingWrites = AtomicInteger(0)
-    @Volatile
     private var lastWrittenRevision = 0L
-    @Volatile
     private var lastPersisted: Settings? = null
+    private val pendingEdits = linkedSetOf<SettingsWrite>()
 
-    /** Ordered, app-lifetime write queue used by screens; survives the screen and its ViewModel. */
-    private val writeQueue = kotlinx.coroutines.channels.Channel<suspend () -> Unit>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+    private class SettingsWrite(val transform: (Settings) -> Settings) {
+        val result = kotlinx.coroutines.CompletableDeferred<Pair<Settings, Settings>>()
+        var before: Settings? = null
+        var after: Settings? = null
+    }
+
+    private val writeQueue = kotlinx.coroutines.channels.Channel<SettingsWrite>(kotlinx.coroutines.channels.Channel.UNLIMITED)
     private val queuedWrites = MutableStateFlow(0)
 
     init {
-        scope.launch {
+        scope.launch(writeDispatcher) {
             runCatching {
                 settingsPipeline.collect { value ->
-                    lastPersisted = value
-                    adoptPersistedIfFresh()
+                    synchronized(editLock) {
+                        lastPersisted = value
+                        adoptPersistedIfFresh()
+                    }
                 }
             }.onFailure { Log.e(TAG, "Error while collecting settings", it) }
         }
-        scope.launch(Dispatchers.IO) {
-            for (job in writeQueue) {
+        scope.launch(writeDispatcher) {
+            for (first in writeQueue) {
+                // A burst of taps/sliding/typing needs one durable snapshot, not a full-file
+                // rewrite for every intermediate value. Every caller still gets its own ack.
+                val batch = mutableListOf(first)
+                while (true) batch += writeQueue.tryReceive().getOrNull() ?: break
                 try {
-                    job()
+                    settingsFlow.first { !it.init }
+                    val edits = synchronized(editLock) {
+                        batch.filter { it.after != null }
+                    }
+                    if (edits.isNotEmpty()) {
+                        val before = edits.first().before!!
+                        val after = edits.last().after!!
+                        val saved = writeMutex.withLock { persistSettings(before, after) }
+                        edits.forEach { edit ->
+                            edit.result.complete(edit.before!! to if (edit === edits.last()) saved else edit.after!!)
+                        }
+                    }
                 } catch (t: Throwable) {
+                    batch.forEach { it.result.completeExceptionally(t) }
                     Log.e(TAG, "Queued settings write failed", t)
                 } finally {
-                    queuedWrites.update { it - 1 }
+                    synchronized(editLock) {
+                        pendingEdits.removeAll(batch.toSet())
+                        queuedWrites.update { it - batch.size }
+                        adoptPersistedIfFresh()
+                    }
                 }
             }
         }
     }
 
+    /** Called under editLock; old DataStore reads can never replace a newer tap. */
     private fun adoptPersistedIfFresh() {
         val value = lastPersisted ?: return
-        if (shouldAcceptPersisted(pendingWrites.get(), value.storeRevision, lastWrittenRevision) &&
-            value != settingsFlow.value
-        ) {
-            settingsFlow.value = value
+        if (value.storeRevision < lastWrittenRevision) return
+        if (settingsFlow.value.init && !value.init) {
+            var current = value
+            pendingEdits.forEach { edit -> current = prepareEdit(edit, current) }
+            mutableSettings.value = current
+        } else if (value != settingsFlow.value) {
+            mutableSettings.value = value
         }
     }
 
-    private suspend inline fun <T> guardedWrite(crossinline block: suspend () -> T): T {
-        pendingWrites.incrementAndGet()
-        try {
-            return block()
-        } finally {
-            pendingWrites.decrementAndGet()
-            adoptPersistedIfFresh()
+    /** Apply each transform exactly once, including edits submitted before initial loading. */
+    private fun prepareEdit(edit: SettingsWrite, current: Settings): Settings {
+        return try {
+            val changed = edit.transform(current)
+            val after = if (changed.init || changed == current) current else {
+                val selected = if (changed.assistantId != current.assistantId &&
+                    changed.assistants.any { it.id == changed.assistantId }) {
+                    changed.copy(recentlyUsedAssistants = listOf(changed.assistantId) +
+                        changed.recentlyUsedAssistants.filter { it != changed.assistantId }.take(2))
+                } else changed
+                lastWrittenRevision = maxOf(lastWrittenRevision, current.storeRevision,
+                    lastPersisted?.storeRevision ?: 0L) + 1
+                selected.copy(init = false, storeRevision = lastWrittenRevision)
+            }
+            edit.before = current
+            edit.after = after
+            after
+        } catch (t: Throwable) {
+            edit.result.completeExceptionally(t)
+            current
         }
-    }
-
-    private fun nextRevision(): Long {
-        val next = maxOf(lastWrittenRevision, settingsFlow.value.storeRevision, lastPersisted?.storeRevision ?: 0L) + 1
-        lastWrittenRevision = next
-        return next
     }
 
     /**
-     * Queues `fn(latest)` behind every earlier queued write and returns (before, after).
-     * Non-blocking for the caller; runs even if the calling screen is gone.
+     * Applies a cheap, pure edit to the latest in-memory value before returning. Persistence is
+     * ordered, coalesces bursts, and survives the calling screen. The result acknowledges disk.
      */
     fun enqueueUpdate(fn: (Settings) -> Settings): kotlinx.coroutines.Deferred<Pair<Settings, Settings>> {
-        val result = kotlinx.coroutines.CompletableDeferred<Pair<Settings, Settings>>()
-        queuedWrites.update { it + 1 }
-        val sent = writeQueue.trySend {
-            try {
-                var before: Settings? = null
-                update { latest -> before = latest; fn(latest) }
-                result.complete((before ?: settingsFlow.value) to settingsFlow.value)
-            } catch (t: Throwable) {
-                result.completeExceptionally(t)
-                throw t
+        val edit = SettingsWrite(fn)
+        synchronized(editLock) {
+            if (!settingsFlow.value.init) {
+                val before = settingsFlow.value
+                val after = prepareEdit(edit, before)
+                mutableSettings.value = after
+                // Message templates are cached by assistant ID. A send immediately after
+                // editing must see the new template, even while its disk write is pending.
+                if (before.assistants != after.assistants) get<MessageTemplateCache>().invalidateAll()
             }
+            if (edit.result.isCompleted) return edit.result
+            pendingEdits += edit
+            queuedWrites.update { it + 1 }
+            check(writeQueue.trySend(edit).isSuccess) { "settings write queue closed" }
         }
-        if (sent.isFailure) {
-            queuedWrites.update { it - 1 }
-            result.completeExceptionally(IllegalStateException("settings write queue closed"))
-        }
-        return result
+        return edit.result
     }
 
     /** Suspends until every queued write has reached DataStore. */
@@ -545,7 +579,8 @@ class SettingsStore(
     /**
      * Persist settings after migration (to clear plaintext secrets from DataStore).
      */
-    private suspend fun persistMigratedSettings(settings: Settings) {
+    private suspend fun persistMigratedSettings(settings: Settings) = writeMutex.withLock {
+        if (synchronized(editLock) { settings.storeRevision < lastWrittenRevision }) return@withLock
         dataStore.edit { preferences ->
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
@@ -556,7 +591,8 @@ class SettingsStore(
     /**
      * Persist one-time legacy mode -> skill migration.
      */
-    private suspend fun persistLegacyModeMigration(settings: Settings) {
+    private suspend fun persistLegacyModeMigration(settings: Settings) = writeMutex.withLock {
+        if (synchronized(editLock) { settings.storeRevision < lastWrittenRevision }) return@withLock
         dataStore.edit { preferences ->
             preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
             preferences[MODES] = JsonInstant.encodeToString(settings.modes)
@@ -567,7 +603,8 @@ class SettingsStore(
     /**
      * Persist the one-time Generical default avatar migration.
      */
-    private suspend fun persistAssistantsMigration(settings: Settings) {
+    private suspend fun persistAssistantsMigration(settings: Settings) = writeMutex.withLock {
+        if (synchronized(editLock) { settings.storeRevision < lastWrittenRevision }) return@withLock
         dataStore.edit { preferences ->
             preferences[ASSISTANTS] = JsonInstant.encodeToString(settings.assistants)
         }
@@ -576,7 +613,8 @@ class SettingsStore(
     /**
      * Persist one-time assistant summarizer -> global summarizer migration.
      */
-    private suspend fun persistLegacySummarizerMigration(settings: Settings) {
+    private suspend fun persistLegacySummarizerMigration(settings: Settings) = writeMutex.withLock {
+        if (synchronized(editLock) { settings.storeRevision < lastWrittenRevision }) return@withLock
         dataStore.edit { preferences ->
             settings.summarizerModelId?.let {
                 preferences[SUMMARIZER_MODEL] = it.toString()
@@ -586,31 +624,11 @@ class SettingsStore(
     }
 
 
-    suspend fun update(settings: Settings) = writeMutex.withLock { guardedWrite { updateLocked(settings) } }
+    suspend fun update(settings: Settings) { update { settings } }
 
-    private suspend fun updateLocked(settings: Settings) {
-        if(settings.init) {
-            Log.w(TAG, "Cannot update dummy settings")
-            return
-        }
-        
-        // Auto-update recently used assistants when assistant changes
-        val settingsToSave = if (settings.assistantId != settingsFlow.value.assistantId && 
-            !settingsFlow.value.init &&
-            settings.assistants.any { it.id == settings.assistantId }) {
-            val updatedList = buildList {
-                add(settings.assistantId)
-                settings.recentlyUsedAssistants
-                    .filter { it != settings.assistantId }
-                    .take(2)
-                    .forEach { add(it) }
-            }
-            settings.copy(recentlyUsedAssistants = updatedList)
-        } else {
-            settings
-        }
-        
-        val normalizedSettings = settingsToSave
+    /** Runs only in the ordered IO lane; its result may acknowledge an older UI revision. */
+    private suspend fun persistSettings(before: Settings, settings: Settings): Settings {
+        val normalizedSettings = settings
             .normalizeWebServerSettings()
             .migrateLegacyModesToSkills()
             .normalizeFontSettings()
@@ -624,17 +642,21 @@ class SettingsStore(
 
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
-        secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, normalizedSettings)
+        secretKeyManager.handleExplicitSecretDeletions(before, normalizedSettings)
         
         // Migrate secrets from plaintext to SecureStore if needed
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(normalizedSettings)
             .normalizeFontSettings()
 
-        val revision = nextRevision()
-        settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
+        val revision = settings.storeRevision
+        val saved = secretKeyManager.populateSecretsForExport(migratedSettings)
             .normalizeFontSettings()
             .normalizeTtsSettings()
             .copy(storeRevision = revision)
+        synchronized(editLock) {
+            // A save finishing after another tap only acknowledges its own revision.
+            if (settingsFlow.value.storeRevision == revision) mutableSettings.value = saved
+        }
         dataStore.edit { preferences ->
             preferences[STORE_REVISION] = revision
             preferences[DYNAMIC_COLOR] = normalizedSettings.dynamicColor
@@ -712,39 +734,17 @@ class SettingsStore(
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(normalizedSettings.textSelectionConfig)
             preferences[ASSISTANT_OVERLAY_CONFIG] = JsonInstant.encodeToString(normalizedSettings.assistantOverlayConfig)
         }
+        return saved
     }
 
-    /** Applies [fn] to the latest settings under the write lock, so concurrent edits don't drop each other. */
-    suspend fun update(fn: (Settings) -> Settings) = writeMutex.withLock {
-        // An edit queued before settings finished loading must wait, not be dropped as "dummy".
-        if (settingsFlow.value.init) settingsFlow.first { !it.init }
-        guardedWrite { updateLocked(fn(settingsFlow.value)) }
+    /** Non-UI callers can await the same ordered, app-lifetime persistence lane. */
+    suspend fun update(fn: (Settings) -> Settings) {
+        kotlinx.coroutines.withContext(Dispatchers.Default) { enqueueUpdate(fn).await() }
     }
 
-    suspend fun updateAssistant(assistantId: Uuid) = writeMutex.withLock { guardedWrite { updateAssistantLocked(assistantId) } }
-
-    private suspend fun updateAssistantLocked(assistantId: Uuid) {
-        // Update in-memory state immediately to avoid race conditions
-        val current = settingsFlow.value
-        if (!current.init && current.assistants.any { it.id == assistantId }) {
-            val updatedRecentlyUsed = buildList {
-                add(assistantId)
-                current.recentlyUsedAssistants
-                    .filter { it != assistantId }
-                    .take(2)
-                    .forEach { add(it) }
-            }
-            settingsFlow.value = current.copy(
-                assistantId = assistantId,
-                recentlyUsedAssistants = updatedRecentlyUsed,
-            )
-        }
-        val revision = nextRevision()
-        settingsFlow.value = settingsFlow.value.copy(storeRevision = revision)
-        // Persist to DataStore
-        dataStore.edit { preferences ->
-            preferences[STORE_REVISION] = revision
-            preferences[SELECT_ASSISTANT] = assistantId.toString()
+    suspend fun updateAssistant(assistantId: Uuid) {
+        update { current ->
+            if (current.assistants.any { it.id == assistantId }) current.copy(assistantId = assistantId) else current
         }
     }
 

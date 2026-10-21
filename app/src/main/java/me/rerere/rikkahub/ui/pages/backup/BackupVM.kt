@@ -5,9 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.ProviderSetting
@@ -34,11 +32,7 @@ class BackupVM(
     private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
     private val environmentManager: WorkspaceEnvironmentManager,
 ) : ViewModel() {
-    val settings = settingsStore.settingsFlow.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = Settings.dummy()
-    )
+    val settings = settingsStore.settingsFlow
 
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
 

@@ -87,7 +87,7 @@ internal const val PhoneSystemFontToggleTag = "phone_system_font_toggle"
 @Composable
 fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var localFontSettings by remember(settings) {
+    var localFontSettings by remember(settings.displaySetting.fontSettings) {
         mutableStateOf(settings.displaySetting.fontSettings.normalize())
     }
     val context = LocalContext.current
@@ -97,8 +97,9 @@ fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
 
     fun persistFontSettings(fontSettings: FontSettings) {
         val normalizedFontSettings = fontSettings.normalize()
-        val newDisplaySetting = settings.displaySetting.copy(fontSettings = normalizedFontSettings)
-        vm.updateSettings { settings -> settings.copy(displaySetting = newDisplaySetting) }
+        vm.updateSettings { current -> current.copy(
+            displaySetting = current.displaySetting.copy(fontSettings = normalizedFontSettings),
+        ) }
     }
 
     fun updateLocalFontSettings(fontSettings: FontSettings, persist: Boolean = false) {

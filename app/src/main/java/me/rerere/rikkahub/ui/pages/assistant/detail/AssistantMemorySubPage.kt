@@ -270,7 +270,12 @@ fun AssistantMemorySettings(
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableMemory,
-                        onCheckedChange = { onUpdateAssistant(assistant.copy(enableMemory = it)) }
+                        onCheckedChange = { enabled ->
+                            onUpdateAssistant(assistant.copy(
+                                enableMemory = enabled,
+                                enableMemoryConsolidation = enabled && assistant.enableMemoryConsolidation,
+                            ))
+                        }
                     )
                 }
             )

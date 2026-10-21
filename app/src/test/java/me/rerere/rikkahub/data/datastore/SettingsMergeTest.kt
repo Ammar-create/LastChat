@@ -1,9 +1,24 @@
 package me.rerere.rikkahub.data.datastore
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class SettingsMergeTest {
+    @Test fun aDisplayEditKeepsLargeUnchangedProviderAndAssistantCollectionsByReference() {
+        val provider = me.rerere.ai.provider.ProviderSetting.OpenAI(
+            models = List(512) { me.rerere.ai.provider.Model(modelId = "model-$it") },
+        )
+        val base = Settings(providers = listOf(provider))
+        val latest = base.copy(titlePrompt = "changed elsewhere")
+        val edited = base.copy(displaySetting = base.displaySetting.copy(fontSizeRatio = 1.2f))
+        val merged = mergeSettingsEdit(base, edited, latest)
+        assertSame(latest.providers, merged.providers)
+        assertSame(latest.assistants, merged.assistants)
+        assertEquals(1.2f, merged.displaySetting.fontSizeRatio)
+        assertEquals("changed elsewhere", merged.titlePrompt)
+    }
+
     @Test
     fun snapshotEditKeepsChangeSavedMeanwhile() {
         val base = Settings(titlePrompt = "t0", translatePrompt = "x0")

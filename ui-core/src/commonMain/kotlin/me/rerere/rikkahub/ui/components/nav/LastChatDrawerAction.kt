@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.nav
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -23,6 +21,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 /** The production drawer action Surface and press motion shared by Android and iOS. */
 @Composable
@@ -37,16 +36,8 @@ fun LastChatDrawerAction(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.85f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "drawer_scale",
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.7f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "drawer_alpha",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.92f, "drawer_scale")
+    val alpha by rememberControlPressValue(isPressed, 0.7f, "drawer_alpha")
     Surface(
         onClick = {
             onHaptic()
