@@ -10,6 +10,14 @@ instead of recomposing row content. Reduced motion disables these added effects.
 Changes to toolbar/inset padding are deferred until the gesture and settling finish,
 so they cannot replace the library controller under an active pointer.
 
+Drag auto-scroll now favors upward movement: the top activation zone is 96dp,
+while the bottom zone is 32dp (previously both were 48dp). These distances apply
+inside each screen's existing toolbar and bottom-control insets. Native gesture
+checks verify upward scrolling at 80dp from the top, no downward scrolling at
+40dp from the bottom, and downward scrolling at 16dp from the bottom. The gesture
+fixture queues coroutine effects and explicitly publishes snapshots before
+stepping its manual frame clock, covering the library's asynchronous scroll loop.
+
 The shared order state keeps an immediate, stable-key order throughout a held drag.
 Persistence coalesces after dropping; lifecycle pause and disposal flush unfinished
 orders. Matching snapshots only acknowledge submitted requests. Slow writes do not

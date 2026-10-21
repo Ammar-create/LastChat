@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +26,9 @@ import sh.calvin.reorderable.ReorderableLazyListState
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.transformers.MessageTemplateCache
 import me.rerere.rikkahub.data.datastore.*
@@ -45,17 +49,18 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], application = Application::class, qualifiers = "w400dp-h900dp-xxhdpi")
 @OptIn(ExperimentalComposeUiApi::class)
-class ReorderableListGestureTest {
-    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
-    private val source = mutableStateOf(listOf("a", "b", "c", "d", "e", "f"))
-    private val scrollPadding = mutableStateOf(PaddingValues(0.dp))
-    private lateinit var controller: ReorderableLazyListState
-    private val show = mutableStateOf(true)
-    private var parentWritesAtDispose: List<List<Any>>? = null
-    private val pointerY = mutableListOf<Float>()
-    private val writes = mutableListOf<List<Any>>()
-    private val rowCompositions = mutableMapOf<String, Int>()
-    private lateinit var order: ReorderableItems<String>
+internal abstract class ReorderableListGestureFixture(effectContext: CoroutineContext = EmptyCoroutineContext) {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>(effectContext = effectContext)
+    protected val source = mutableStateOf(listOf("a", "b", "c", "d", "e", "f"))
+    protected val scrollPadding = mutableStateOf(PaddingValues(0.dp))
+    protected lateinit var scrollingList: LazyListState
+    protected lateinit var controller: ReorderableLazyListState
+    protected val show = mutableStateOf(true)
+    protected var parentWritesAtDispose: List<List<Any>>? = null
+    protected val pointerY = mutableListOf<Float>()
+    protected val writes = mutableListOf<List<Any>>()
+    protected val rowCompositions = mutableMapOf<String, Int>()
+    protected lateinit var order: ReorderableItems<String>
 
     @Before fun setUp() {
         val context = RuntimeEnvironment.getApplication()
@@ -71,16 +76,21 @@ class ReorderableListGestureTest {
 
     @After fun tearDown() { stopKoin() }
 
-    private fun mount(withSwipe: Boolean = false, immediate: Boolean = false, onSwipe: (String, Int) -> Unit = { _, _ -> }) {
+    protected fun mount(
+        withSwipe: Boolean = false,
+        immediate: Boolean = false,
+        initialIndex: Int = 0,
+        onSwipe: (String, Int) -> Unit = { _, _ -> },
+    ) {
         compose.setContent {
             MaterialTheme {
                 if (show.value) {
                     DisposableEffect(Unit) { onDispose { parentWritesAtDispose = writes.toList() } }
                     val rows = source.value
                     order = rememberReorderableItems(rows, key = { it }, onCommit = writes::add)
-                    val listState = rememberLazyListState()
+                    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
                     val state = rememberAppReorderableLazyListState(listState, order, scrollPadding.value)
-                    SideEffect { controller = state }
+                    SideEffect { controller = state; scrollingList = listState }
                     LazyColumn(Modifier.requiredSize(360.dp, 640.dp).testTag("list").motionEventSpy { event ->
                         if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_MOVE) {
                             pointerY += event.rawY
@@ -115,7 +125,7 @@ class ReorderableListGestureTest {
         compose.mainClock.autoAdvance = false
     }
 
-    private fun publishSource(rows: List<String>) {
+    protected fun publishSource(rows: List<String>) {
         compose.runOnIdle {
             source.value = rows
             // The clock is manual: publish before stepping, rather than awaiting an unpumped
@@ -126,12 +136,75 @@ class ReorderableListGestureTest {
         compose.waitForIdle()
     }
 
-    private fun grab(id: String) {
+    protected fun grab(id: String) {
         compose.onNodeWithTag("handle:$id").performTouchInput { down(center) }
         compose.mainClock.advanceTimeBy(650)
         compose.waitForIdle()
     }
 
+    protected fun stepFrames(milliseconds: Long) {
+        compose.runOnIdle { Snapshot.sendApplyNotifications() }
+        compose.mainClock.advanceTimeBy(milliseconds)
+        compose.waitForIdle()
+    }
+
+    protected fun moveHandleToListY(id: String, yDp: Int) {
+        val list = compose.onNodeWithTag("list").fetchSemanticsNode().boundsInRoot
+        val handle = compose.onNodeWithTag("handle:$id").fetchSemanticsNode().boundsInRoot
+        val targetY = list.top + list.height * yDp / 640f
+        compose.onNodeWithTag("handle:$id").performTouchInput {
+            moveBy(Offset(0f, targetY - handle.center.y))
+        }
+        repeat(10) {
+            stepFrames(100)
+        }
+    }
+
+}
+
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [35], application = Application::class, qualifiers = "w400dp-h900dp-xxhdpi")
+@OptIn(ExperimentalComposeUiApi::class)
+// The scroll loop must receive its request before its coroutine starts. Use queued
+// effects here; the baseline tests retain their original immediate-effect coverage.
+internal class ReorderableListAutoScrollTest : ReorderableListGestureFixture(StandardTestDispatcher()) {
+    @Test fun upwardAutoScrollStartsInTheLargerTopZone() {
+        source.value = ('a'..'z').map { it.toString() }
+        mount(initialIndex = 8)
+        grab("m")
+        moveHandleToListY("m", 80)
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.mainClock.advanceTimeBy(100)
+            scrollingList.firstVisibleItemIndex < 8
+        }
+        compose.onNodeWithTag("handle:m").performTouchInput { up() }
+        compose.mainClock.advanceTimeBy(500)
+    }
+
+    @Test fun downwardAutoScrollRequiresTheSmallerBottomZone() {
+        source.value = ('a'..'z').map { it.toString() }
+        mount(initialIndex = 8)
+        grab("m")
+        moveHandleToListY("m", 600)
+        assertEquals("40dp from the bottom must not scroll", 8, scrollingList.firstVisibleItemIndex)
+        assertEquals(0, scrollingList.firstVisibleItemScrollOffset)
+        moveHandleToListY("m", 624)
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.mainClock.advanceTimeBy(100)
+            scrollingList.firstVisibleItemIndex > 8
+        }
+        compose.onNodeWithTag("handle:m").performTouchInput { up() }
+        compose.mainClock.advanceTimeBy(500)
+    }
+
+}
+
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [35], application = Application::class, qualifiers = "w400dp-h900dp-xxhdpi")
+@OptIn(ExperimentalComposeUiApi::class)
+internal class ReorderableListGestureTest : ReorderableListGestureFixture() {
     @Test fun heldDragDoesNotSaveAndSlowAcknowledgementNeverRollsRowsBack() {
         mount()
         grab("a")

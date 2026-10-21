@@ -1,12 +1,13 @@
 package me.rerere.rikkahub.ui.hooks
 
-
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
@@ -41,19 +43,35 @@ internal fun <T> rememberAppReorderableLazyListState(
     enabled: Boolean = true,
 ): ReorderableLazyListState {
     val latestItems = rememberUpdatedState(items)
+    val layoutDirection = LocalLayoutDirection.current
+    // The library has one symmetric threshold. Adding 64dp at the top gives a
+    // 96dp upward zone with the 32dp threshold below, while keeping the downward
+    // zone at 32dp. Preserve each screen's toolbar and bottom-control insets.
+    val edgePadding = remember(scrollThresholdPadding, layoutDirection) {
+        PaddingValues(
+            start = scrollThresholdPadding.calculateStartPadding(layoutDirection),
+            top = scrollThresholdPadding.calculateTopPadding() + 64.dp,
+            end = scrollThresholdPadding.calculateEndPadding(layoutDirection),
+            bottom = scrollThresholdPadding.calculateBottomPadding(),
+        )
+    }
     // Calvin recreates its controller when padding changes. Toolbar collapse/insets must not
     // replace it under the finger, or during the dropped row's settling animation.
-    var appliedPadding by remember(lazyListState) { mutableStateOf(scrollThresholdPadding) }
-    val state = rememberReorderableLazyListState(lazyListState, appliedPadding) { from, to ->
+    var appliedPadding by remember(lazyListState) { mutableStateOf(edgePadding) }
+    val state = rememberReorderableLazyListState(
+        lazyListState,
+        scrollThresholdPadding = appliedPadding,
+        scrollThreshold = 32.dp,
+    ) { from, to ->
         if (enabled) {
             items.pending.beginDrag()
             items.move(from.key, to.key)
         }
     }
-    LaunchedEffect(scrollThresholdPadding, state.isAnyItemDragging) {
-        if (!state.isAnyItemDragging && appliedPadding != scrollThresholdPadding) {
+    LaunchedEffect(edgePadding, state.isAnyItemDragging) {
+        if (!state.isAnyItemDragging && appliedPadding != edgePadding) {
             delay(1_000)
-            appliedPadding = scrollThresholdPadding
+            appliedPadding = edgePadding
         }
     }
     LaunchedEffect(state) {
