@@ -2105,7 +2105,7 @@ private fun ChatPageContent(
                     model = currentChatModel,
                     usage = contextMeterUsage,
                     status = contextCompressionStatus,
-                    onOptimize = vm::optimizeContext,
+                    onSummarize = vm::optimizeContext,
                     onCancel = vm::cancelContextOptimization,
                     onUpdateConversation = vm::updateConversation,
                     onDismiss = { showContextUsagePopup = false },

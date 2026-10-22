@@ -92,12 +92,12 @@ Updated 2026-10-21:
   queued, optimizing or waiting to apply. Successful compression morphs into a circle before
   returning to the meter. Reduced-motion settings skip that animation. There are no completion
   notifications, banners, toasts or haptics.
-- The meter and composer menu open the same dismissible **Chat context** popup. It uses
-  the shared floating dialog surface, typography and pill actions, with compact rows rather
+- The meter and composer menu open the same dismissible **Summarize** popup. It uses
+  an opaque shared dialog surface, typography and pill actions, with compact rows rather
   than stacked cards. It shows usage, the eligible source range, background progress,
   an editable checkpoint and context
   details. Closing it leaves work running. New checkpoints record coverage boundaries so
-  **Undo last optimization** restores just the previous checkpoint. Legacy or manually edited
+  **Undo last summary** restores just the previous checkpoint. Legacy or manually edited
   checkpoints offer **Restore original context** instead. Neither action deletes messages.
 - Persisted conversations use unique, ordinary WorkManager jobs, without a foreground
   service or notification. A per-conversation shared job prevents duplicate helper requests;
@@ -155,3 +155,22 @@ can lose cross-fragment nuance. Signed thinking and raw media are not transcribe
 existing text/OCR and attachment descriptors are used. Accumulated frozen milestones can still
 eventually exhaust a window; the final context gate remains the overflow fallback. Hierarchical
 archive retrieval would be a separate change, not a guarantee supplied by this implementation.
+
+
+### Summarize popup follow-up (2026-10-22)
+
+The attachment menu now finishes hiding its sheet, removes that window, and waits for its
+composition to detach before presenting Summarize. The dialog uses an opaque surface without
+cross-window Haze drawing. Token estimation runs on Default alongside the preview; exceptions
+show a retryable preview error instead of escaping the composition coroutine. Cancellation
+still propagates, and a failed or loading preview cannot submit a summary request.
+
+The menu, popup, progress semantics and undo action use “Summarize” terminology. Repeated
+background-work and message-preservation assurances were removed. Context settings and account
+cards use shorter labels while retaining actionable errors and configuration information.
+
+`SummarizeDialogInteractionTest` exercises opening directly and through the real sheet handoff
+with motion and glass enabled, expanding both disclosures, dismissal, and recovery from a
+throwing preview loader. Native renders cover both themes and running/ready states. These
+checks do not reproduce the exact Samsung crash; device testing is still needed to confirm
+that the reported attachment-menu failure is resolved.

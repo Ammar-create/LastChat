@@ -16,7 +16,6 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -53,34 +52,26 @@ fun AssistantContextManagementSubPage(
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
     ) {
-        Text(
-            "Keep the conversation flowing. Older exchanges become a checkpoint when you need more room; " +
-                "your recent conversation stays intact and the original messages remain in the chat.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = AppSpacing.lg, vertical = AppSpacing.md),
-        )
-        SettingsGroup(title = "Context management") {
+        SettingsGroup(title = "Summarization") {
             ContextChoice(
-                "Automatic", "Makes room when needed, quietly in the background.",
+                "Automatic", "Summarize older exchanges as needed.",
                 mode == ContextManagementMode.AUTOMATIC,
             ) { onUpdate(assistant.withContextManagementMode(ContextManagementMode.AUTOMATIC)) }
             ContextChoice(
-                "Only when I ask", "Use Optimize context whenever you want. Context limits still apply.",
+                "Only when I ask", null,
                 mode == ContextManagementMode.MANUAL,
             ) { onUpdate(assistant.withContextManagementMode(ContextManagementMode.MANUAL)) }
         }
         SettingsGroup(title = "What matters most") {
             ContextCompressionStyle.entries.forEach { style ->
                 ContextChoice(
-                    style.title(), style.description(), assistant.contextCompressionStyle == style,
+                    style.title(), null, assistant.contextCompressionStyle == style,
                 ) { onUpdate(assistant.copy(contextCompressionStyle = style)) }
             }
         }
-        SettingsGroup(title = "Fine-tune this character") {
+        SettingsGroup(title = "Options") {
             SettingGroupItem(
-                title = "More control",
-                subtitle = "Recent exchanges and details to preserve",
+                title = "Advanced",
                 trailing = {
                     Icon(if (showAdvanced) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
                 },
@@ -90,8 +81,7 @@ fun AssistantContextManagementSubPage(
                 Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
                     SettingGroupInputItem(
                         title = "Keep recent exchanges",
-                        subtitle = "Keep these exchanges in their original form. Adaptive follows the model's capacity. " +
-                            "Very tight context limits may require keeping fewer.",
+                        subtitle = "Adaptive follows the model’s context window.",
                     ) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(AppSpacing.xs),
@@ -109,21 +99,20 @@ fun AssistantContextManagementSubPage(
                     }
                     SettingGroupInputItem(
                         title = "Details to preserve",
-                        subtitle = "Tell the optimizer what to carry forward when it appears in the conversation.",
                     ) {
                         OutlinedTextField(
                             value = assistant.contextSummaryInstructions,
                             onValueChange = { onUpdate(assistant.copy(contextSummaryInstructions = it.take(4_000))) },
-                            placeholder = { Text("For example: keep character relationships, decisions and unfinished plans") },
+                            placeholder = { Text("Relationships, decisions, unfinished plans…") },
                             minLines = 3, maxLines = 6,
                             shape = AppShapes.InputField,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
                     SettingGroupItem(
-                        title = "Optimization model",
-                        subtitle = if (hasSummarizerModelConfigured) "Uses your dedicated summarizer model"
-                            else "Uses the chat model · a dedicated model is optional",
+                        title = "Summary model",
+                        subtitle = if (hasSummarizerModelConfigured) "Dedicated model"
+                            else "Chat model",
                         onClick = onNavigateToSummarizerSettings,
                     )
                 }
@@ -132,7 +121,7 @@ fun AssistantContextManagementSubPage(
         SettingsGroup(title = "Additional context") {
             SettingGroupItem(
                 title = "Time awareness",
-                subtitle = "Include the current time and relevant gaps in the conversation.",
+                subtitle = "Current time and gaps between messages.",
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableTimeAwareness,
@@ -153,7 +142,7 @@ fun AssistantContextManagementSubPage(
 }
 
 @Composable
-private fun ContextChoice(title: String, description: String, selected: Boolean, onClick: () -> Unit) {
+private fun ContextChoice(title: String, description: String?, selected: Boolean, onClick: () -> Unit) {
     SettingGroupItem(
         title = title,
         subtitle = description,
@@ -166,11 +155,4 @@ internal fun ContextCompressionStyle.title(): String = when (this) {
     ContextCompressionStyle.MORE_DETAIL -> "More detail"
     ContextCompressionStyle.BALANCED -> "Balanced"
     ContextCompressionStyle.MORE_ROOM -> "More room"
-}
-
-private fun ContextCompressionStyle.description(): String = when (this) {
-    ContextCompressionStyle.MORE_DETAIL -> "Keep richer checkpoints and optimize later. Best when small details matter."
-    ContextCompressionStyle.BALANCED -> "Keep a detailed handoff while making room for new replies."
-    ContextCompressionStyle.MORE_ROOM -> "Use shorter checkpoints and leave more room for long-running conversations."
-
 }

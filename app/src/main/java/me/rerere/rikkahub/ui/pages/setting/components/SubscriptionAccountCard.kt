@@ -79,10 +79,10 @@ internal fun SubscriptionAccountContent(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Account", style = MaterialTheme.typography.titleMedium)
-                        Text(state.account ?: "Connect your ${type.displayName} account",
+                        Text(state.account ?: type.displayName,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (state.account != null && !state.busy) Text("Connected · Plan allowance",
+                        if (state.account != null && !state.busy) Text("Connected",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                     if (state.account != null || type == SubscriptionAccountType.CHATGPT) Box {
@@ -104,7 +104,7 @@ internal fun SubscriptionAccountContent(
                 }
                 if (state.busy) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text(if (state.prompt == null) "Checking your connection…" else "Finish sign-in in your browser, then return here.",
+                    Text(if (state.prompt == null) "Connecting…" else "Finish signing in in your browser.",
                         style = MaterialTheme.typography.bodyMedium)
                     state.prompt?.code?.let { code ->
                         Text("Your sign-in code", style = MaterialTheme.typography.labelMedium)
@@ -122,9 +122,6 @@ internal fun SubscriptionAccountContent(
                         TextButton(onClick = { onCancel(); onFeedback(HapticPattern.Cancel) }, shape = AppShapes.ButtonPill) { Text("Cancel") }
                     }
                 } else if (state.account == null) {
-                    Text(if (type == SubscriptionAccountType.CHATGPT) "Use Codex models included in your ChatGPT plan."
-                        else "Use models included in your eligible Grok plan.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = { onFeedback(HapticPattern.Pop); onConnect(false) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = AppShapes.ButtonPill) {
                         Text("Continue with ${type.displayName}")
@@ -152,7 +149,7 @@ internal fun SubscriptionAccountContent(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Secure DNS fallback", style = MaterialTheme.typography.bodyMedium)
-                        Text("If your DNS blocks account services, try Cloudflare for those hostnames. Other app traffic keeps system DNS.",
+                        Text("Use Cloudflare DNS for account services.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     HapticSwitch(checked = provider.subscriptionDnsFallback, enabled = !state.busy,

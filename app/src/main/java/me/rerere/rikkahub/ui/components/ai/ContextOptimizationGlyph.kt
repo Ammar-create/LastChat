@@ -69,8 +69,8 @@ fun ContextOptimizationGlyph(
     Box(Modifier.size(28.dp).clearAndSetSemantics {
         contentDescription = "Conversation context"
         stateDescription = when {
-            running -> "Optimizing context"
-            completing -> "Context optimized"
+            running -> "Summarizing"
+            completing -> "Summary saved"
             else -> "${(windowFraction * 100).toInt()} percent of context used"
         }
     }, contentAlignment = androidx.compose.ui.Alignment.Center) {

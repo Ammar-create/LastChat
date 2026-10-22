@@ -1372,10 +1372,11 @@ fun MinimalChatInput(
     // Bottom sheet picker with custom MinimalPickerContent
     // Optical roundness: sheet corners (40dp) = button corners (24dp) + padding (16dp)
     if (showPicker) {
+        val attachmentSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showPicker = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = attachmentSheetState,
             shape = pickerSheetShape,
             dragHandle = null
         ) {
@@ -1393,7 +1394,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
-                onManageContext = { showPicker = false; showContextManagement = true },
+                onManageContext = {
+                    scope.launch {
+                        attachmentSheetState.hideBeforeDialog(
+                            onHidden = { showPicker = false },
+                            onOpen = { showContextManagement = true },
+                        )
+                    }
+                },
                 importScope = scope,
                 onAttachmentImportStarted = onAttachmentImportStarted,
                 onAttachmentImportFinished = onAttachmentImportFinished,
@@ -1405,7 +1413,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         ContextManagementDialog(
             conversation = conversation, assistant = assistant, model = currentChatModel,
             usage = contextUsage, status = contextCompressionStatus,
-            onOptimize = onRefreshContext, onCancel = onCancelContextCompression,
+            onSummarize = onRefreshContext, onCancel = onCancelContextCompression,
             onUpdateConversation = onUpdateConversation,
             onDismiss = { showContextManagement = false },
         )
@@ -2298,8 +2306,8 @@ private fun MinimalPickerContent(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                title = "Optimize context",
-                subtitle = "Make room without losing the conversation",
+                title = "Summarize",
+                subtitle = "",
                 onClick = {
                     onManageContext()
                 }
@@ -2332,7 +2340,7 @@ private fun MinimalPickerContent(
         }
         
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showModelPicker = false },
             sheetState = modelPickerSheetState,
             sheetGesturesEnabled = false,
@@ -2416,7 +2424,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         val chatModel = currentChatModel
         
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -2688,7 +2696,7 @@ private fun MinimalPickerItem(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge
                 )
-                Text(
+                if (subtitle.isNotBlank()) Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

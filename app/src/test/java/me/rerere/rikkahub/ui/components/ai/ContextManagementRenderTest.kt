@@ -85,7 +85,7 @@ class ContextManagementRenderTest {
                             conversation = conversation, assistant = assistant,
                             model = Model(modelId = "chat", contextWindowTokens = 32_000),
                             status = if (running) ContextCompressionStatus(ContextManagementActivity.SUMMARIZING, 1, 3) else null,
-                            onOptimize = {}, onCancel = {}, onUpdateConversation = {}, onDismiss = {},
+                            onSummarize = {}, onCancel = {}, onUpdateConversation = {}, onDismiss = {},
                             haptics = noHaptics,
                         )
                     }

@@ -38,56 +38,58 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import me.rerere.common.platform.PlatformLog
+import me.rerere.rikkahub.ui.modifier.lastChatSheetContainerColor
 import kotlinx.coroutines.withContext
-import me.rerere.ai.context.ContextTokenEstimator
 import me.rerere.ai.context.ContextUsageBreakdown
-import me.rerere.ai.context.smartInputBudget
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.ContextManagementMode
 import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.effectiveContextManagementMode
 import me.rerere.rikkahub.data.model.restorePreviousContextCheckpoint
-import me.rerere.rikkahub.service.ContextCompressionPreview
 import me.rerere.rikkahub.service.ContextCompressionStatus
 import me.rerere.rikkahub.service.ContextManagementActivity
-import me.rerere.rikkahub.service.activeContextMessages
-import me.rerere.rikkahub.service.previewContextCompression
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.modifier.lastChatBlurEffect
-import me.rerere.rikkahub.ui.modifier.lastChatDialogContainerColor
 import me.rerere.rikkahub.ui.motion.ExpandableContent
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
-import me.rerere.rikkahub.ui.pages.assistant.detail.title
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AppSpacing
 import me.rerere.rikkahub.ui.theme.AppSurface
 
 /** Matches the app's floating dialogs; background work belongs to the service, never this popup. */
 @Composable
-fun ContextManagementDialog(
+internal fun ContextManagementDialog(
     conversation: Conversation,
     assistant: Assistant,
     model: Model?,
     usage: ContextUsageBreakdown? = null,
     status: ContextCompressionStatus?,
-    onOptimize: () -> Unit,
+    onSummarize: () -> Unit,
     onCancel: () -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
     onDismiss: () -> Unit,
     haptics: PremiumHaptics = rememberPremiumHaptics(),
     details: (@Composable () -> Unit)? = null,
+    estimate: suspend (Conversation, Assistant, Model?) -> ContextDialogEstimate = ::estimateContextDialog,
 ) {
     val context = LocalContext.current
-    val preview by produceState<ContextCompressionPreview?>(null, conversation, assistant, model) {
-        value = withContext(Dispatchers.Default) {
-            model?.let { previewContextCompression(conversation, assistant, it) }
+    var retry by remember(conversation.id) { mutableStateOf(0) }
+    val estimateResult by produceState<Result<ContextDialogEstimate>?>(null, conversation, assistant, model, retry) {
+        value = null
+        value = try {
+            Result.success(withContext(Dispatchers.Default) { estimate(conversation, assistant, model) })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            PlatformLog.e("SummarizeDialog", "Failed to prepare summary preview: ${error.stackTraceToString()}")
+            Result.failure(error)
         }
     }
-    val plannedPreview = preview
+    val measured = estimateResult?.getOrNull()
+    val plannedPreview = measured?.preview
     val running = status?.isRunning == true
     var showDetails by remember { mutableStateOf(false) }
     var showSummary by remember { mutableStateOf(false) }
@@ -97,34 +99,27 @@ fun ContextManagementDialog(
         summary.replace(Regex(""" <!-- lastchat:coverage=\d+\.\.\d+ -->"""), "")
     }
     var draft by remember(conversation.id, readableSummary) { mutableStateOf(readableSummary) }
-    val estimatedUsed = remember(conversation, model, assistant.systemPrompt) {
-        ContextTokenEstimator.messagesTokens(activeContextMessages(conversation), model) +
-            ContextTokenEstimator.textTokens(summary + assistant.systemPrompt, model)
-    }
-    val used = usage?.usedTokens ?: estimatedUsed
-    val budget = usage?.usableInputTokens ?: model?.let { smartInputBudget(it, assistant.maxTokens) }
-    val progress = if (budget != null && budget > 0) (used.toFloat() / budget).coerceIn(0f, 1f) else 0f
-    val mode = if (assistant.effectiveContextManagementMode == ContextManagementMode.AUTOMATIC) "Automatic" else "Manual"
-    val containerColor = lastChatDialogContainerColor()
+    val used = usage?.usedTokens ?: measured?.usedTokens
+    val budget = usage?.usableInputTokens ?: measured?.budget
+    val progress = if (budget != null && budget > 0 && used != null) {
+        (used.toFloat() / budget).coerceIn(0f, 1f)
+    } else 0f
+    // This is a separate Android window. Keep its fill opaque and its rendering local;
+    // a glass layer must not keep drawing coordinates from the closing attachment sheet.
+    val containerColor = lastChatSheetContainerColor()
     val maxBodyHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.lastChatBlurEffect(containerColor, AppShapes.Dialog),
         shape = AppShapes.Dialog,
         containerColor = containerColor,
         tonalElevation = AppSurface.TonalElevation,
-        title = { Text("Chat context", style = MaterialTheme.typography.titleLarge) },
+        title = { Text("Summarize", style = MaterialTheme.typography.titleLarge) },
         text = {
             Column(
                 Modifier.fillMaxWidth().heightIn(max = maxBodyHeight).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
             ) {
-                Text(
-                    "$mode · ${assistant.contextCompressionStyle.title()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -132,7 +127,7 @@ fun ContextManagementDialog(
                             color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f),
                         )
                         Text(
-                            if (budget == null) "Adaptive" else "${(progress * 100).toInt()}%",
+                            if (budget == null || used == null) "—" else "${(progress * 100).toInt()}%",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -153,39 +148,41 @@ fun ContextManagementDialog(
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xxs)) {
                             Text(
                                 when (status?.activity) {
-                                    ContextManagementActivity.QUEUED -> "Waiting to optimize"
-                                    ContextManagementActivity.WAITING -> "Ready after the current reply"
-                                    else -> "Optimizing context"
+                                    ContextManagementActivity.QUEUED -> "Queued"
+                                    ContextManagementActivity.WAITING -> "Waiting for reply"
+                                    else -> "Summarizing…"
                                 }, style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
-                            Text(
-                                if ((status?.totalBatches ?: 0) > 1) {
-                                    "${status?.completedBatches} of ${status?.totalBatches} sections finished"
-                                } else "Running in the background",
+                            if ((status?.totalBatches ?: 0) > 1) Text(
+                                "${status?.completedBatches} / ${status?.totalBatches}",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
                     }
-                    Text("Close this popup and keep chatting. Optimization will continue.")
                 } else {
                     if (status?.activity == ContextManagementActivity.FAILED) {
-                        Text("Couldn't finish this time. Your context is unchanged; you can try again.")
+                        Text("Couldn’t summarize.")
                     } else if (status?.activity == ContextManagementActivity.COMPLETE && status.tokensSaved > 0) {
-                        Text("Context optimized · about ${contextTokenLabel(status.tokensSaved)} tokens freed.")
+                        Text("${contextTokenLabel(status.tokensSaved)} tokens freed")
                     }
-                    Text(when {
-                        model == null -> "Choose a chat model to optimize context."
-                        plannedPreview == null -> "Your recent conversation is protected. There's nothing to optimize yet."
-                        else -> "Summarize ${plannedPreview.messagesToCompress} older messages. " +
-                            "Keep ${plannedPreview.recentExchanges} recent exchanges in full."
+                    if (estimateResult?.isFailure == true) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Preview unavailable", modifier = Modifier.weight(1f))
+                            TextButton(onClick = { retry++ }) { Text("Retry") }
+                        }
+                    } else Text(when {
+                        model == null -> "Choose a model first."
+                        measured == null -> "Preparing…"
+                        plannedPreview == null -> "No older messages to summarize."
+                        else -> "${plannedPreview.messagesToCompress} messages · " +
+                            "keep ${plannedPreview.recentExchanges} recent exchanges"
                     })
-                    Text("Your original messages are always kept.", style = MaterialTheme.typography.bodySmall)
                 }
                 Column {
                     if (summary.isNotBlank()) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        ContextDisclosure("Saved summary", showSummary) {
+                        ContextDisclosure("Summary", showSummary) {
                             haptics.perform(HapticPattern.Selection)
                             showSummary = !showSummary
                         }
@@ -224,32 +221,28 @@ fun ContextManagementDialog(
                                         )
                                     }
                                     TextButton(onClick = { editing = true }, enabled = !running) {
-                                        Text("Edit summary")
+                                        Text("Edit")
                                     }
                                 }
                                 TextButton(onClick = {
                                     haptics.perform(HapticPattern.Pop)
                                     onUpdateConversation(restorePreviousContextCheckpoint(conversation))
                                 }, enabled = !running) {
-                                    Text(if (summary.contains("<!-- lastchat:coverage=")) "Undo last optimization"
+                                    Text(if (summary.contains("<!-- lastchat:coverage=")) "Undo last summary"
                                         else "Restore original context")
                                 }
                             }
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    ContextDisclosure("Context details", showDetails) {
+                    ContextDisclosure("Details", showDetails) {
                         haptics.perform(HapticPattern.Selection)
                         showDetails = !showDetails
                     }
                     ExpandableContent(visible = showDetails) {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
                             if (details != null) details() else {
-                                Text("Estimated context: ${contextTokenLabel(used)} tokens")
-                                Text(
-                                    "Response space is reserved separately. Attachments and tools also use context.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                Text(used?.let { "${contextTokenLabel(it)} tokens" } ?: "—")
                             }
                             if (status?.activity == ContextManagementActivity.FAILED) {
                                 status.errorResId?.let {
@@ -267,16 +260,16 @@ fun ContextManagementDialog(
                 onClick = {
                     if (running) onDismiss() else {
                         haptics.perform(HapticPattern.Pop)
-                        onOptimize()
+                        onSummarize()
                     }
                 },
                 enabled = running || (plannedPreview != null && !editing),
                 shape = AppShapes.ButtonPill,
             ) {
                 Text(when {
-                    running -> "Keep chatting"
+                    running -> "Close"
                     status?.activity == ContextManagementActivity.FAILED -> "Try again"
-                    else -> "Optimize"
+                    else -> "Summarize"
                 })
             }
         },
