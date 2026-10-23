@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -16,7 +14,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import kotlinx.coroutines.launch
 import dev.chrisbanes.haze.rememberHazeState
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.MessageNode
@@ -51,11 +48,7 @@ class SummarizeDialogInteractionTest {
         compose.waitForIdle()
     }
 
-    @Test fun opensAndExpandsWithMotionAndGlassEnabled() = exerciseDialog(false)
-
-    @Test fun opensFromAttachmentSheetWithMotionAndGlassEnabled() = exerciseDialog(true)
-
-    private fun exerciseDialog(fromSheet: Boolean) {
+    @Test fun opensAndExpandsWithMotionAndGlassEnabled() {
         val assistant = Assistant()
         val conversation = Conversation(assistantId = assistant.id,
             messageNodes = (0 until 14).flatMap {
@@ -64,22 +57,12 @@ class SummarizeDialogInteractionTest {
             }, contextSummary = "Saved details", contextSummaryUpToIndex = 3)
         compose.setContent {
             var open by remember { mutableStateOf(false) }
-            var sheet by remember { mutableStateOf(false) }
-            val scope = rememberCoroutineScope()
             val haze = rememberHazeState()
             MaterialTheme {
                 CompositionLocalProvider(LocalLastChatBlur provides LastChatBlur(true, haze),
                     LocalMotionPolicy provides MotionPolicy(reduceMotion = false)) {
                     Box(Modifier.fillMaxSize().lastChatBlurSource()) {
-                        Button(onClick = { if (fromSheet) sheet = true else open = true }) { Text("Open") }
-                    }
-                    if (sheet) {
-                        val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                        ModalBottomSheet(onDismissRequest = { sheet = false }, sheetState = state) {
-                            Button(onClick = { scope.launch {
-                                state.hideBeforeDialog(onHidden = { sheet = false }, onOpen = { open = true })
-                            } }) { Text("Summarize") }
-                        }
+                        Button(onClick = { open = true }) { Text("Open") }
                     }
                     if (open) ContextManagementDialog(conversation, assistant,
                         Model(modelId = "chat", contextWindowTokens = 32_000), status = null,
@@ -91,10 +74,6 @@ class SummarizeDialogInteractionTest {
         compose.mainClock.autoAdvance = false
         compose.onNodeWithText("Open").performClick()
         frames()
-        if (fromSheet) {
-            compose.onNodeWithText("Summarize").performClick()
-            frames()
-        }
         compose.onNode(hasText("Summarize") and !hasClickAction()).assertIsDisplayed()
         compose.onNodeWithText("Summary").performClick()
         frames()

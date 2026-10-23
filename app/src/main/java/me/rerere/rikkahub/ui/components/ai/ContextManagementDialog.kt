@@ -72,7 +72,6 @@ internal fun ContextManagementDialog(
     onUpdateConversation: (Conversation) -> Unit,
     onDismiss: () -> Unit,
     haptics: PremiumHaptics = rememberPremiumHaptics(),
-    details: (@Composable () -> Unit)? = null,
     estimate: suspend (Conversation, Assistant, Model?) -> ContextDialogEstimate = ::estimateContextDialog,
 ) {
     val context = LocalContext.current
@@ -241,9 +240,7 @@ internal fun ContextManagementDialog(
                     }
                     ExpandableContent(visible = showDetails) {
                         Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.xs)) {
-                            if (details != null) details() else {
-                                Text(used?.let { "${contextTokenLabel(it)} tokens" } ?: "—")
-                            }
+                            Text(used?.let { "${contextTokenLabel(it)} tokens" } ?: "—")
                             if (status?.activity == ContextManagementActivity.FAILED) {
                                 status.errorResId?.let {
                                     Text(context.getString(it, *status.errorArgs.toTypedArray()),

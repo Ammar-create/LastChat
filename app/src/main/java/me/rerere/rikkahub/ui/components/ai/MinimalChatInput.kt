@@ -100,7 +100,6 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material3.AlertDialog
@@ -167,7 +166,6 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.resolveConversationContext
 import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.canManuallySummarizeConversation
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.model.hasManualSkillSelectionOverride
 import me.rerere.rikkahub.data.model.Skill
@@ -253,10 +251,6 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
-    onRefreshContext: () -> Unit = {},
-    contextCompressionStatus: me.rerere.rikkahub.service.ContextCompressionStatus? = null,
-    contextUsage: me.rerere.ai.context.ContextUsageBreakdown? = null,
-    onCancelContextCompression: () -> Unit = {},
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
     showScrollToBottomButton: Boolean = false,
@@ -270,7 +264,6 @@ fun MinimalChatInput(
         settings.resolveConversationContext(conversation)
     }
     val assistant = conversationContext.assistant
-    var showContextManagement by remember(conversation.id) { mutableStateOf(false) }
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
@@ -1394,29 +1387,12 @@ fun MinimalChatInput(
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
-                onManageContext = {
-                    scope.launch {
-                        attachmentSheetState.hideBeforeDialog(
-                            onHidden = { showPicker = false },
-                            onOpen = { showContextManagement = true },
-                        )
-                    }
-                },
                 importScope = scope,
                 onAttachmentImportStarted = onAttachmentImportStarted,
                 onAttachmentImportFinished = onAttachmentImportFinished,
                 onDismiss = { showPicker = false }
             )
         }
-    }
-    if (showContextManagement) {
-        ContextManagementDialog(
-            conversation = conversation, assistant = assistant, model = currentChatModel,
-            usage = contextUsage, status = contextCompressionStatus,
-            onSummarize = onRefreshContext, onCancel = onCancelContextCompression,
-            onUpdateConversation = onUpdateConversation,
-            onDismiss = { showContextManagement = false },
-        )
     }
 
 }
@@ -1888,7 +1864,6 @@ private fun MinimalPickerContent(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
-    onManageContext: () -> Unit,
     importScope: CoroutineScope,
     onAttachmentImportStarted: () -> Unit,
     onAttachmentImportFinished: () -> Unit,
@@ -2294,25 +2269,7 @@ private fun MinimalPickerContent(
                 onClick = { showPluginsPicker = true },
             )
         }
-        
-        // Summarize button - show whenever there is enough history to summarize
-        if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
-            MinimalPickerItem(
-                icon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Summarize,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
-                title = "Summarize",
-                subtitle = "",
-                onClick = {
-                    onManageContext()
-                }
-            )
-        }
+
     }
     
     // Reasoning picker sheet
