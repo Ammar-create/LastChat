@@ -116,7 +116,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
@@ -194,7 +193,6 @@ import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.service.ChatPersistenceMode
-import me.rerere.rikkahub.ui.components.ai.ContextManagementDialog
 import me.rerere.rikkahub.ui.components.ai.ContextOptimizationGlyph
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
@@ -2081,6 +2079,10 @@ private fun ChatPageContent(
                     onNavigateToLorebook = { lorebookId ->
                         navController.navigate(Screen.SettingLorebookDetail(lorebookId))
                     },
+                    onRefreshContext = vm::optimizeContext,
+                    contextCompressionStatus = contextCompressionStatus,
+                    contextUsage = contextMeterUsage,
+                    onCancelContextCompression = vm::cancelContextOptimization,
                     onDeleteFile = { vm.deleteFile(it) },
                     bottomAccessory = bottomToolbarContent,
                     showScrollToBottomButton = showScrollToBottomButton,
@@ -2102,17 +2104,11 @@ private fun ChatPageContent(
                 ContextUsageMenu(
                     visible = showContextUsagePopup,
                     usage = usage,
-                    conversation = conversation,
-                    assistant = currentAssistant,
                     model = currentChatModel,
-                    status = contextCompressionStatus,
                     placement = toolbarPlacement,
                     onUpdateModelLimit = { limit ->
                         currentChatModel?.let { vm.updateModelContextLimit(it.id, limit) }
                     },
-                    onSummarize = vm::optimizeContext,
-                    onCancel = vm::cancelContextOptimization,
-                    onUpdateConversation = vm::updateConversation,
                     onDismissRequest = { showContextUsagePopup = false },
                 )
             }
@@ -3569,35 +3565,21 @@ private fun rememberContextMeterUsage(
     return computedBreakdown
 }
 
-/** Keep the token meter's original panel; the summary editor is a separate destination. */
+/** The original token-usage panel, including its context-limit editor. */
 @Composable
 internal fun ContextUsageMenu(
     visible: Boolean,
     usage: ContextUsageBreakdown,
-    conversation: Conversation,
-    assistant: Assistant,
     model: Model?,
-    status: me.rerere.rikkahub.service.ContextCompressionStatus?,
     placement: ChatToolbarPlacement,
     onUpdateModelLimit: (Int?) -> Unit,
-    onSummarize: () -> Unit,
-    onCancel: () -> Unit,
-    onUpdateConversation: (Conversation) -> Unit,
     onDismissRequest: () -> Unit,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics = rememberPremiumHaptics(),
 ) {
     val reduceMotion = LocalMotionPolicy.current.reduceMotion
-    val visibility = remember(conversation.id) {
+    val visibility = remember {
         androidx.compose.animation.core.MutableTransitionState(false)
     }.apply { targetState = visible }
-    var pendingSummary by remember(conversation.id) { mutableStateOf(false) }
-    var showSummary by remember(conversation.id) { mutableStateOf(false) }
-    LaunchedEffect(visibility.isIdle, visibility.currentState, visible, pendingSummary) {
-        if (visibility.isIdle && !visibility.currentState && !visible && pendingSummary) {
-            pendingSummary = false
-            showSummary = true
-        }
-    }
     androidx.compose.animation.AnimatedVisibility(
         visibleState = visibility,
         enter = if (reduceMotion) fadeIn(tween(90)) else fadeIn(spring(dampingRatio = 0.75f, stiffness = 360f)),
@@ -3610,17 +3592,10 @@ internal fun ContextUsageMenu(
         ) { state -> if (reduceMotion || state == EnterExitState.Visible) 1f else 0.96f }
         ContextUsageOverlay(
             usage = usage, placement = placement, popupScale = popupScale, model = model,
-            onUpdateModelLimit = onUpdateModelLimit,
-            onDismissRequest = { pendingSummary = false; onDismissRequest() },
-            onSummarize = { pendingSummary = true; onDismissRequest() },
-            status = status, haptics = haptics,
+            onUpdateModelLimit = onUpdateModelLimit, onDismissRequest = onDismissRequest,
+            haptics = haptics,
         )
     }
-    if (showSummary) ContextManagementDialog(
-        conversation = conversation, assistant = assistant, model = model, usage = usage, status = status,
-        onSummarize = onSummarize, onCancel = onCancel, onUpdateConversation = onUpdateConversation,
-        onDismiss = { showSummary = false }, haptics = haptics,
-    )
 }
 
 @Composable
@@ -3631,8 +3606,6 @@ private fun ContextUsageOverlay(
     model: Model? = null,
     onUpdateModelLimit: ((Int?) -> Unit)? = null,
     onDismissRequest: () -> Unit,
-    onSummarize: () -> Unit,
-    status: me.rerere.rikkahub.service.ContextCompressionStatus?,
     haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
 ) {
     BackHandler(onBack = onDismissRequest)
@@ -3691,15 +3664,7 @@ private fun ContextUsageOverlay(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 ContextUsagePopupContent(usage, model, onUpdateModelLimit, haptics)
-                androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                TextButton(
-                    onClick = { haptics.perform(HapticPattern.Pop); onSummarize() },
-                    modifier = Modifier.fillMaxWidth(), shape = AppShapes.ButtonPill,
-                ) {
-                    Icon(Icons.Rounded.Summarize, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (status?.isRunning == true) "Summarizing…" else "Summarize")
-                }
+
             }
         }
     }

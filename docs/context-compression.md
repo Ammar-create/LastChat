@@ -92,12 +92,12 @@ Updated 2026-10-21:
   queued, optimizing or waiting to apply. Successful compression morphs into a circle before
   returning to the meter. Reduced-motion settings skip that animation. There are no completion
   notifications, banners, toasts or haptics.
-- The context meter opens its floating token-usage panel, retaining the segmented breakdown,
-  category counts and context-limit editor. One **Summarize** action opens the separate
-  summary dialog. The attachment picker has no duplicate summarizer entry. The summary dialog
-  shows eligible messages, progress, an editable checkpoint and undo. Closing it leaves work
-  running. New checkpoints record coverage boundaries so **Undo last summary** restores the
-  previous checkpoint; older or edited checkpoints offer **Restore original context**.
+- The context meter opens its original floating token-usage panel with the segmented breakdown,
+  category counts and context-limit editor. **Summarize** lives in the attachment picker and
+  opens a separate dialog. The token panel has no summarizer action. The summary dialog shows
+  eligible messages, progress, an editable checkpoint and undo. Closing it leaves work running.
+  New checkpoints record coverage boundaries so **Undo last summary** restores the previous
+  checkpoint; older or edited checkpoints offer **Restore original context**.
 - Persisted conversations use unique, ordinary WorkManager jobs, without a foreground
   service or notification. A per-conversation shared job prevents duplicate helper requests;
   a global semaphore limits compression to one helper operation at a time. Cancelling a UI
@@ -159,18 +159,17 @@ archive retrieval would be a separate change, not a guarantee supplied by this i
 ### Token menu and summary dialog (2026-10-23)
 
 The token indicator keeps its original floating usage panel, toolbar position, segmented bar,
-legend and limit editor. A single footer action opens the separate Summarize dialog after the
-panel has finished closing. Back during that transition cancels the pending navigation.
-Opening the dialog never submits a summary request. The duplicate attachment-picker action
-and its sheet-to-dialog handoff have been removed.
+legend and limit editor. It contains no summary action or summary-dialog navigation.
+Summarize is available from the attachment picker. The sheet finishes hiding and detaches
+before the dialog opens. Opening the dialog never submits a summary request.
 
 The summary dialog retains an opaque surface without cross-window Haze drawing. Token
 estimation runs on Default alongside the preview; exceptions show a retryable preview error
 instead of escaping the composition coroutine. Cancellation propagates, and a failed or
 loading preview cannot submit a request. Repeated explanatory copy stays removed.
 
-`ContextUsageMenuTest` checks both toolbar positions, limit editing, opening and returning from
-Summarize, cancelling pending navigation with Back, and absence of automatic summary requests.
-Native renders cover dark and light token panels. `SummarizeDialogInteractionTest` covers
-expanding the summary/details and recovery from a throwing preview loader. Ready/running
-dialog renders cover both themes. Samsung rendering still requires device testing.
+`ContextUsageMenuTest` checks both toolbar positions, limit editing, Back dismissal/reopening,
+and absence of a Summarize action. Native renders cover dark and light token panels.
+`SummarizeDialogInteractionTest` covers the sheet-to-dialog handoff, expanding summary/details
+and recovery from a throwing preview loader. Ready/running dialog renders cover both themes.
+Samsung rendering still requires device testing.

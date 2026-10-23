@@ -20,10 +20,6 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import dev.chrisbanes.haze.rememberHazeState
 import me.rerere.ai.context.ContextUsageBreakdown
 import me.rerere.ai.provider.Model
-import me.rerere.ai.ui.MessageNode
-import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.modifier.LastChatBlur
 import me.rerere.rikkahub.ui.modifier.LocalLastChatBlur
@@ -59,20 +55,12 @@ class ContextUsageMenuTest {
         compose.waitForIdle()
     }
 
-    @Test fun topMenuRetainsBreakdownAndOpensSummaryAfterClosing() = exerciseMenu(ChatToolbarPlacement.Top, true)
-    @Test fun bottomMenuRetainsLimitEditorAndOpensSummaryAfterClosing() = exerciseMenu(ChatToolbarPlacement.Bottom, false)
+    @Test fun topMenuRetainsBreakdownAndLimitEditor() = exerciseMenu(ChatToolbarPlacement.Top, true)
+    @Test fun bottomMenuRetainsBreakdownAndLimitEditor() = exerciseMenu(ChatToolbarPlacement.Bottom, false)
 
-    @Test fun backDuringDismissCancelsPendingSummary() = exerciseMenu(ChatToolbarPlacement.Top, true, cancel = true)
-
-    private fun exerciseMenu(placement: ChatToolbarPlacement, dark: Boolean, cancel: Boolean = false) {
-        val assistant = Assistant()
-        val conversation = Conversation(assistantId = assistant.id,
-            messageNodes = (0 until 14).flatMap {
-                listOf(MessageNode.of(UIMessage.user("Question $it")), MessageNode.of(UIMessage.assistant("Answer $it")))
-            })
+    private fun exerciseMenu(placement: ChatToolbarPlacement, dark: Boolean) {
         val usage = ContextUsageBreakdown(conversationTokens = 4_000, systemPromptTokens = 800,
             summaryTokens = 200, totalTokens = 32_000, usableInputTokens = 28_000)
-        var summaryRequests = 0
         val limits = mutableListOf<Int?>()
         compose.setContent {
             var open by remember { mutableStateOf(false) }
@@ -85,10 +73,8 @@ class ContextUsageMenuTest {
                         Box(Modifier.fillMaxSize().lastChatBlurSource()) {
                             Button(onClick = { open = true }) { Text("Usage") }
                         }
-                        ContextUsageMenu(open, usage, conversation, assistant,
-                            Model(modelId = "chat", contextWindowTokens = 32_000), null, placement,
-                            onUpdateModelLimit = { limits += it }, onSummarize = { summaryRequests++ },
-                            onCancel = {}, onUpdateConversation = {}, onDismissRequest = { open = false }, haptics = noHaptics)
+                        ContextUsageMenu(open, usage, Model(modelId = "chat", contextWindowTokens = 32_000), placement,
+                            onUpdateModelLimit = { limits += it }, onDismissRequest = { open = false }, haptics = noHaptics)
                     }
                 }
             }
@@ -107,22 +93,10 @@ class ContextUsageMenuTest {
         compose.onNodeWithContentDescription("Commit").performClick()
         frames()
         assertEquals(listOf<Int?>(null), limits)
-        compose.onNodeWithText("Summarize").performTouchInput { click(center) }
-        compose.onNode(hasText("Summarize") and !hasClickAction()).assertDoesNotExist()
-        if (cancel) {
-            compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
-            frames()
-            compose.onAllNodesWithText("Summarize").assertCountEquals(0)
-            assertEquals(0, summaryRequests)
-            return
-        }
-        frames()
-        compose.onNode(hasText("Summarize") and !hasClickAction()).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Edit context limit").assertDoesNotExist()
-        assertEquals(0, summaryRequests)
-        compose.onNodeWithText("Close").performClick()
-        frames()
         compose.onAllNodesWithText("Summarize").assertCountEquals(0)
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        frames()
+        compose.onNodeWithContentDescription("Edit context limit").assertDoesNotExist()
         compose.onNodeWithText("Usage").performClick()
         frames()
         compose.onNodeWithContentDescription("Edit context limit").assertIsDisplayed()
