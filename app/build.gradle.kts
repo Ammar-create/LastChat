@@ -76,7 +76,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "lastchat.rikkafork.cocolal"
+        applicationId = "lastchat.rikkafork.velvet"
         minSdk = 28
         targetSdk = 36
         versionCode = 42
