@@ -146,7 +146,7 @@
       "inscribedFaceScale": null,
       "solid": {
         "kind": "loft",
-        "depth": 0.62,
+        "depth": 0.3,
         "uxKey": "heartChubby"
       },
       "source": "068-Pb-Ba"

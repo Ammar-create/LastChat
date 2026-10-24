@@ -24,6 +24,7 @@ data class ProviderPreset(
     val baseUrl: String,
     val balanceOption: BalanceOption = BalanceOption(),
     val useResponseApi: Boolean = false,
+    val subscriptionAccount: me.rerere.ai.provider.SubscriptionAccountType? = null,
     val chatCompletionsPath: String = "/chat/completions",
     val customIconUri: String? = null,
     val streamOptionsMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
@@ -74,6 +75,32 @@ val FALLBACK_PROVIDER_PRESETS = listOf(
 )
 
 val SPECIAL_PROVIDER_PRESETS = listOf(
+    ProviderPreset(
+        id = "584e2459-7933-4acb-8f8a-3a9e48764708",
+        name = "OpenCode Go",
+        description = "Use your OpenCode Go plan with automatic model routing",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://opencode.ai/inference/go/openai/v1",
+        customIconUri = "icons/opencode.svg",
+        apiKeyUrl = "https://opencode.ai/console",
+    ),
+    ProviderPreset(
+        name = "ChatGPT",
+        description = "Sign in with ChatGPT and use models included in your plan",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = me.rerere.ai.provider.SubscriptionAccountType.CHATGPT.baseUrl,
+        useResponseApi = true,
+        subscriptionAccount = me.rerere.ai.provider.SubscriptionAccountType.CHATGPT,
+        customIconUri = "lobehub://openai",
+    ),
+    ProviderPreset(
+        name = "Grok",
+        description = "Sign in with Grok and use your eligible subscription",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = me.rerere.ai.provider.SubscriptionAccountType.GROK.baseUrl,
+        subscriptionAccount = me.rerere.ai.provider.SubscriptionAccountType.GROK,
+        customIconUri = "lobehub://grok",
+    ),
     ProviderPreset(
         name = "Local models",
         description = "Run downloaded language, embedding, and speech models directly on this device",
@@ -153,6 +180,7 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             baseUrl = baseUrl,
             balanceOption = balanceOption,
             useResponseApi = useResponseApi,
+            subscriptionAccount = subscriptionAccount,
             chatCompletionsPath = chatCompletionsPath,
             customIconUri = customIconUri,
             streamOptionsMode = streamOptionsMode,
@@ -183,12 +211,7 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             name = name,
             baseUrl = baseUrl,
             customIconUri = customIconUri,
-            models = listOf(
-                Model(
-                    modelId = "model.safetensors",
-                    displayName = "ComfyUI model",
-                ).withComfyDefaults()
-            ),
+            models = emptyList(),
         )
 
         ProviderSetting.LiteRtLocal::class -> ProviderSetting.LiteRtLocal(

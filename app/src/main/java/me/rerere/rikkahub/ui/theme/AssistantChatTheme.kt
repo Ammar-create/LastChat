@@ -21,12 +21,12 @@ import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.components.avatar.animated.MarkColors
 import org.koin.core.context.GlobalContext
 import java.io.File
 import java.io.InputStream
 
 private const val PALETTE_TARGET_SIZE = 128
-private val AMOLED_DARK_BACKGROUND = Color(0xFF000000)
 
 @Composable
 fun AssistantChatTheme(
@@ -69,16 +69,7 @@ fun AssistantChatTheme(
         baseScheme = MaterialTheme.colorScheme,
         seedColor = seedColor!!,
         darkTheme = darkTheme
-    ).let { baseScheme ->
-        if (darkTheme) {
-            baseScheme.copy(
-                background = AMOLED_DARK_BACKGROUND,
-                surface = AMOLED_DARK_BACKGROUND
-            )
-        } else {
-            baseScheme
-        }
-    }
+    ).withLastChatContrast(darkTheme, LocalSystemContrast.current)
 
     MaterialTheme(
         colorScheme = scheme,
@@ -141,7 +132,7 @@ suspend fun extractColorCandidates(
                 ?.let { extractCandidatesFromBitmap(it) }
         }
         else -> null
-    } ?: emptyList()
+    } ?: animatedAvatarCandidates(assistant.avatar)
 
     // The "primary" source is whichever one the old code would have used:
     // background first, then avatar.
@@ -167,6 +158,27 @@ suspend fun extractColorCandidates(
         if (result.none { existing -> existing.isColorClose(candidate) }) {
             result.add(candidate)
         }
+    }
+    return result
+}
+
+/**
+ * An animated mark has no bitmap to sample: offer its body colour and eye colour
+ * directly (body first), when they are real colours that make a usable theme seed
+ * (no near-white / near-black / grey). Same seed normalisation as image colours;
+ * duplicates are dropped by the caller.
+ */
+private fun animatedAvatarCandidates(avatar: Avatar): List<Color> {
+    val mark = avatar as? Avatar.Animated ?: return emptyList()
+    val raw = MarkColors.themeCandidates(
+        eyeType = mark.eyeType,
+        colorHex = mark.colorHex,
+        colorPreset = mark.colorPreset,
+        eyeColorHex = mark.eyeColorHex,
+    )
+    val result = mutableListOf<Color>()
+    for (c in raw.map { normalizeSeedColor(it) }) {
+        if (result.none { it.isColorClose(c) }) result += c
     }
     return result
 }

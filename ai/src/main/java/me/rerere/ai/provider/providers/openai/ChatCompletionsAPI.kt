@@ -1,5 +1,7 @@
 package me.rerere.ai.provider.providers.openai
 
+import me.rerere.ai.util.toProviderError
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import me.rerere.common.platform.PlatformLog
@@ -226,6 +228,10 @@ class ChatCompletionsAPI(
                         }
                     }
                     is PlatformServerEvent.Event -> {
+                        if (event.event == "error") {
+                            close(me.rerere.ai.util.providerHttpError(null, event.data))
+                            return@collect
+                        }
                         if (event.data == "[DONE]") {
                             keyRoulette.reportOutcome(selectedKey.id, KeyOutcome.Success)
                             close()
@@ -235,7 +241,7 @@ class ChatCompletionsAPI(
                         try {
                             parseStreamData(event.data).forEach { chunk ->
                                 hasEmittedChunk = true
-                                trySend(chunk)
+                                send(chunk)
                             }
                         } catch (e: Throwable) {
                             close(e)
@@ -293,25 +299,7 @@ class ChatCompletionsAPI(
             }
     }
 
-    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
-        val bodySnippet = event.body?.takeIf { it.isNotBlank() }?.take(500)
-        val fallback = RuntimeException(
-            "Stream failed${event.statusCode?.let { " #$it" }.orEmpty()}: ${event.message.orEmpty()}" +
-                (bodySnippet?.let { " (body: $it)" } ?: "")
-        )
-        val bodyRaw = event.body
-        return try {
-            if (!bodyRaw.isNullOrBlank()) {
-                val bodyElement = Json.parseToJsonElement(bodyRaw)
-                bodyElement.parseErrorDetail()
-            } else {
-                fallback
-            }
-        } catch (e: Throwable) {
-            PlatformLog.w(TAG, "onFailure: failed to parse from $bodyRaw")
-            fallback
-        }
-    }
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable = event.toProviderError()
 
 
 
@@ -509,7 +497,8 @@ class ChatCompletionsAPI(
     }
 
     private fun isModelAllowTemperature(model: Model): Boolean {
-        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId)
+        return !ModelRegistry.OPENAI_O_MODELS.match(model.modelId) && !ModelRegistry.GPT_5.match(model.modelId) &&
+        !ModelRegistry.GPT_6.match(model.modelId) && !ModelRegistry.GPT_5_6.match(model.modelId)
     }
 
     private fun buildMessages(

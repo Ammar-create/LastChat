@@ -72,7 +72,7 @@ object MarkLifecycleMapper {
         MarkLifecycle.Streaming -> "Happy"
         MarkLifecycle.Working -> "angered or concentrated"
         MarkLifecycle.Finished -> "Happy"
-        MarkLifecycle.Failed -> "Worried"
+        MarkLifecycle.Failed -> "angered or concentrated" // engine17.1: Worried retired
         MarkLifecycle.Sleeping -> "Sleeping"
     }
 

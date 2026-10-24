@@ -60,7 +60,6 @@ import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.hooks.rememberCustomSttState
 import me.rerere.rikkahub.ui.motion.LocalMotionPolicy
-import me.rerere.rikkahub.ui.motion.rememberSystemMotionPolicy
 import me.rerere.rikkahub.ui.motion.rootEnterTransition
 import me.rerere.rikkahub.ui.motion.rootExitTransition
 import me.rerere.rikkahub.ui.motion.rootPopEnterTransition
@@ -704,14 +703,13 @@ class RouteActivity : ComponentActivity() {
         val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
         val tts = rememberCustomTtsState()
         val stt = rememberCustomSttState()
-        val motionPolicy = rememberSystemMotionPolicy()
+        val motionPolicy = LocalMotionPolicy.current
         SharedTransitionLayout {
             CompositionLocalProvider(
                 LocalNavController provides navBackStack,
                 LocalSharedTransitionScope provides this,
                 LocalSettings provides settings,
                 LocalHighlighter provides highlighter,
-                LocalMotionPolicy provides motionPolicy,
                 LocalToaster provides toastState,
                 LocalTTSState provides tts,
                 LocalSTTState provides stt,

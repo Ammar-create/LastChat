@@ -50,6 +50,30 @@ object WhEyeSeat {
         "leaf" to FaceTune(0.1872f, 0.4104f, 0.448f, 0.04f),
     )
 
+    /**
+     * Grok eye spacing per shape relative to the circle (engine12). The circle/blob spacing is
+     * the reference ("cute") and stays 1.0; shapes whose face is narrower at eye height or
+     * smaller in area (heart, star, wedge, …) bring the eyes in so the spacing reads the same
+     * relative to that face. Measured from neutral renders: factor ≈ mean of
+     * (blob sep/width-at-eyes ÷ shape's) and (blob sep/√area ÷ shape's), shrink only.
+     */
+    private val GROK_GAP_FIX: Map<String, Float> = mapOf(
+        "cloud" to 0.619f,
+        "square" to 0.951f,
+        "sparkle" to 0.388f,
+        "clover" to 0.786f,
+        "heart" to 0.407f,
+        "flower" to 0.668f,
+        "teardrop" to 0.784f,
+        "tablet" to 0.514f,
+        "wedge" to 0.617f,
+        "house" to 0.888f,
+        "star" to 0.52f,
+        "hex" to 0.784f,
+    )
+
+    fun grokGapFix(pickerId: String): Float = GROK_GAP_FIX[pickerId] ?: 1f
+
     fun engineKey(pickerId: String): String = when (pickerId) {
         "blob" -> "pebble"
         "heart" -> "heartChubby"
@@ -66,25 +90,28 @@ object WhEyeSeat {
         return Triple(t.width / Dw, t.height / Qw, t.gap / Mn)
     }
 
-    fun genericalFitScale(pickerId: String): Float {
+    private fun oldFit(pickerId: String): Float {
         val (sx, sy, _) = eyeFit(pickerId)
-        // Slightly smaller so SVG eyes seat inside skinny silhouettes.
         return ((sx + sy) * 0.5f * 0.92f).coerceIn(0.5f, 0.98f)
     }
 
     /**
-     * Generical interocular scale (1 = SVG Neutral spacing).
-     *
-     * Spacing is tied to eye size so the clear space between the eyes stays the
-     * same fraction of eye width on every shape (≈0.7, as on the approved circle).
-     * Previously gap and fit were tuned independently: square/hex/cloud/house eyes
-     * ended up nearly touching while the circle looked right.
-     *   space/eyeW = (166·gap − 113·fit) / (113·fit) ≈ 0.68  ⇒  gap ≈ 1.15·fit
+     * Engine14.2: Julian's Figma frames stay the reference for shape, gradient, outline and
+     * spacing, but the eye size on the circle is pulled back a notch from full 1:1 so they
+     * don't read as permanently wide-open. [GENERICAL_FIGMA_SIZE] is ~midway between the
+     * pre-engine14 ~0.81 and the full Figma 1.0. Other shapes keep the same relative size
+     * to the circle, scaled by that factor. Gap tracks fit so the cute spacing ratio holds.
      */
-    fun genericalGapScale(pickerId: String): Float {
-        if (pickerId == "blob") return 1.0f
-        return (genericalFitScale(pickerId) * 1.15f).coerceIn(0.78f, 1.05f)
+    const val GENERICAL_FIGMA_SIZE = 0.91f
+    /** Engine14.3: tiny extra interocular distance on Generical only (size stays 0.91). */
+    const val GENERICAL_GAP_OVER_FIT = 1.04f
+
+    fun genericalFitScale(pickerId: String): Float {
+        val relative = if (pickerId == "blob") 1f else (oldFit(pickerId) / oldFit("blob")).coerceIn(0.6f, 1.1f)
+        return GENERICAL_FIGMA_SIZE * relative
     }
+
+    fun genericalGapScale(pickerId: String): Float = genericalFitScale(pickerId) * GENERICAL_GAP_OVER_FIT
 
     /**
      * He-centered evenodd eye paths via full sx seat branches.
@@ -111,6 +138,8 @@ object WhEyeSeat {
         /** Eyes lead the head on the surface (normalized face units, y down). */
         leadX: Float = 0f,
         leadY: Float = 0f,
+        /** Extra half-gap in normalized face units, applied on the surface (rigid spins). */
+        extraHalfGap: Float = 0f,
     ): Pair<Path, Path> {
         val empty = Path() to Path()
         if (!AvatarPackData.isLoaded()) return empty
@@ -167,7 +196,7 @@ object WhEyeSeat {
         // the face and slanted ~63°, which is exactly the rejected "up-right stare". Same desktop En(ur,.57) capsule the sphere path seats.
         val expr = upright(expressionId, lid)
         val eyes = eyesOverride ?: WhSphereEyes.expressionPair(expr, lid)
-        val halfGap = (tune.gap / 2f) * eyeGap.coerceIn(0.7f, 1.2f)
+        val halfGap = (tune.gap / 2f) * eyeGap.coerceIn(0.7f, 1.2f) + extraHalfGap
         fun loopNorm(side: Int): List<WhMesh.V2> {
             val e = eyes.getOrNull(side) ?: return emptyList()
             val outline = WhSphereEyes.stadiumOutline(e)

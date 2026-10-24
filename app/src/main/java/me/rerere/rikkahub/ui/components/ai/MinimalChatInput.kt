@@ -253,12 +253,10 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = {
-        ChatService.ContextRefreshResult(
-            success = false,
-            errorResId = R.string.context_refresh_no_summarizer,
-        )
-    },
+    onRefreshContext: () -> Unit = {},
+    contextCompressionStatus: me.rerere.rikkahub.service.ContextCompressionStatus? = null,
+    contextUsage: me.rerere.ai.context.ContextUsageBreakdown? = null,
+    onCancelContextCompression: () -> Unit = {},
     onDeleteFile: (Uri) -> Unit = {},
     bottomAccessory: @Composable (() -> Unit)? = null,
     showScrollToBottomButton: Boolean = false,
@@ -272,6 +270,7 @@ fun MinimalChatInput(
         settings.resolveConversationContext(conversation)
     }
     val assistant = conversationContext.assistant
+    var showContextManagement by remember(conversation.id) { mutableStateOf(false) }
     val currentChatModel = conversationContext.chatModel
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
@@ -995,7 +994,8 @@ fun MinimalChatInput(
                                                 stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
                                             },
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = chatInputHintColor(),
                                         )
                                     }
                                 },
@@ -1256,7 +1256,8 @@ fun MinimalChatInput(
                                             stringResource(R.string.tool_approval_input_placeholder)
                                         } else {
                                             stringResource(R.string.minimal_chat_input_placeholder, assistant.name)
-                                        }
+                                        },
+                                        color = chatInputHintColor(),
                                     )
                                 },
                                 lineLimits = TextFieldLineLimits.MultiLine(minHeightInLines = 5),
@@ -1371,10 +1372,11 @@ fun MinimalChatInput(
     // Bottom sheet picker with custom MinimalPickerContent
     // Optical roundness: sheet corners (40dp) = button corners (24dp) + padding (16dp)
     if (showPicker) {
+        val attachmentSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showPicker = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = attachmentSheetState,
             shape = pickerSheetShape,
             dragHandle = null
         ) {
@@ -1392,7 +1394,14 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
-                onRefreshContext = onRefreshContext,
+                onManageContext = {
+                    scope.launch {
+                        attachmentSheetState.hideBeforeDialog(
+                            onHidden = { showPicker = false },
+                            onOpen = { showContextManagement = true },
+                        )
+                    }
+                },
                 importScope = scope,
                 onAttachmentImportStarted = onAttachmentImportStarted,
                 onAttachmentImportFinished = onAttachmentImportFinished,
@@ -1400,6 +1409,16 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             )
         }
     }
+    if (showContextManagement) {
+        ContextManagementDialog(
+            conversation = conversation, assistant = assistant, model = currentChatModel,
+            usage = contextUsage, status = contextCompressionStatus,
+            onSummarize = onRefreshContext, onCancel = onCancelContextCompression,
+            onUpdateConversation = onUpdateConversation,
+            onDismiss = { showContextManagement = false },
+        )
+    }
+
 }
 
 @Composable
@@ -1869,7 +1888,7 @@ private fun MinimalPickerContent(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
+    onManageContext: () -> Unit,
     importScope: CoroutineScope,
     onAttachmentImportStarted: () -> Unit,
     onAttachmentImportFinished: () -> Unit,
@@ -1904,11 +1923,6 @@ private fun MinimalPickerContent(
     var showSkillsPicker by remember { mutableStateOf(false) }
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showPluginsPicker by remember { mutableStateOf(false) }
-    var showContextRefreshDialog by remember { mutableStateOf(false) }
-    var showContextSummaryEditDialog by remember { mutableStateOf(false) }
-    var editableContextSummary by remember(conversation.contextSummary) {
-        mutableStateOf(conversation.contextSummary.orEmpty())
-    }
     var showSearchPicker by remember { mutableStateOf(false) }
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
@@ -2280,7 +2294,7 @@ private fun MinimalPickerContent(
                 onClick = { showPluginsPicker = true },
             )
         }
-        
+
         // Summarize button - show whenever there is enough history to summarize
         if (assistant.canManuallySummarizeConversation(conversation.currentMessages.size)) {
             MinimalPickerItem(
@@ -2292,10 +2306,10 @@ private fun MinimalPickerContent(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 },
-                title = stringResource(R.string.minimal_input_summarize),
-                subtitle = stringResource(R.string.minimal_input_summarize_desc),
+                title = "Summarize",
+                subtitle = "",
                 onClick = {
-                    showContextRefreshDialog = true
+                    onManageContext()
                 }
             )
         }
@@ -2315,6 +2329,10 @@ private fun MinimalPickerContent(
     }
     
     // Model picker sheet - direct ModalBottomSheet (not ModelSelector which shows its own button)
+    LaunchedEffect(showModelPicker) {
+        if (showModelPicker) me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Global
+            .emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.ModelPickerOpened)
+    }
     if (showModelPicker) {
         val modelPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val filteredProviders = settings.providers.filter { 
@@ -2322,7 +2340,7 @@ private fun MinimalPickerContent(
         }
         
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showModelPicker = false },
             sheetState = modelPickerSheetState,
             sheetGesturesEnabled = false,
@@ -2402,100 +2420,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
         )
     }
     
-    // Context Refresh dialog (same as floating toolbar)
-    if (showContextRefreshDialog) {
-        ContextRefreshDialog(
-            conversation = conversation,
-            onRefresh = onRefreshContext,
-            onEditSummary = {
-                editableContextSummary = conversation.contextSummary.orEmpty()
-                showContextSummaryEditDialog = true
-            },
-            onRevertSummary = {
-                onUpdateConversation(
-                    conversation.copy(
-                        contextSummary = null,
-                        contextSummaryUpToIndex = -1,
-                        lastRefreshTime = 0L,
-                        updateAt = Instant.now()
-                    )
-                )
-            },
-            onDismiss = { showContextRefreshDialog = false }
-        )
-    }
-
-    if (showContextSummaryEditDialog) {
-        AlertDialog(
-            onDismissRequest = { showContextSummaryEditDialog = false },
-            shape = RoundedCornerShape(28.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            title = {
-                Text(
-                    text = stringResource(R.string.context_refresh_edit_summary),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            },
-            text = {
-                TextField(
-                    value = editableContextSummary,
-                    onValueChange = { editableContextSummary = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 180.dp),
-                    placeholder = {
-                        Text(stringResource(R.string.context_refresh_edit_summary_placeholder))
-                    }
-                )
-            },
-            confirmButton = {
-                IconButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Success)
-                        val trimmedSummary = editableContextSummary.trim()
-                        onUpdateConversation(
-                            conversation.copy(
-                                contextSummary = trimmedSummary.takeIf { it.isNotBlank() },
-                                contextSummaryUpToIndex = if (trimmedSummary.isBlank()) {
-                                    -1
-                                } else {
-                                    conversation.contextSummaryUpToIndex
-                                },
-                                lastRefreshTime = if (trimmedSummary.isBlank()) 0L else System.currentTimeMillis(),
-                                updateAt = Instant.now()
-                            )
-                        )
-                        showContextSummaryEditDialog = false
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Save,
-                        contentDescription = stringResource(R.string.context_refresh_save_summary)
-                    )
-                }
-            },
-            dismissButton = {
-                IconButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        showContextSummaryEditDialog = false
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = stringResource(android.R.string.cancel)
-                    )
-                }
-            }
-        )
-    }
-    
-    // Search picker sheet (same as floating toolbar) - direct content, no intermediate button
     if (showSearchPicker) {
         val chatModel = currentChatModel
         
         ModalBottomSheet(
-containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -2518,6 +2447,8 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                     settings = settings,
                     model = chatModel,
                     onToggleSearch = { enabled ->
+                        me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Global
+                            .emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.SettingToggled, direction = if (enabled) 1 else -1)
                         if (enabled) {
                             // When turning on, restore the last known valid provider index
                             onUpdateSearchService(effectiveProviderIndex)
@@ -2765,7 +2696,7 @@ private fun MinimalPickerItem(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge
                 )
-                Text(
+                if (subtitle.isNotBlank()) Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3119,3 +3050,14 @@ private fun findDialogWindow(view: View): Window? {
     }
     return null
 }
+
+
+/**
+ * Hint (placeholder) text of the chat input: noticeably dimmer than the default
+ * onSurfaceVariant so it reads as a hint, not as typed text — still legible in both themes.
+ */
+@Composable
+internal fun chatInputHintColor(): Color =
+    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = CHAT_INPUT_HINT_ALPHA)
+
+internal const val CHAT_INPUT_HINT_ALPHA = 0.5f

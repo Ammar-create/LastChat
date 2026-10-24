@@ -1,10 +1,16 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -24,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -36,8 +41,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -48,12 +51,10 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.FloatingActionButton
@@ -68,7 +69,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import androidx.compose.material3.Tab
@@ -79,15 +79,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -110,7 +107,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Image
@@ -156,8 +152,6 @@ import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ModelTypeTag
 import me.rerere.rikkahub.ui.components.ai.ProviderBalanceText
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
@@ -179,18 +173,16 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.CustomBodies
 import me.rerere.rikkahub.ui.pages.assistant.detail.CustomHeaders
 import me.rerere.rikkahub.ui.pages.setting.components.CustomIconSelector
 import me.rerere.rikkahub.ui.pages.setting.components.ModelReasoningConfigEditor
+import me.rerere.rikkahub.ui.pages.setting.components.ProviderUsageCard
+import me.rerere.rikkahub.ui.pages.setting.components.SubscriptionAccountCard
 import me.rerere.rikkahub.ui.pages.setting.components.ProviderConfigure
 import me.rerere.rikkahub.ui.pages.setting.components.SettingProviderBalanceOption
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.ImageUtils
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import org.koin.core.parameter.parametersOf
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
-import java.util.Locale
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -279,6 +271,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
             baseUrl,
             chatCompletionsPath,
             useResponseApi.toString(),
+            subscriptionAccountVersion.toString(),
             apiKey.hashCode().toString(),
             apiKeyPool.map { it.id to it.enabled }.hashCode().toString(),
         )
@@ -319,7 +312,7 @@ private fun ProviderSetting.apiModelCacheKey(): String {
 
 private fun ProviderSetting.canFetchApiModels(): Boolean {
     return when (this) {
-        is ProviderSetting.OpenAI -> apiKeyPool.any { it.enabled } || apiKey.isNotBlank() || isLikelyOllama()
+        is ProviderSetting.OpenAI -> subscriptionAccount != null || apiKeyPool.any { it.enabled } || apiKey.isNotBlank() || isLikelyOllama()
         is ProviderSetting.Google -> if (vertexAI) {
             serviceAccountEmail.isNotBlank() && privateKey.isNotBlank() && projectId.isNotBlank()
         } else {
@@ -422,7 +415,22 @@ private object ApiModelListCache {
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
-    val provider = settings.providers.find { it.id == id } ?: return
+    val pendingEdit by vm.pendingProviderEdit.collectAsStateWithLifecycle()
+    val storedProvider = settings.providers.find { it.id == id } ?: return
+    // Show the unsaved edit while its debounced save is pending, so both tabs build on it.
+    val provider = pendingEdit?.takeIf { it.id == id } ?: storedProvider
+    val providerLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(id, providerLifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE ||
+                event == androidx.lifecycle.Lifecycle.Event.ON_STOP) vm.flushProviderEditNow()
+        }
+        providerLifecycle.lifecycle.addObserver(observer)
+        onDispose {
+            providerLifecycle.lifecycle.removeObserver(observer)
+            vm.flushProviderEditNow()
+        }
+    }
     val pager = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
@@ -431,28 +439,18 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     var isSaving by remember { mutableStateOf(false) }
 
     val onEdit = { newProvider: ProviderSetting ->
-        val newSettings = settings.copy(
-            providers = settings.providers.map {
-                if (newProvider.id == it.id) {
-                    newProvider
-                } else {
-                    it
-                }
-            }
-        )
         isSaving = true
         savingResetJob?.cancel()
-        vm.updateSettings(newSettings)
+        vm.editProvider(newProvider)
         savingResetJob = scope.launch {
             delay(600)
             isSaving = false
         }
     }
     val onDelete = {
-        val newSettings = settings.copy(
-            providers = settings.providers - provider
-        )
-        vm.updateSettings(newSettings)
+        vm.flushProviderEditNow()
+        val deletedId = provider.id
+        vm.updateSettings { latest -> latest.copy(providers = latest.providers.filterNot { it.id == deletedId }) }
         navController.popBackStack()
     }
 
@@ -622,7 +620,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                                     providers = updatedProviders,
                                     providerTags = cleanedTags
                                 )
-                                vm.updateSettings(newSettings)
+                                vm.supersedeProviderEdit()
+                                vm.updateSettings(newSettings, base = settings)
                             },
                             contentPadding = contentPadding,
                             isSaving = isSaving
@@ -651,9 +650,8 @@ private fun SettingProviderConfigPage(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     isSaving: Boolean
 ) {
-    var internalProvider by remember(provider) { mutableStateOf(provider) }
-    val scope = rememberCoroutineScope()
-
+    // The parent owns the pending draft and its save handoff. A second local copy
+    // synchronized by LaunchedEffect could replay an older provider after a tap.
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -667,26 +665,35 @@ private fun SettingProviderConfigPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 ProviderConfigure(
-                    provider = internalProvider,
+                    provider = provider,
                     modifier = Modifier.padding(16.dp),
                     showSavingIndicator = isSaving,
+                    showSubscriptionAccount = false,
                     onEdit = {
-                        internalProvider = it
-                        // Auto-save immediately
                         onEdit(it)
                     }
                 )
             }
             
+            (provider as? ProviderSetting.OpenAI)?.takeIf { it.subscriptionAccount != null }?.let { subscription ->
+                SubscriptionAccountCard(subscription) {
+                    onEdit(it)
+                }
+            }
+
+            (provider as? ProviderSetting.OpenAI)?.takeIf {
+                it.subscriptionAccount == null && me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(it.baseUrl) != null
+            }?.let { ProviderUsageCard(it) }
+
             // Tags section
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Column(
@@ -699,12 +706,11 @@ private fun SettingProviderConfigPage(
                         },
                     ) {
                         TagsInput(
-                            value = internalProvider.tags,
+                            value = provider.tags,
                             tags = providerTags,
                             onValueChange = { tagIds, updatedTags ->
-                                // Update internal provider with new tag IDs
-                                val updatedProvider = internalProvider.copyProvider(tags = tagIds)
-                                internalProvider = updatedProvider
+                                // Update the shared provider draft with new tag IDs
+                                val updatedProvider = provider.copyProvider(tags = tagIds)
                                 // Update both provider and global tags
                                 onUpdateTags(updatedProvider, updatedTags)
                             },
@@ -713,13 +719,13 @@ private fun SettingProviderConfigPage(
                 }
             }
 
-            if (internalProvider is ProviderSetting.OpenAI) {
+            if (provider is ProviderSetting.OpenAI &&
+                (provider as ProviderSetting.OpenAI).subscriptionAccount == null) {
                 SettingProviderBalanceOption(
-                    provider = internalProvider,
-                    balanceOption = internalProvider.balanceOption,
+                    provider = provider,
+                    balanceOption = provider.balanceOption,
                     onEdit = { 
-                        val updated = internalProvider.copyProvider(balanceOption = it)
-                        internalProvider = updated
+                        val updated = provider.copyProvider(balanceOption = it)
                         onEdit(updated)  // Auto-save like other config fields
                     }
                 )
@@ -813,14 +819,14 @@ private fun ConnectionTesterButton(
                             Text(
                                 text = stringResource(R.string.setting_provider_page_test_success),
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.extendColors.green6
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
 
                         is UiState.Error -> {
                             Text(
                                 text = (testState as UiState.Error).error.message ?: "Error",
-                                color = MaterialTheme.extendColors.red6,
+                                color = MaterialTheme.colorScheme.error,
                                 maxLines = 10
                             )
                         }
@@ -876,18 +882,13 @@ private fun ModelList(
     val scope = rememberCoroutineScope()
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()
-    val modelItemIndexOffset = 0
-    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val fromModelIndex = from.index - modelItemIndexOffset
-        val toModelIndex = to.index - modelItemIndexOffset
-        if (
-            fromModelIndex in providerSetting.models.indices &&
-            toModelIndex in providerSetting.models.indices
-        ) {
-            onUpdateProvider(providerSetting.moveModel(fromModelIndex, toModelIndex))
-        }
+    val modelOrder = rememberReorderableItems(providerSetting.models, key = { it.id }, eagerCommit = true) { order ->
+        onUpdateProvider(providerSetting.copyProvider(models = providerSetting.models.reorderedByKeys(order) { it.id }))
     }
-    val density = LocalDensity.current
+    val reorderableLazyListState = rememberAppReorderableLazyListState(
+        lazyListState, modelOrder,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 104.dp),
+    )
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val modelMetadataResolver = koinInject<ModelMetadataResolver>()
     val apiModelSource = rememberApiModelSource(providerSetting)
@@ -934,20 +935,11 @@ private fun ModelList(
         }
     }
     
-    // State for swipe neighbor tracking
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
     var pendingDeleteModel by remember { mutableStateOf<me.rerere.ai.provider.Model?>(null) }
     
     
     val canDelete = true
-    
-    // Reset neighborsUnlocked when offset returns to 0
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -966,95 +958,55 @@ private fun ModelList(
 
 
             // 模型列表
-            itemsIndexed(providerSetting.models, key = { _, item -> item.id }) { index, item ->
+            itemsIndexed(modelOrder.items, key = { _, item -> item.id }) { index, item ->
                 val position = when {
-                    providerSetting.models.size == 1 -> ItemPosition.ONLY
+                    modelOrder.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == providerSetting.models.lastIndex -> ItemPosition.LAST
+                    index == modelOrder.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 
-                // Calculate neighbor offset
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, modelOrder.items) { it.id }
                 
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
-                    !neighborsUnlocked
-                
-                val neighborOffset = if (shouldNeighborFollow) {
-                    val distance = kotlin.math.abs(index - draggingIndex)
-                    when (distance) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-                
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableLazyListState,
                     key = item.id
                 ) { isDragging ->
 
-                    androidx.compose.runtime.key(canDelete) {
-                        ModelCard(
-                            model = item,
-                            position = position,
-                            canDelete = canDelete,
-                            neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
-                            onDelete = {
-                                pendingDeleteModel = item
-                            },
-                            onEdit = { editedModel ->
-                                onUpdateProvider(providerSetting.editModel(editedModel))
-                            },
-                            parentProvider = providerSetting,
-                            dragHandle = {
-                                IconButton(
-                                    onClick = {},
-                                    modifier = Modifier.longPressDraggableHandle(
-                                        onDragStarted = {
-                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
-                                        },
-                                        onDragStopped = {
-                                            haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Thud)
-                                        }
-                                    )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.DragIndicator,
-                                        contentDescription = null
-                                    )
-                                }
-                            },
-                            modifier = Modifier
-                                .graphicsLayer {
-                                    if (isDragging) {
-                                        scaleX = 0.95f
-                                        scaleY = 0.95f
-                                    } else {
-                                        scaleX = 1f
-                                        scaleY = 1f
+                    ModelCard(
+                        model = item,
+                        position = position,
+                        canDelete = canDelete,
+                        neighborOffset = neighborOffset,
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(item.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(item.id) },
+                        onDelete = {
+                            pendingDeleteModel = item
+                        },
+                        onEdit = { editedModel ->
+                            onUpdateProvider(providerSetting.editModel(editedModel))
+                        },
+                        parentProvider = providerSetting,
+                        dragHandle = {
+                            IconButton(
+                                onClick = {},
+                                modifier = Modifier.longPressDraggableHandle(
+                                    onDragStarted = {
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
+                                    },
+                                    onDragStopped = {
+                                        haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Thud)
                                     }
-                                },
-                        )
-                    }
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DragIndicator,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        modifier = Modifier,
+                    )
                 }
             }
             
@@ -2036,7 +1988,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                             )
                         ) {
                             Row(
@@ -3017,10 +2969,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
                 .background(
-                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
-                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
                 )
                 .clickable {
                     dialogState.open(model.copy())
@@ -3106,7 +3055,7 @@ private fun BuiltInToolsSettings(
                 modifier = Modifier.fillMaxWidth(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Row(

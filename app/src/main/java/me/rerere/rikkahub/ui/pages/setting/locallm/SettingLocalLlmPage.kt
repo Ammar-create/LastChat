@@ -1,7 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting.locallm
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,19 +57,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
-import me.rerere.rikkahub.utils.plus
 import me.rerere.locallm.InstalledLocalModel
 import me.rerere.locallm.LocalAccelerator
 import me.rerere.locallm.LocalDownload
@@ -97,8 +98,8 @@ import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelDragHandle
 import me.rerere.rikkahub.ui.pages.setting.localstt.SherpaModelSettingsSheet
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 
 @Composable
 fun SettingLocalLlmPage(
@@ -119,41 +120,13 @@ fun SettingLocalLlmPage(
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     val runtimeStatus = runtimeStatusText(state.runtime, state.activeWorkload, state.queuedTasks)
-    val installedModelsStartIndex = (if (runtimeStatus != null) 1 else 0) + 1
-    val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index - installedModelsStartIndex
-        val toIndex = to.index - installedModelsStartIndex
-        if (fromIndex in state.installed.indices && toIndex in state.installed.indices) {
-            vm.moveInstalledModel(fromIndex, toIndex)
-        }
-    }
-    val sttInstalledStartIndex =
-        (if (runtimeStatus != null) 1 else 0) +
-            (if (state.installed.isNotEmpty()) 1 + state.installed.size else 0) +
-            (if (state.importedDownloads.isNotEmpty()) 1 + state.importedDownloads.size else 0) +
-            1 + state.downloadable.size +
-            1
-    val sttReorderableState = rememberReorderableLazyListState(listState) { from, to ->
-        val fromIndex = from.index - sttInstalledStartIndex
-        val toIndex = to.index - sttInstalledStartIndex
-        if (fromIndex in sttState.installed.indices && toIndex in sttState.installed.indices) {
-            sttVm.moveInstalledModel(fromIndex, toIndex)
-        }
-    }
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
-    var sttDraggingIndex by remember { mutableStateOf(-1) }
-    var sttDragOffset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    var sttIsUnlocked by remember { mutableStateOf(false) }
-    var sttNeighborsUnlocked by remember { mutableStateOf(false) }
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
-    if (sttDragOffset == 0f && sttNeighborsUnlocked) {
-        sttNeighborsUnlocked = false
-    }
+    val installedOrder = rememberReorderableItems(state.installed, key = { it.id }, onCommit = vm::reorderInstalledModels)
+    val sttInstalledOrder = rememberReorderableItems(sttState.installed,
+        key = { "sherpa-installed-${it.id}" }, onCommit = sttVm::reorderInstalledModels)
+    val reorderableState = rememberAppReorderableLazyListState(listState, installedOrder)
+    val sttReorderableState = rememberAppReorderableLazyListState(listState, sttInstalledOrder)
+    val swipeNeighbors = rememberSwipeNeighborState()
+    val sttSwipeNeighbors = rememberSwipeNeighborState()
 
     Scaffold(
         topBar = {
@@ -211,50 +184,26 @@ fun SettingLocalLlmPage(
                     Spacer(Modifier.height(8.dp))
                     SectionHeader("Language and embedding models")
                 }
-                itemsIndexed(state.installed, key = { _, it -> it.id }) { index, model ->
+                itemsIndexed(installedOrder.items, key = { _, it -> it.id }) { index, model ->
                     val position = when {
                         state.installed.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
                         index == state.installed.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
-                    val thresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 35.dp.toPx() }
-                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                        neighborsUnlocked = true
-                    }
-                    val neighborOffset = if (
-                        draggingIndex >= 0 && draggingIndex != index && !isUnlocked && !neighborsUnlocked
-                    ) {
-                        when (kotlin.math.abs(index - draggingIndex)) {
-                            1 -> dragOffset * 0.35f
-                            2 -> dragOffset * 0.12f
-                            else -> 0f
-                        }
-                    } else {
-                        0f
-                    }
+                    val neighborOffset = swipeNeighbors.offsetFor(index, installedOrder.items) { it.id }
                     val iconUrl = remember(model.id, catalogSnapshot) {
                         catalogSnapshot?.inferFamilyEntry(model.displayName)?.iconUrl
                     }
-                    ReorderableItem(state = reorderableState, key = model.id) { isDragging ->
+                    AppReorderableItem(state = reorderableState, key = model.id) { isDragging ->
                         PhysicsSwipeToDelete(
                             position = position,
                             neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(model.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(model.id) },
                             onDelete = { modelPendingDelete = model },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .scale(if (isDragging) 0.95f else 1f),
+                                .fillMaxWidth(),
                         ) { shape ->
                             InstalledModelCard(
                                 model = model,
@@ -345,47 +294,23 @@ fun SettingLocalLlmPage(
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                 )
             }
-            itemsIndexed(sttState.installed, key = { _, model -> "sherpa-installed-${model.id}" }) { index, model ->
+            itemsIndexed(sttInstalledOrder.items, key = { _, model -> "sherpa-installed-${model.id}" }) { index, model ->
                 val position = when {
                     sttState.installed.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
                     index == sttState.installed.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
-                val thresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 35.dp.toPx() }
-                if (sttDraggingIndex >= 0 && !sttNeighborsUnlocked && kotlin.math.abs(sttDragOffset) >= thresholdPx) {
-                    sttNeighborsUnlocked = true
-                }
-                val neighborOffset = if (
-                    sttDraggingIndex >= 0 && sttDraggingIndex != index && !sttIsUnlocked && !sttNeighborsUnlocked
-                ) {
-                    when (kotlin.math.abs(index - sttDraggingIndex)) {
-                        1 -> sttDragOffset * 0.35f
-                        2 -> sttDragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-                ReorderableItem(state = sttReorderableState, key = "sherpa-installed-${model.id}") { isDragging ->
+                val neighborOffset = sttSwipeNeighbors.offsetFor(index, sttInstalledOrder.items) { it.id }
+                AppReorderableItem(state = sttReorderableState, key = "sherpa-installed-${model.id}") { isDragging ->
                     PhysicsSwipeToDelete(
                         position = position,
                         neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            sttDraggingIndex = index
-                            sttDragOffset = offset
-                            sttIsUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            if (sttDraggingIndex == index) {
-                                sttDraggingIndex = -1
-                                sttDragOffset = 0f
-                            }
-                        },
+                        onDragProgress = { offset, unlocked -> sttSwipeNeighbors.update(model.id, offset, unlocked) },
+                        onDragEnd = { sttSwipeNeighbors.end(model.id) },
                         onDelete = { sherpaModelPendingDelete = model },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .scale(if (isDragging) 0.95f else 1f),
+                            .fillMaxWidth(),
                     ) { shape ->
                         SherpaInstalledModelCard(
                             model = model,
@@ -434,7 +359,7 @@ fun SettingLocalLlmPage(
                 SectionHeader("HuggingFace Configuration")
                 Card(
                     shape = AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
@@ -557,7 +482,7 @@ private fun InstalledModelCard(
     Card(
         onClick = onClick,
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -659,7 +584,7 @@ private fun DownloadableModelCard(
     Card(
         shape = shape,
         colors = CardDefaults.cardColors(
-            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -747,8 +672,13 @@ private fun DownloadStatus(
 
         is LocalDownload.Failed -> {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val badFilePrefix = me.rerere.locallm.ModelInstall.BAD_DOWNLOAD_PREFIX
                 Text(
-                    stringResource(R.string.local_llm_status_error_format, download.message),
+                    if (download.message.startsWith(badFilePrefix)) {
+                        stringResource(R.string.local_llm_bad_download, download.message.removePrefix(badFilePrefix))
+                    } else {
+                        stringResource(R.string.local_llm_status_error_format, download.message)
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.weight(1f),

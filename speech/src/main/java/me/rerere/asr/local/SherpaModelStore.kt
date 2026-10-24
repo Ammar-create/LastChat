@@ -39,6 +39,11 @@ class SherpaModelStore(private val context: Context) {
 
     suspend fun clear() = mutate { emptyList() }
 
+    suspend fun reorder(ids: List<String>) = mutate { models ->
+        val rank = ids.withIndex().associate { it.value to it.index }
+        models.sortedBy { rank[it.id] ?: Int.MAX_VALUE }
+    }
+
     suspend fun move(from: Int, to: Int) = mutate { models ->
         if (from !in models.indices || to !in models.indices || from == to) return@mutate models
         models.toMutableList().apply { add(to, removeAt(from)) }

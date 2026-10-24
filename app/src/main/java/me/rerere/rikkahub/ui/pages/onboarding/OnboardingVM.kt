@@ -3,10 +3,8 @@ package me.rerere.rikkahub.ui.pages.onboarding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -33,10 +31,11 @@ class OnboardingVM(
     private val modelCatalogService: ModelCatalogService,
     private val modelMetadataResolver: ModelMetadataResolver,
 ) : ViewModel() {
+    internal var accountSetupDraft: ProviderSetting.OpenAI? = null
+    internal var resumeAccountSetup: Boolean = false
     private var localProviderBeforeSetup: ProviderSetting.LiteRtLocal? = null
 
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
 
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
@@ -44,12 +43,13 @@ class OnboardingVM(
         return (snapshot?.toProviderPresets() ?: emptyList())
             .withSpecialProviderPresets()
             .filterNot { it.type == ProviderSetting.ComfyUI::class }
+            .prioritizeSetupProviders()
     }
 
     fun skipSetup(onDone: () -> Unit) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                settingsStore.update(settings.value.copy(setupCompleted = true))
+                settingsStore.update { it.copy(setupCompleted = true) }
             }
             onDone()
         }
@@ -63,12 +63,10 @@ class OnboardingVM(
                     .filterIsInstance<ProviderSetting.LiteRtLocal>()
                     .firstOrNull()
                 val localProvider = localProviderBeforeSetup ?: provider
-                settingsStore.update(
-                    current.copy(
+                settingsStore.update { current -> current.copy(
                         providers = listOf(localProvider) +
                             current.providers.filterNot { it is ProviderSetting.LiteRtLocal },
-                    )
-                )
+                    ) }
             }
             onReady()
         }
@@ -79,12 +77,10 @@ class OnboardingVM(
             withContext(Dispatchers.IO) {
                 val current = settings.value
                 val restoredLocalProvider = localProviderBeforeSetup
-                settingsStore.update(
-                    current.copy(
+                settingsStore.update { current -> current.copy(
                         providers = listOfNotNull(restoredLocalProvider) +
                             current.providers.filterNot { it is ProviderSetting.LiteRtLocal },
-                    )
-                )
+                    ) }
                 localProviderBeforeSetup = null
             }
             onDone()
@@ -114,38 +110,15 @@ class OnboardingVM(
                     it.type == ModelType.EMBEDDING
                 }
 
-                settingsStore.update(
-                    syncedSettings.copy(
+                settingsStore.update { syncedSettings -> syncedSettings.copy(
                         setupCompleted = true,
                         chatModelId = chatModel?.id ?: syncedSettings.chatModelId,
                         titleModelId = chatModel?.id ?: syncedSettings.titleModelId,
                         summarizerModelId = chatModel?.id ?: syncedSettings.summarizerModelId,
                         ocrModelId = visionModel?.id ?: syncedSettings.ocrModelId,
                         embeddingModelId = embeddingModel?.id ?: syncedSettings.embeddingModelId,
-                    )
-                )
+                    ) }
                 localProviderBeforeSetup = null
-            }
-            onDone()
-        }
-    }
-
-    fun completeGuided(preset: ProviderPreset, apiKey: String, onDone: () -> Unit) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                val keyedProvider = providerWithKey(preset.toProviderSetting(), apiKey)
-                val providerModels = fetchProviderModels(keyedProvider)
-                val setupModels = providerModels.orderedSetupModels(preset.setupModelIds)
-                val configuredProvider = keyedProvider
-                    .copyProvider(models = setupModels)
-                val nextSettings = applyDefaults(
-                    settings = settings.value,
-                    provider = configuredProvider,
-                    defaults = preset.setupDefaults,
-                    setupSearchService = preset.setupSearchService,
-                    apiKey = apiKey,
-                ).copy(setupCompleted = true)
-                settingsStore.update(nextSettings)
             }
             onDone()
         }
@@ -163,16 +136,14 @@ class OnboardingVM(
                     enabled = true,
                     models = selectedModels,
                 )
-                val current = settings.value
-                val nextSettings = current.copy(
+                settingsStore.update { current -> current.copy(
                     setupCompleted = true,
                     providers = listOf(configuredProvider),
                     chatModelId = roleModels.chat ?: current.chatModelId,
                     titleModelId = roleModels.title ?: current.titleModelId,
                     summarizerModelId = roleModels.summarizer,
                     ocrModelId = roleModels.ocr ?: current.ocrModelId,
-                )
-                settingsStore.update(nextSettings)
+                ) }
             }
             onDone()
         }
@@ -201,33 +172,6 @@ class OnboardingVM(
         return preset.toProviderSetting()
     }
 
-    private fun applyDefaults(
-        settings: Settings,
-        provider: ProviderSetting,
-        defaults: me.rerere.rikkahub.data.ai.models.CatalogSetupDefaults?,
-        setupSearchService: String?,
-        apiKey: String,
-    ): Settings {
-        val modelsById = provider.models.associateBy { it.modelId }
-        val searchServices = when (setupSearchService?.lowercase()) {
-            "ollama" -> listOf(SearchServiceOptions.OllamaOptions(apiKey = apiKey)) +
-                settings.searchServices.filterNot { it is SearchServiceOptions.OllamaOptions }
-            else -> settings.searchServices
-        }
-        fun modelIdFor(apiId: String?): Uuid? {
-            return apiId?.let(modelsById::get)?.id
-        }
-        return settings.copy(
-            providers = listOf(provider),
-            chatModelId = modelIdFor(defaults?.chat) ?: settings.chatModelId,
-            titleModelId = modelIdFor(defaults?.title) ?: settings.titleModelId,
-            summarizerModelId = modelIdFor(defaults?.summarizer) ?: settings.summarizerModelId,
-            ocrModelId = modelIdFor(defaults?.ocr) ?: settings.ocrModelId,
-            searchServices = searchServices,
-            searchServiceSelected = if (setupSearchService?.lowercase() == "ollama") 0 else settings.searchServiceSelected,
-        )
-    }
-
     private suspend fun fetchProviderModels(provider: ProviderSetting): List<Model> {
         return runCatching {
             providerManager.getProviderByType(provider)
@@ -241,10 +185,20 @@ class OnboardingVM(
         }
     }
 
-    private fun List<Model>.orderedSetupModels(setupModelIds: List<String>): List<Model> {
-        if (setupModelIds.isEmpty()) return this
-        val modelsById = associateBy { it.modelId }
-        return setupModelIds.mapNotNull(modelsById::get)
+
+}
+
+/** Account providers and OpenCode are available before the bundled catalog finishes loading. */
+internal fun List<ProviderPreset>.prioritizeSetupProviders(): List<ProviderPreset> {
+    fun priority(preset: ProviderPreset): Int = when {
+        me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(preset.baseUrl)?.go == true -> 0
+        preset.subscriptionAccount == me.rerere.ai.provider.SubscriptionAccountType.CHATGPT -> 1
+        preset.subscriptionAccount == me.rerere.ai.provider.SubscriptionAccountType.GROK -> 2
+        else -> 3
+    }
+    return sortedBy(::priority).map { preset ->
+        val rank = priority(preset)
+        if (rank < 3) preset.copy(setupRecommended = true, setupOrder = rank - 100) else preset
     }
 }
 

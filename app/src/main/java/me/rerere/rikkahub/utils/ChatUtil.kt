@@ -84,6 +84,9 @@ fun navigateToChatPage(
 
 fun Context.copyMessageToClipboard(message: UIMessage) {
     this.writeClipboardText(message.toContentText())
+    // On-screen avatars may notice (rarely react).
+    me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Global
+        .emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.Copied)
 }
 
 @OptIn(ExperimentalEncodingApi::class)

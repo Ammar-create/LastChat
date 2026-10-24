@@ -43,28 +43,83 @@ object GenericalFace {
     private val faces = HashMap<String, Face>()
     private val shifts = HashMap<String, Int>()
 
-    /** "skeptical" (🤨) = the reference "confused" face, re-centred on the face. */
+    /**
+     * Every face is Julian's hand-made design from generical-eyes.json (engine13: his Figma
+     * "Generical expressions" set; "confused" is his raised-eyebrow frame (his Sad/hurt/confused frame is unused), no longer
+     * synthesised).
+     */
     fun face(exprId: String): Face? {
         faces[exprId]?.let { return it }
         if (!AvatarPackData.isLoaded()) return null
-        val key = if (exprId == "skeptical") "confused" else exprId
+        // "confused left" = the confused frame mirrored about the face centre.
+        if (exprId == SIDE_EYE_LEFT) {
+            val r = face(SIDE_EYE) ?: return null
+            return Face(mirror500(r.right), mirror500(r.left)).also { faces[exprId] = it }
+        }
+        val key = exprId
         val expr = AvatarPackData.generical.expressions[key]
             ?: AvatarPackData.generical.expressions["Neutral"]
             ?: return null
         var l = sample(expr.left) ?: return null
         var r = sample(expr.right) ?: return null
-        // A couple of reference faces are drawn looking off to one side (whole pair
-        // shifted right / up). Eyes now live on the body, so re-centre the pair; the
-        // body's gaze does the looking.
-        val pairCx = (bboxCx(l) + bboxCx(r)) / 2f
-        val pairCy = (bboxCy(l) + bboxCy(r)) / 2f
-        val dx = 250f - pairCx
-        val dy = if (abs(pairCy - 250f) > 40f) 250f - pairCy else 0f
-        if (abs(dx) > 4f || dy != 0f) {
-            l = translate(l, dx, dy)
-            r = translate(r, dx, dy)
+        // Engine18: Angry and Sad toned down a touch — 10 % of the way back toward Neutral.
+        TONED[exprId]?.let { k ->
+            val n = face("Neutral")
+            if (n != null) {
+                l = towards(l, n.left, k, shiftFor(exprId, "Neutral", 0, l, n.left))
+                r = towards(r, n.right, k, shiftFor(exprId, "Neutral", 1, r, n.right))
+            }
         }
+        // Engine14: no re-centring; every frame sits exactly where Julian drew it.
         return Face(l, r).also { faces[exprId] = it }
+    }
+
+    private val TONED = mapOf("Angry" to 0.10f, "Sad" to 0.10f)
+
+    private fun towards(a: Outline, b: Outline, k: Float, sh: Int): Outline {
+        val xs = FloatArray(N); val ys = FloatArray(N)
+        for (i in 0 until N) {
+            val j = ((i + sh) % N + N) % N
+            xs[i] = a.x[i] + (b.x[j] - a.x[i]) * k; ys[i] = a.y[i] + (b.y[j] - a.y[i]) * k
+        }
+        return Outline(xs, ys)
+    }
+
+    const val SIDE_EYE = "confused"
+    const val SIDE_EYE_LEFT = "confused left"
+
+    /** Mirrored about the face centre x = 250 (point order kept clockwise). */
+    private fun mirror500(o: Outline): Outline {
+        val xs = FloatArray(N) { 500f - o.x[it] }
+        val ys = o.y.copyOf()
+        xs.reverse(); ys.reverse()
+        return reStart(Outline(xs, ys))
+    }
+
+    /** Mirrored left-right about its own box centre (point order kept clockwise). */
+    private fun flipH(o: Outline): Outline {
+        val c = bboxCx(o)
+        val xs = FloatArray(N) { 2f * c - o.x[it] }
+        val ys = o.y.copyOf()
+        xs.reverse(); ys.reverse()
+        return reStart(Outline(xs, ys))
+    }
+
+    /** Move so the box is centred on [cx] with its bottom at [bottom]. */
+    private fun place(o: Outline, cx: Float, bottom: Float) =
+        translate(o, cx - bboxCx(o), bottom - o.y.max())
+
+    /** Rotate point order to start straight above the centre (as [sample] does). */
+    private fun reStart(o: Outline): Outline {
+        val cx = o.cx; val cy = o.cy
+        var best = 0; var bestD = Float.MAX_VALUE
+        for (i in 0 until N) {
+            var d = atan2(o.y[i] - cy, o.x[i] - cx) + (PI / 2).toFloat()
+            while (d > PI) d -= (2 * PI).toFloat()
+            while (d < -PI) d += (2 * PI).toFloat()
+            if (abs(d) < bestD) { bestD = abs(d); best = i }
+        }
+        return Outline(FloatArray(N) { o.x[(it + best) % N] }, FloatArray(N) { o.y[(it + best) % N] })
     }
 
     private fun bboxCx(o: Outline) = (o.x.min() + o.x.max()) / 2f
@@ -163,10 +218,59 @@ object GenericalFace {
     }
 
     /**
+     * Engine19: outline for a weight vector over faces (Σ w = 1): every face is aligned to
+     * the Neutral outline's indexing (best cyclic shift) and the points are averaged, so the
+     * shape is continuous in every weight and any mix of faces morphs from where it is.
+     */
+    fun outlineWeighted(side: Int, weights: List<Pair<String, Float>>, closure: Float): Outline? {
+        val refF = face("Neutral") ?: return null
+        val ref = if (side == 0) refF.left else refF.right
+        val xs = FloatArray(N); val ys = FloatArray(N)
+        var sum = 0f
+        for ((name, w) in weights) {
+            if (w <= 0f) continue
+            val f = face(name) ?: continue
+            val o = if (side == 0) f.left else f.right
+            val sh = if (name == "Neutral") 0 else shiftFor("Neutral", name, side, ref, o)
+            for (i in 0 until N) {
+                val j = ((i + sh) % N + N) % N
+                xs[i] += o.x[j] * w; ys[i] += o.y[j] * w
+            }
+            sum += w
+        }
+        if (sum <= 1e-6f) return outline(side, "Neutral", "Neutral", 1f, closure)
+        for (i in 0 until N) { xs[i] /= sum; ys[i] /= sum }
+        applyClosure(xs, ys, "Neutral", ref, side, closure)
+        return Outline(xs, ys)
+    }
+
+    private fun applyClosure(xs: FloatArray, ys: FloatArray, key: String, ref: Outline, side: Int, closure: Float) {
+        val c = closure.coerceIn(0f, 1f)
+        if (c <= 0.001f) return
+        val closedFace = face("Eyes closed") ?: return
+        val closed = if (side == 0) closedFace.left else closedFace.right
+        val ccx = closed.cx; val ccy = closed.cy
+        val mx = xs.average().toFloat()
+        val ymin = ys.min(); val ymax = ys.max()
+        val my = ymin + (ymax - ymin) * 0.58f
+        val w = (xs.max() - xs.min()).coerceAtLeast(30f)
+        val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
+        val sx = min(1f, w / cw)
+        val sa = shiftFor(key, "Eyes closed", side, ref, closed)
+        for (i in 0 until N) {
+            val j = ((i + sa) % N + N) % N
+            val tx = mx + (closed.x[j] - ccx) * sx
+            val ty = my + (closed.y[j] - ccy)
+            xs[i] += (tx - xs[i]) * c
+            ys[i] += (ty - ys[i]) * c
+        }
+    }
+
+    /**
      * Morphed eye outline in the 500 reference viewBox (y down).
      * [closure] 0 = as designed, 1 = fully closed bar (blink).
      */
-    fun outline(side: Int, from: String, to: String, t: Float, closure: Float): Outline? {
+    fun outline(side: Int, from: String, to: String, t: Float, closure: Float, top: String? = null, topT: Float = 0f): Outline? {
         val fa = face(from) ?: return null
         val fb = face(to) ?: return null
         val a = if (side == 0) fa.left else fa.right
@@ -174,12 +278,26 @@ object GenericalFace {
         val xs = FloatArray(N)
         val ys = FloatArray(N)
         val tt = t.coerceIn(0f, 1f)
+        // Key of the face whose point indexing [xs] uses (needed to align later layers).
+        var key: String; var ref: Outline
         if (from == to || tt >= 1f) {
-            System.arraycopy(b.x, 0, xs, 0, N); System.arraycopy(b.y, 0, ys, 0, N)
+            System.arraycopy(b.x, 0, xs, 0, N); System.arraycopy(b.y, 0, ys, 0, N); key = to; ref = b
         } else if (tt <= 0f) {
-            System.arraycopy(a.x, 0, xs, 0, N); System.arraycopy(a.y, 0, ys, 0, N)
+            System.arraycopy(a.x, 0, xs, 0, N); System.arraycopy(a.y, 0, ys, 0, N); key = from; ref = a
         } else {
-            lerpInto(xs, ys, a, b, shiftFor(from, to, side, a, b), tt)
+            lerpInto(xs, ys, a, b, shiftFor(from, to, side, a, b), tt); key = from; ref = a
+        }
+        // Engine17: interrupted morph — grow the newest face over the current blend.
+        val tw = topT.coerceIn(0f, 1f)
+        if (top != null && top != key && tw > 0f) {
+            face(top)?.let { ft ->
+                val c = if (side == 0) ft.left else ft.right
+                val sh = shiftFor(key, top, side, ref, c)
+                for (i in 0 until N) {
+                    val j = ((i + sh) % N + N) % N
+                    xs[i] += (c.x[j] - xs[i]) * tw; ys[i] += (c.y[j] - ys[i]) * tw
+                }
+            }
         }
         val c = closure.coerceIn(0f, 1f)
         if (c > 0.001f) {
@@ -194,7 +312,7 @@ object GenericalFace {
             val w = (xs.max() - xs.min()).coerceAtLeast(30f)
             val cw = (closed.x.max() - closed.x.min()).coerceAtLeast(1f)
             val sx = min(1f, w / cw)
-            val sa = shiftFor(to, "Eyes closed", side, b, closed)
+            val sa = shiftFor(key, "Eyes closed", side, ref, closed)
             for (i in 0 until N) {
                 val j = ((i + sa) % N + N) % N
                 val tx = mx + (closed.x[j] - ccx) * sx
@@ -279,11 +397,7 @@ object GenericalSeat {
         fun build(i: Int): SeatedEye? {
             val poly = seated.getOrNull(i) ?: return null
             if (poly.size < 3) return null
-            val path = Path().apply {
-                moveTo(poly[0].x, poly[0].y)
-                for (k in 1 until poly.size) lineTo(poly[k].x, poly[k].y)
-                close()
-            }
+            val path = SmoothPath.closed(poly.size, x = { poly[it].x }, y = { poly[it].y })
             var mx = 0f; var my = 0f
             for (p in poly) { mx += p.x; my += p.y }
             mx /= poly.size; my /= poly.size
@@ -302,6 +416,8 @@ object GenericalSeat {
                 lo = min(lo, d); hi = max(hi, d)
             }
             if (hi - lo < 1e-3f) hi = lo + 1f
+            // His gradients run from 4 above to 4 below the eye box (the outline's half width).
+            val ext = 4f * fit * he / 250f; lo -= ext; hi += ext
             return SeatedEye(path, Offset(mx + dx * lo, my + dy * lo), Offset(mx + dx * hi, my + dy * hi))
         }
         return build(0) to build(1)
@@ -322,31 +438,39 @@ object GenericalSeat {
     private fun sphereMap(loop: List<WhMesh.V2>, r: FloatArray, he: Float, keepAll: Boolean = false): List<WhMesh.V2>? {
         val out = ArrayList<WhMesh.V2>(loop.size)
         for (p in loop) {
+            // Engine14: orthographic lift, so at rest the decal projects back exactly onto
+            // Julian's flat frame (1:1). Turning still rides the sphere.
             val d = hypot(p.x, p.y)
-            val s = if (d > 1e-6f) sin(d) / d else 1f
-            val x = p.x * s
-            val y = p.y * s
-            val z = cos(d)
+            val x: Float; val y: Float; val z: Float
+            if (d < 0.999f) { x = p.x; y = p.y; z = sqrt(1f - d * d) }
+            else { x = p.x / d * 0.999f; y = p.y / d * 0.999f; z = 0.0447f }
             val rx = r[0] * x + r[1] * y + r[2] * z
             val ry = r[3] * x + r[4] * y + r[5] * z
             val rz = r[6] * x + r[7] * y + r[8] * z
-            if (keepAll || rz > 0.02f) out += WhMesh.V2(he * rx, -he * ry)
+            if (keepAll || rz > 0f) out += WhMesh.V2(he * rx, -he * ry)
         }
         return if (out.size >= 3 || (keepAll && out.size >= 2)) out else null
     }
 
-    fun draw(scope: DrawScope, eye: SeatedEye, tint: Color, he: Float) {
+    /**
+     * [eyeColor] fills the eye and its outline (white by default); the fade toward the
+     * eye's own "down" on the surface is [fade] — the eye colour tinted by the body
+     * surface ([MarkColors.genericalEyeFade]).
+     */
+    fun draw(scope: DrawScope, eye: SeatedEye, eyeColor: Color, fade: Color, he: Float, fit: Float = 1f) {
         val brush = Brush.linearGradient(
-            colors = listOf(Color.White, MarkColors.shade(tint, 0.82f)),
+            colors = listOf(eyeColor, fade),
             start = eye.gradStart,
             end = eye.gradEnd,
         )
         scope.drawPath(eye.path, brush)
-        // Reference stroke 5 on the 500 viewBox, nudged to ~5.9 (still under 7).
+        // Julian's Figma: outline 8 on the 500 viewBox, scaled with the eye size.
+        // Engine16: the outline is exactly the eye colour (same as the fill and the top of the
+        // shade) for every colour and with the shade on or off — never contrast-shifted.
         scope.drawPath(
             eye.path,
-            color = Color.White,
-            style = Stroke(width = 5.9f * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            color = eyeColor,
+            style = Stroke(width = 8f * fit * he / 250f, cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
     }
 

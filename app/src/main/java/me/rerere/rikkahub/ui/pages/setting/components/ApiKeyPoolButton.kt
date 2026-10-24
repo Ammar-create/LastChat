@@ -78,7 +78,7 @@ fun ApiKeyPoolButton(
     val iconColor by animateColorAsState(
         targetValue = when {
             hasAuthError -> MaterialTheme.colorScheme.error
-            isDark -> Color.White
+            isDark -> MaterialTheme.colorScheme.onSurface
             else -> MaterialTheme.colorScheme.onSurface
         },
         label = "ApiKeyPoolButtonIconColor"
@@ -87,7 +87,7 @@ fun ApiKeyPoolButton(
     val textColor by animateColorAsState(
         targetValue = when {
             hasAuthError -> MaterialTheme.colorScheme.onErrorContainer
-            isDark -> Color.White
+            isDark -> MaterialTheme.colorScheme.onSurface
             else -> MaterialTheme.colorScheme.onSurface
         },
         label = "ApiKeyPoolButtonTextColor"
@@ -104,7 +104,7 @@ fun ApiKeyPoolButton(
 
     val circleTextColor by animateColorAsState(
         targetValue = when {
-            isDark -> Color.White
+            isDark -> MaterialTheme.colorScheme.onSurface
             else -> MaterialTheme.colorScheme.onSurface
         },
         label = "ApiKeyPoolButtonCircleTextColor"

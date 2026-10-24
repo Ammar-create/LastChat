@@ -6,7 +6,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -51,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 data class LastChatSettingsPaneEntry(
     val id: String,
@@ -297,11 +297,7 @@ private fun SettingsPaneItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = tween(SettingsPanePressMillis, easing = FastOutSlowInEasing),
-        label = "settings_pane_item_scale",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.96f, "settings_pane_item_scale")
     val animatedTopRadius by animateDpAsState(
         targetValue = topRadius,
         animationSpec = tween(SettingsPaneShapeMillis, easing = FastOutSlowInEasing),

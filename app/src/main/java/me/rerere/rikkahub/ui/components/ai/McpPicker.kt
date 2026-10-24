@@ -236,7 +236,7 @@ fun McpPicker(
                             Text(
                                 text = server.commonOptions.name,
                                 style = MaterialTheme.typography.titleLarge,
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),

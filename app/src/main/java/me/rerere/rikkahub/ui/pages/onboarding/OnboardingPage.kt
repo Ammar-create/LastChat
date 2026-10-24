@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -138,10 +140,13 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
             .filter { it.setupRecommended }
             .sortedBy { it.setupOrder }
     }
-    val pageHistory = remember { mutableStateListOf(SetupPage.Intro) }
+    val pageHistory = remember {
+        if (vm.resumeAccountSetup && vm.accountSetupDraft != null) mutableStateListOf(SetupPage.Intro, SetupPage.ProviderOverview, SetupPage.ManualKey)
+        else mutableStateListOf(SetupPage.Intro)
+    }
     val page = pageHistory.last()
     var selectedGuidedProvider by remember { mutableStateOf<ProviderPreset?>(null) }
-    var manualProvider by remember { mutableStateOf<ProviderSetting?>(null) }
+    var manualProvider by remember { mutableStateOf<ProviderSetting?>(vm.accountSetupDraft) }
     var manualProviderPreset by remember { mutableStateOf<ProviderPreset?>(null) }
     var apiKey by remember { mutableStateOf("") }
     var guidedModelsLoading by remember { mutableStateOf(false) }
@@ -158,6 +163,8 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
     }
 
     fun goTo(nextPage: SetupPage) {
+        vm.resumeAccountSetup = nextPage == SetupPage.ManualKey &&
+            (manualProvider as? ProviderSetting.OpenAI)?.subscriptionAccount != null
         if (pageHistory.lastOrNull() != nextPage) {
             pageHistory.add(nextPage)
         }
@@ -167,6 +174,8 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
         if (pageHistory.size > 1) {
             pageHistory.removeAt(pageHistory.lastIndex)
         }
+        vm.resumeAccountSetup = pageHistory.lastOrNull() == SetupPage.ManualKey &&
+            (manualProvider as? ProviderSetting.OpenAI)?.subscriptionAccount != null
     }
 
     fun handleBack() {
@@ -199,8 +208,8 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = if (isDark) Color.Black else MaterialTheme.colorScheme.surface,
-        contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         AnimatedContent(
             targetState = page,
@@ -240,6 +249,7 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                     onSelectProvider = { provider, preset ->
                         haptics.perform(HapticPattern.Pop)
                         manualProvider = provider
+                        vm.accountSetupDraft = (provider as? ProviderSetting.OpenAI)?.takeIf { it.subscriptionAccount != null }
                         manualProviderPreset = preset
                         apiKey = ""
                         if (provider is ProviderSetting.LiteRtLocal) {
@@ -260,7 +270,12 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                         haptics.perform(HapticPattern.Pop)
                         selectedGuidedProvider = it
                         apiKey = ""
-                        goToApiKeyFlow(
+                        if (it.subscriptionAccount != null) {
+                            manualProvider = vm.presetToProvider(it).copyProvider(enabled = true)
+                            vm.accountSetupDraft = manualProvider as? ProviderSetting.OpenAI
+                            manualProviderPreset = it
+                            goTo(SetupPage.ManualKey)
+                        } else goToApiKeyFlow(
                             signupUrl = it.signupUrl,
                             apiKeyUrl = it.apiKeyUrl,
                             signupPage = SetupPage.GuidedSignup,
@@ -299,10 +314,18 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                         val provider = selectedGuidedProvider ?: return@PasteKeyPage
                         haptics.perform(HapticPattern.Pop)
                         guidedModelsLoading = true
-                        vm.completeGuided(provider, apiKey) {
+                        val keyedProvider = vm.providerWithKey(provider.toProviderSetting(), apiKey)
+                            .copyProvider(enabled = true, models = emptyList())
+                        manualProvider = keyedProvider
+                        manualProviderPreset = provider
+                        vm.fetchModels(keyedProvider) { models ->
+                            if (manualProvider != keyedProvider) return@fetchModels
                             guidedModelsLoading = false
-                            haptics.perform(HapticPattern.Success)
-                            goTo(SetupPage.Success)
+                            if (pageHistory.lastOrNull() != SetupPage.GuidedPasteKey) return@fetchModels
+                            manualModels = models
+                            selectedModels.clear()
+                            roleModels = SetupRoleModels()
+                            goTo(SetupPage.ManualModels)
                         }
                     },
                 )
@@ -345,7 +368,24 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                 )
 
                 SetupPage.ManualKey -> {
-                    if (manualProvider?.name == "Custom provider") {
+                    val accountProvider = manualProvider as? ProviderSetting.OpenAI
+                    if (accountProvider?.subscriptionAccount != null) {
+                        AccountSetupPage(provider = accountProvider, loading = manualModelsLoading,
+                            onEdit = { manualProvider = it; vm.accountSetupDraft = it },
+                            onContinue = {
+                                val connected = manualProvider ?: return@AccountSetupPage
+                                manualModelsLoading = true
+                                vm.fetchModels(connected) { models ->
+                                    if (manualProvider != connected) return@fetchModels
+                                    manualModelsLoading = false
+                                    if (pageHistory.lastOrNull() != SetupPage.ManualKey) return@fetchModels
+                                    manualModels = models
+                                    selectedModels.clear()
+                                    roleModels = SetupRoleModels()
+                                    goTo(SetupPage.ManualModels)
+                                }
+                            })
+                    } else if (manualProvider?.name == "Custom provider") {
                         CustomProviderKeyPage(
                             provider = manualProvider!!,
                             onProviderChange = { manualProvider = it },
@@ -359,7 +399,9 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                                 manualProvider = keyedProvider
                                 manualModelsLoading = true
                                 vm.fetchModels(keyedProvider) { models ->
+                                    if (manualProvider != keyedProvider) return@fetchModels
                                     manualModelsLoading = false
+                                    if (pageHistory.lastOrNull() != SetupPage.ManualKey) return@fetchModels
                                     manualModels = models
                                     selectedModels.clear()
                                     roleModels = SetupRoleModels()
@@ -380,7 +422,9 @@ fun OnboardingPage(vm: OnboardingVM = koinViewModel()) {
                                 manualProvider = keyedProvider
                                 manualModelsLoading = true
                                 vm.fetchModels(keyedProvider) { models ->
+                                    if (manualProvider != keyedProvider) return@fetchModels
                                     manualModelsLoading = false
+                                    if (pageHistory.lastOrNull() != SetupPage.ManualKey) return@fetchModels
                                     manualModels = models
                                     selectedModels.clear()
                                     roleModels = SetupRoleModels()
@@ -656,12 +700,6 @@ private fun ProviderOverviewPage(
     onTooManyOptions: () -> Unit,
     onSelectProvider: (ProviderSetting, ProviderPreset?) -> Unit,
 ) {
-    val localPreset = providerPresets.firstOrNull {
-        it.type == ProviderSetting.LiteRtLocal::class
-    }
-    val remotePresets = providerPresets.filterNot {
-        it.type == ProviderSetting.LiteRtLocal::class
-    }
     SetupScaffold(
         bottom = {
             TwoSetupButtons(
@@ -689,34 +727,7 @@ private fun ProviderOverviewPage(
             )
             Spacer(modifier = Modifier.height(24.dp))
             FadingLazyColumn {
-                localPreset?.let { preset ->
-                    item {
-                        ProviderPresetCard(
-                            name = preset.name,
-                            description = preset.description,
-                            iconUri = preset.customIconUri,
-                            isLocal = true,
-                            position = ItemPosition.ONLY,
-                            onClick = { onSelectProvider(preset.toProviderSetting(), preset) },
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
-                }
-                item {
-                    ProviderCustomCard(
-                        onClick = {
-                            onSelectProvider(
-                                ProviderSetting.OpenAI(
-                                    name = "Custom provider",
-                                    baseUrl = "",
-                                ),
-                                null,
-                            )
-                        },
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-                if (remotePresets.isEmpty()) {
+                if (providerPresets.isEmpty()) {
                     item {
                         CircularProgressIndicator(
                             modifier = Modifier
@@ -726,18 +737,18 @@ private fun ProviderOverviewPage(
                         )
                     }
                 } else {
-                    itemsIndexed(remotePresets, key = { _, preset -> preset.name }) { index, preset ->
+                    itemsIndexed(providerPresets, key = { _, preset -> preset.name }) { index, preset ->
                         val position = when {
-                            remotePresets.size == 1 -> ItemPosition.ONLY
+                            providerPresets.size == 1 -> ItemPosition.ONLY
                             index == 0 -> ItemPosition.FIRST
-                            index == remotePresets.lastIndex -> ItemPosition.LAST
+                            index == providerPresets.lastIndex -> ItemPosition.LAST
                             else -> ItemPosition.MIDDLE
                         }
                         ProviderPresetCard(
                             name = preset.name,
                             description = preset.description,
                             iconUri = preset.customIconUri,
-                            isLocal = false,
+                            isLocal = preset.type == ProviderSetting.LiteRtLocal::class,
                             position = position,
                             onClick = { onSelectProvider(preset.toProviderSetting(), preset) },
                         )
@@ -746,6 +757,13 @@ private fun ProviderOverviewPage(
                         }
                     }
                 }
+                item {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ProviderCustomCard(onClick = {
+                        onSelectProvider(ProviderSetting.OpenAI(name = "Custom provider", baseUrl = ""), null)
+                    })
+                }
+
             }
         }
     }
@@ -764,19 +782,21 @@ private fun GuidedChoicePage(
                 .padding(top = 160.dp),
         ) {
             Text(
-                text = "Here are two beginner-\nfriendly options. We’ll guide\nyou through the setup!",
+                text = "Choose a provider.\nWe’ll guide you through setup!",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 lineHeight = MaterialTheme.typography.titleLarge.lineHeight,
             )
             Spacer(modifier = Modifier.height(28.dp))
-            providerPresets.forEachIndexed { index, preset ->
-                if (index > 0) Spacer(modifier = Modifier.height(16.dp))
-                GuidedProviderCard(
-                    provider = preset,
-                    description = preset.setupDescription ?: preset.description,
-                    onClick = { onSelect(preset) },
-                )
+            FadingLazyColumn {
+                itemsIndexed(providerPresets, key = { _, preset -> preset.name }) { index, preset ->
+                    if (index > 0) Spacer(modifier = Modifier.height(16.dp))
+                    GuidedProviderCard(
+                        provider = preset,
+                        description = preset.setupDescription ?: preset.description,
+                        onClick = { onSelect(preset) },
+                    )
+                }
             }
         }
     }
@@ -836,6 +856,29 @@ private fun LinkOutPage(
                 lineHeight = MaterialTheme.typography.titleLarge.lineHeight,
                 modifier = Modifier.padding(horizontal = SetupEdgePadding),
             )
+        }
+    }
+}
+
+@Composable
+private fun AccountSetupPage(
+    provider: ProviderSetting.OpenAI,
+    loading: Boolean = false,
+    onEdit: (ProviderSetting.OpenAI) -> Unit,
+    onContinue: () -> Unit,
+) {
+    val accountVm = org.koin.androidx.compose.koinViewModel<me.rerere.rikkahub.ui.pages.setting.SubscriptionAccountVM>(
+        key = "subscription-${provider.id}")
+    val account by accountVm.state.collectAsStateWithLifecycle()
+    SetupScaffold(bottom = {
+        CenteredSetupButton(text = if (loading) "Loading models…" else "Choose models",
+            enabled = account.account != null && !account.busy && !loading, onClick = onContinue)
+    }) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = SetupEdgePadding).padding(top = 96.dp, bottom = 160.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text(provider.subscriptionAccount?.displayName.orEmpty(), style = MaterialTheme.typography.headlineMedium)
+            me.rerere.rikkahub.ui.pages.setting.components.SubscriptionAccountCard(provider, onEdit)
         }
     }
 }
@@ -1216,6 +1259,23 @@ private fun SetupButton(
     onClick: () -> Unit,
 ) {
     val haptics = rememberPremiumHaptics()
+    SetupButtonFace(modifier, text, icon, filled, neutral, enabled) {
+        haptics.perform(HapticPattern.Pop)
+        onClick()
+    }
+}
+
+/** The setup button's look (no haptics); internal so render harnesses can show it. */
+@Composable
+internal fun SetupButtonFace(
+    modifier: Modifier = Modifier,
+    text: String? = null,
+    icon: ImageVector? = null,
+    filled: Boolean,
+    neutral: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1252,10 +1312,7 @@ private fun SetupButton(
     if (filled) {
         Button(
             enabled = enabled,
-            onClick = {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            },
+            onClick = onClick,
             interactionSource = interactionSource,
             shape = shape,
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -1275,16 +1332,13 @@ private fun SetupButton(
     } else {
         OutlinedButton(
             enabled = enabled,
-            onClick = {
-                haptics.perform(HapticPattern.Pop)
-                onClick()
-            },
+            onClick = onClick,
             interactionSource = interactionSource,
             shape = shape,
             border = BorderStroke(3.dp, setupCardColor()),
             contentPadding = PaddingValues(horizontal = 16.dp),
             colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = if (LocalDarkMode.current) Color.White else MaterialTheme.colorScheme.onSurface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surface,
             ),
             modifier = modifier
@@ -1503,7 +1557,7 @@ private fun SetupModelSelectableRow(
             provider = provider,
             modifier = Modifier.size(38.dp),
             color = Color.Transparent,
-            contentColor = if (LocalDarkMode.current) Color.White else MaterialTheme.colorScheme.onSurface,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         )
         Column(
             modifier = Modifier.weight(1f),

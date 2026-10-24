@@ -358,7 +358,9 @@ class AppStorageRepository(
             assistants = migratedAssistants,
             lorebooks = migratedLorebooks,
         )
-        settingsStore.update(updatedSettings)
+        settingsStore.update { latest ->
+            me.rerere.rikkahub.data.datastore.mergeSettingsEdit(settings, updatedSettings, latest)
+        }
 
         val stillReferencedUploadUrls = collectLegacyUploadUrls(updatedSettings)
         migratedSourceUrls.forEach { sourceUrl ->

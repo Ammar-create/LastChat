@@ -5,11 +5,10 @@
 -->
 <data-extraction-rules>
   <cloud-backup>
+    <!-- Keystore-bound credentials must be reauthorized on another installation. -->
+    <exclude domain="sharedpref" path="encrypted_secrets.xml" />
   </cloud-backup>
-  <!--
   <device-transfer>
-      <include .../>
-      <exclude .../>
+    <exclude domain="sharedpref" path="encrypted_secrets.xml" />
   </device-transfer>
-  -->
 </data-extraction-rules>

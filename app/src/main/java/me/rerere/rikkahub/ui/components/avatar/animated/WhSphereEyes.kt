@@ -24,6 +24,9 @@ object WhSphereEyes {
     const val UR = 0.26f
     /** Desktop `Iu` — default half-width for expression strokes. */
     const val IU = 0.1305f
+    /** Stroke half-widths for arc eyes (happy ^, closed ‿). */
+    const val HAPPY_W = 0.112f // engine21: pill-weight stroke (was 0.097, read as a thin line)
+    const val CLOSED_W = 0.105f // engine21: closed eyes are soft pill strokes, not hairlines (was 0.07)
 
     data class Vec3(val x: Float, val y: Float, val z: Float) {
         operator fun times(s: Float) = Vec3(x * s, y * s, z * s)
@@ -58,6 +61,8 @@ object WhSphereEyes {
         val lidY: Float,
         val pts: List<FloatArray>, // spine [x,y]
         val oval: FloatArray = floatArrayOf(0f, 0f),
+        /** Engine17.1 blink: 0 open … 1 lids met (soft lid bar). Replaces the lidY squash. */
+        val closeK: Float = 0f,
     )
 
     /** Desktop `Ou(body, gazeX, gazeY)` — gaze ∈ [-1,1] → euler deg + pos. */
@@ -71,8 +76,8 @@ object WhSphereEyes {
         return GazeDelta(
             pitchDeg = -(if (nonSphere) 19f else 14f) * s * gy,
             yawDeg = (if (nonSphere) 26f else 18f) * s * gx,
-            px = (if (nonSphere) 0.07f else 0.03f) * gx,
-            py = (if (nonSphere) 0.055f else 0.024f) * gy,
+            px = (if (nonSphere) 0.1f else 0.04f) * gx,
+            py = (if (nonSphere) 0.075f else 0.03f) * gy,
         )
     }
 
@@ -139,45 +144,123 @@ object WhSphereEyes {
         return listOf(e, e)
     }
 
+    /**
+     * Engine21.2 Grok confused, explored in pill language (sheet: grok_confused_options.png).
+     * [left, right] for "confused"; "confused left" is the mirror. All keep the eyes apart and
+     * never lean both the same way.
+     *  - A "brow up": one pill as at rest, the other a little shorter and raised — the pill
+     *    analogue of one raised eyebrow. (chosen)
+     *  - B "one squint": the other eye a short, slightly lowered pill — a skeptical squint.
+     *  - C "tipped brow": the other eye a touch shorter, raised and tipped 14° (one tilted, one upright).
+     *  - D "soft lopsided": both a hair tipped as a mirrored pair, one shorter and raised.
+     *  - O: the Engine21.1 o_O (comparison sheet only).
+     */
+    internal var confusedVariant = 'A'
+
+    internal fun confusedPair(v: Char): List<EyeState> {
+        fun up(e: EyeState, dy: Float) = e.copy(offY = e.offY + dy)
+        return when (v) {
+            // The Engine21.1 o_O, kept only for the comparison sheet.
+            'O' -> listOf(en(UR, 0.64f, 0f, 0f), up(en(UR, 0.4f, -24f, 0f), 0.12f))
+            'B' -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.36f, 0f, 0f), -0.02f))
+            'C' -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.5f, 14f, 0f), 0.04f))
+            'D' -> listOf(en(UR, 0.6f, 7f, 0f), up(en(UR, 0.46f, 7f, 0f), 0.05f))
+            else -> listOf(en(UR, 0.57f, 0f, 0f), up(en(UR, 0.46f, 0f, 0f), 0.1f))
+        }
+    }
+
     fun expressionPair(name: String, lid: Float): List<EyeState> {
         val lidY = lid.coerceIn(0.02f, 1.25f)
         val base = when (name.lowercase()) {
+            // Clean ^ ^ arcs: a gentle upward-curved stroke whose bend radius stays
+            // well above the stroke half-width, so the outline never folds into a bean.
+            // Engine21: a bent pill (^ ^) at pill weight — the happy squeeze of the neutral eye,
+            // with a gentler bend so the thicker stroke never folds into a bean.
             "happy" -> {
-                val e = pr(0.03f, 0.03f, 0f, IU,
-                    floatArrayOf(0.16f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.16f, -0.04f))
+                val e = pr(0f, 0.04f, 0f, HAPPY_W,
+                    floatArrayOf(0.18f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.18f, -0.04f))
                 listOf(e, e)
             }
+            // Engine21.1: wide open — taller AND wider than neutral (the whites show).
             "surprised" -> {
-                val e = en(0.42f, 0.86f, 0f, 0.03f)
+                val e = en(0.44f, 0.9f, 0f, 0f)
                 listOf(e, e)
             }
             "sad" -> {
-                val e = en(UR, 0.5f, -28f, -0.05f)
+                // Gentler inward tilt (was −28°) and set a touch wider, so the inner tops of
+                // the / \ pair read clearly apart at a glance. Engine21: a little lower too.
+                // Engine21.1 (Julian: far stronger tilts): inner tops raised hard, shorter, lower.
+                val e = en(UR, 0.46f, -30f, 0f).let { it.copy(offY = it.offY - 0.035f) }
                 listOf(e, e)
             }
+            // Engine21: asleep = soft downward-curved pill strokes (relaxed lids).
             "sleepy", "sleeping" -> {
-                val e = pr(0.01f, 0f, 0f, UR / 2f,
-                    floatArrayOf(-0.11f, 0.025f), floatArrayOf(0f, -0.05f), floatArrayOf(0.11f, 0.025f))
+                val e = pr(0f, 0.02f, 0f, CLOSED_W * 0.88f,
+                    floatArrayOf(-0.155f, 0.035f), floatArrayOf(0f, -0.07f), floatArrayOf(0.155f, 0.035f))
                 listOf(e, e)
             }
+            // Engine21: eyes simply closed (resting, concentrating) = the neutral pill with its
+            // lid shut (as at the bottom of a blink), a little wider: a flat pill that morphs
+            // in and out by the lid alone — no spine rotation through a tilted bean.
+            "closed" -> {
+                val n = en(UR, 0.57f, 0f, 0f)
+                val e = n.copy(wid = n.wid * 1.22f, lidY = 0.2f)
+                listOf(e, e)
+            }
+            // Bored: heavy half-closed lids — flat bars, set a little low (looking at nothing).
             "squinted", "bored", "calm" -> {
-                val e = en(UR, 0.5f, 90f, 0.01f)
+                val e = en(UR, 0.5f, 90f, 0f).let { it.copy(offY = it.offY - 0.03f) }
                 listOf(e, e)
             }
-            "confused" -> {
+            // Engine21.1 pouty (Figma Angry/pouty): a sulk — short pills, a firm frown tilt,
+            // dropped low like a lowered head.
+            "pouty" -> {
+                val e = en(UR, 0.42f, 18f, 0f).let { it.copy(offY = it.offY - 0.05f) }
+                listOf(e, e)
+            }
+            // Confused: same eyes as every other face, one lid tilted, both on one level.
+            // Same-size pills (like Sad, mirrored on one side only): one tilts, neither shrinks.
+            "confused" -> listOf(
+                en(UR, 0.6f, 0f, 0f),
+                en(UR, 0.58f, -18f, 0f),
+            )
+            // Engine17.1: concentrated / focused — calm, restrained: shorter pills with a
+            // slight inward tilt (half of angry's), clearly not the flat bored bars.
+            // Engine21: concentrating = clearly shorter pills (a squint), no tilt — distinct
+            // from both neutral and angry.
+            "focused" -> {
+                val e = en(UR, 0.36f, 0f, 0f)
+                listOf(e, e)
+            }
+            // Engine16.1: symmetric, slightly shorter pills — a quiet "hm".
+            // Engine21: "hm?" — both pills tipped the same way (symmetric size, no lopsided
+            // growth), the old shorter pills were indistinguishable from neutral.
+            // Engine21.2 confused: see [confusedPair] (the Engine21.1 o_O read as ugly).
+            "hm" -> confusedPair(confusedVariant)
+            // The mirror: the same two eyes swapped (per-side tilt is mirrored already).
+            "hmleft" -> confusedPair(confusedVariant).reversed()
+            // Mild cross: a small opposite tilt and a slightly lower lid line, nothing fierce
+            // (Julian: angry must stay gentle). Inner bottoms get a touch of spread.
+            "angry" -> {
+                val e = en(UR, 0.45f, 28f, 0f) // engine21.1: a real frown (was 15°, read as neutral)
+                listOf(e, e)
+            }
+            // Playful (Group 3): one eye a hair shorter and tipped, the other open.
+            "playful" -> listOf(
+                en(UR, 0.6f, 0f, 0f),
+                en(UR, 0.5f, -10f, 0f),
+            )
+            // >< squeeze (dizzy).
+            "dizzy" -> {
                 val e = pr(-0.1f, 0f, 0f, IU,
                     floatArrayOf(0.01f, 0.16f), floatArrayOf(-0.17f, 0f), floatArrayOf(0.01f, -0.16f))
                 listOf(e, e)
             }
-            // 🤨 — one eye open, the other narrowed and a touch lower.
-            "skeptical" -> listOf(
-                en(UR, 0.6f, 0f, 0f),
-                en(UR, 0.34f, 0f, 0.01f).copy(offY = -0.05f),
-            )
             // Playful wink: one soft closed arc, one open eye.
+            // Engine21.1: the closed eye is the happy ^ pill (a cute squeeze), the other open.
             "wink" -> listOf(
-                pr(0.01f, 0f, 0f, UR / 2f,
-                    floatArrayOf(-0.11f, 0.025f), floatArrayOf(0f, -0.05f), floatArrayOf(0.11f, 0.025f)),
+                pr(0f, 0.04f, 0f, HAPPY_W,
+                    floatArrayOf(0.18f, -0.04f), floatArrayOf(0f, 0.12f), floatArrayOf(-0.18f, -0.04f)),
                 en(UR, 0.57f, 0f, 0f),
             )
             // Grok brand stare — never used in LastChat. Soften to neutral.
@@ -185,19 +268,56 @@ object WhSphereEyes {
                 neutralPair()
             else -> neutralPair()
         }
-        return base.map { it.copy(lidY = it.lidY * lidY) }
+        // Wider set only where the contours reach toward each other (closed arcs,
+        // the >< chevrons, flat squints): at the neutral spacing those read as one
+        // joined shape. Morphs blend offX, so the spacing glides with the expression.
+        // Engine14: no per-expression spread (spacing is the neutral one; the gap guard only
+        // prevents touching).
+        val spread = NO_SPREAD
+        return base.mapIndexed { i, e ->
+            e.copy(offX = e.offX + spread.getOrElse(i) { 0f }, lidY = e.lidY * lidY)
+        }
     }
+
+    /**
+     * Extra outward offset per eye (left, right), eye-local units; 0 = neutral spacing.
+     * Only the contours that reach toward each other at the neutral spacing get any:
+     * closed arcs and happy arcs touch, flat squint dashes merge into one bar and the
+     * >< chevrons cross into an X. Each value is the smallest that leaves a clear gap
+     * (checked on every picker shape); everything else keeps the original spacing.
+     */
+    private fun spreadFor(name: String): FloatArray = when (name) {
+        "happy" -> floatArrayOf(0.022f, 0.022f)
+        "sleepy", "sleeping" -> floatArrayOf(0.028f, 0.028f)
+        "squinted", "bored", "calm" -> floatArrayOf(0.024f, 0.024f)
+        "dizzy" -> floatArrayOf(0.085f, 0.085f)
+        "sad" -> floatArrayOf(0.03f, 0.03f)
+        "angry" -> floatArrayOf(0.02f, 0.02f)
+        else -> NO_SPREAD
+    }
+
+    private val NO_SPREAD = floatArrayOf(0f, 0f)
 
     /** Generical expression id → Grok capsule expression. */
     fun grokNameFor(expressionId: String): String = when (expressionId) {
         "Happy" -> "happy"
         "Surprised" -> "surprised"
         "Sad", "Worried" -> "sad"
-        "Sleeping", "Eyes closed" -> "sleepy"
-        "Bored", "pouty", "angered or concentrated" -> "squinted"
-        "confused" -> "confused"
-        "skeptical" -> "skeptical"
-        "hurt or cute" -> "wink"
+        // Engine21 audit: every Grok face has one readable meaning in pill language.
+        //  happy ^ ^ (also hurt-or-cute / playful: merged, they read the same in pills)
+        //  surprised tall · sad / \ low (Worried merged) · angry \ / · focused short squint
+        //  bored = flat bars (pouty merged: an unimpressed sulk) · confused = tipped pills
+        //  closed = short flat pills · sleeping = soft ∪ strokes.
+        "Sleeping" -> "sleepy"
+        "Eyes closed" -> "closed"
+        "Bored" -> "squinted"
+        "angered or concentrated" -> "focused"
+        "confused" -> "hm"
+        "confused left" -> "hmleft"
+        "pouty" -> "pouty"
+        // Engine21.1: hurt / cute is Julian's wink frame — one open pill, one closed arc.
+        "hurt or cute", "Group 3" -> "wink"
+        "Angry" -> "angry"
         else -> "neutral"
     }
 
@@ -209,25 +329,171 @@ object WhSphereEyes {
         fun mix(x: Float, y: Float) = x + (y - x) * u
         return a.indices.map { i ->
             val e0 = a[i]
-            val e1 = b.getOrElse(i) { b.last() }
-            val n = min(e0.pts.size, e1.pts.size)
+            val e1r = b.getOrElse(i) { b.last() }
+            val n = min(e0.pts.size, e1r.pts.size)
+            // Spines drawn in opposite directions would cross mid-blend and collapse to a
+            // dot: match the direction first.
+            fun d(p: FloatArray, q: FloatArray) = kotlin.math.hypot(p[0] - q[0], p[1] - q[1])
+            val e1 = if (n >= 2 && d(e0.pts[0], e1r.pts[n - 1]) + d(e0.pts[n - 1], e1r.pts[0]) <
+                d(e0.pts[0], e1r.pts[0]) + d(e0.pts[n - 1], e1r.pts[n - 1])) e1r.copy(pts = e1r.pts.take(n).reversed()) else e1r
+            var pts = List(n) { k -> floatArrayOf(mix(e0.pts[k][0], e1.pts[k][0]), mix(e0.pts[k][1], e1.pts[k][1])) }
+            // Length floor: a blend frame is never shorter than 60% of the shorter endpoint.
+            fun span(p: List<FloatArray>): Float = if (p.size < 2) 0f else
+                kotlin.math.hypot(p.maxOf { it[0] } - p.minOf { it[0] }, p.maxOf { it[1] } - p.minOf { it[1] })
+            val floor = 0.6f * minOf(span(e0.pts.take(n)), span(e1.pts))
+            val sp = span(pts)
+            if (sp > 1e-5f && sp < floor) {
+                val cx = pts.sumOf { it[0].toDouble() }.toFloat() / n; val cy = pts.sumOf { it[1].toDouble() }.toFloat() / n
+                val k = floor / sp
+                pts = pts.map { floatArrayOf(cx + (it[0] - cx) * k, cy + (it[1] - cy) * k) }
+            }
             EyeState(
                 offX = mix(e0.offX, e1.offX),
                 offY = mix(e0.offY, e1.offY),
                 tilt = mix(e0.tilt, e1.tilt),
                 wid = mix(e0.wid, e1.wid),
                 lidY = mix(e0.lidY, e1.lidY),
-                pts = List(n) { k -> floatArrayOf(mix(e0.pts[k][0], e1.pts[k][0]), mix(e0.pts[k][1], e1.pts[k][1])) },
+                pts = pts,
+                closeK = mix(e0.closeK, e1.closeK),
             )
         }
     }
 
     /** Morphed Grok pair for a Generical-named expression transition, with lids applied. */
-    fun morphPair(from: String, to: String, t: Float, lid: Float): List<EyeState> {
+    fun morphPair(from: String, to: String, t: Float, lid: Float, top: String? = null, topT: Float = 0f): List<EyeState> {
         val a = expressionPair(grokNameFor(from), 1f)
         val b = expressionPair(grokNameFor(to), 1f)
+        val c = top?.let { expressionPair(grokNameFor(it), 1f) }
         val l = lid.coerceIn(0.02f, 1.25f)
-        return blendPairs(a, b, t).map { it.copy(lidY = it.lidY * l) }
+        val u = t.coerceIn(0f, 1f)
+        val w = if (c == null) 0f else topT.coerceIn(0f, 1f)
+        return a.indices.map { i ->
+            val e0 = a[i]; val e1 = b.getOrElse(i) { b.last() }
+            val e01 = cleanBlend(e0, e1, u)
+            // Engine17: interrupted morph — the newest face grows over the current blend.
+            val e2 = c?.getOrElse(i) { c.last() }
+            val e = if (e2 != null && w > 0f) cleanBlend(e01, e2, w) else e01
+            // Arc eyes (^ ‿) are already "closed-looking": a blink only thins them a
+            // little instead of flattening the arcs into one long line.
+            val arc0 = (if (curved(e0)) 1f - u else 0f) + (if (curved(e1)) u else 0f)
+            val arc = arc0 * (1f - w) + (if (e2 != null && curved(e2)) w else 0f)
+            val le = l + (1f - l).coerceAtLeast(0f) * arc * 0.8f
+            if (l >= 1f) e.copy(lidY = e.lidY * l) else {
+                // Engine17.1: straight eyes close into a soft lid bar (closeK); arcs only thin.
+                val a = arc.coerceIn(0f, 1f)
+                e.copy(lidY = e.lidY * (1f + (le - 1f) * a), closeK = ((1f - l) * (1f - a)).coerceIn(0f, 1f))
+            }
+        }
+    }
+
+    /**
+     * Engine19: N-way blend for a weight vector (Σ w = 1). Weights are merged by Grok face,
+     * then folded pairwise in a stable name order with the same continuous capsule blend as
+     * [morphPair] — continuous in every weight, identical to [morphPair] for two faces.
+     */
+    fun morphWeighted(weights: List<Pair<String, Float>>, lid: Float): List<EyeState> {
+        val merged = java.util.TreeMap<String, Float>()
+        for ((n, w) in weights) if (w > 0f) merged.merge(grokNameFor(n), w, Float::plus)
+        if (merged.isEmpty()) return morphPair("Neutral", "Neutral", 1f, lid)
+        val shapes = merged.entries.map { (k, w) -> expressionPair(k, 1f) to w }
+        val l = lid.coerceIn(0.02f, 1.25f)
+        val n0 = shapes[0].first.size
+        return (0 until n0).map { i ->
+            var e = shapes[0].first[i]
+            var acc = shapes[0].second
+            var arc = (if (curved(e)) acc else 0f)
+            for (k in 1 until shapes.size) {
+                val (sh, w) = shapes[k]
+                val ek = sh.getOrElse(i) { sh.last() }
+                acc += w
+                e = cleanBlend(e, ek, (w / acc).coerceIn(0f, 1f))
+                if (curved(ek)) arc += w
+            }
+            arc = (arc / acc.coerceAtLeast(1e-6f)).coerceIn(0f, 1f)
+            val le = l + (1f - l).coerceAtLeast(0f) * arc * 0.8f
+            if (l >= 1f) e.copy(lidY = e.lidY * l) else e.copy(lidY = e.lidY * (1f + (le - 1f) * arc), closeK = ((1f - l) * (1f - arc)).coerceIn(0f, 1f))
+        }
+    }
+
+    /** Spine bends (an arc eye) rather than running straight (a pill). */
+    private fun curved(e: EyeState): Boolean {
+        val p = e.pts; if (p.size < 3) return false
+        val a = p.first(); val b = p.last()
+        val dx = b[0] - a[0]; val dy = b[1] - a[1]
+        val len = hypot(dx, dy).coerceAtLeast(1e-4f)
+        return p.maxOf { kotlin.math.abs((it[0] - a[0]) * dy - (it[1] - a[1]) * dx) / len } > 0.02f
+    }
+
+    /**
+     * Engine17.1: ONE continuous morph for every capsule pair (arc ↔ pill ↔ bar ↔ tilt).
+     * Each spine is decomposed into chord centre, chord angle, half-length and a bend
+     * profile (offsets perpendicular to the chord, at normalised positions along it); every
+     * parameter blends smoothly at once — an arc straightens *while* it turns and resizes, no
+     * stages, no hitches. When the angle changes a lot (pill ↔ bar), a single smooth length
+     * dip (sin πu) shortens the stroke toward a soft round so it never visibly swings through
+     * a \ / diagonal. C∞ in u; identical endpoints.
+     */
+    private fun cleanBlend(e0: EyeState, e1: EyeState, u: Float): EyeState = smoothBlend(e0, e1, u)
+
+    private class Spine(val cx: Float, val cy: Float, val ang: Float, val half: Float, val s: FloatArray, val b: FloatArray)
+
+    private fun spineOf(pts: List<FloatArray>): Spine {
+        val a = pts.first(); val z = pts.last()
+        val dx = z[0] - a[0]; val dy = z[1] - a[1]
+        val len = hypot(dx, dy)
+        val ang = if (len > 1e-5f) kotlin.math.atan2(dy, dx) else (PI / 2).toFloat()
+        val ux = cos(ang); val uy = sin(ang)
+        val cx = (a[0] + z[0]) / 2f; val cy = (a[1] + z[1]) / 2f
+        val half = (len / 2f).coerceAtLeast(1e-5f)
+        val n = pts.size
+        val sArr = FloatArray(n); val bArr = FloatArray(n)
+        for (k in 0 until n) {
+            val rx = pts[k][0] - cx; val ry = pts[k][1] - cy
+            sArr[k] = (rx * ux + ry * uy) / half
+            bArr[k] = -rx * uy + ry * ux
+        }
+        return Spine(cx, cy, ang, half, sArr, bArr)
+    }
+
+    private fun smoothBlend(e0: EyeState, e1r: EyeState, t: Float): EyeState {
+        val u = t.coerceIn(0f, 1f)
+        if (u <= 0f) return e0
+        if (u >= 1f) return e1r
+        fun mix(x: Float, y: Float) = x + (y - x) * u
+        val n = min(e0.pts.size, e1r.pts.size)
+        if (n < 2) return blendPairs(listOf(e0), listOf(e1r), u)[0]
+        val p0 = e0.pts.take(n)
+        var p1 = e1r.pts.take(n)
+        val A = spineOf(p0)
+        var B = spineOf(p1)
+        // Same travel direction (a reversed spine would flip through 180°).
+        var dAng = B.ang - A.ang
+        while (dAng > PI) dAng -= (2 * PI).toFloat()
+        while (dAng < -PI) dAng += (2 * PI).toFloat()
+        if (kotlin.math.abs(dAng) > PI / 2) {
+            p1 = p1.reversed(); B = spineOf(p1)
+            dAng = B.ang - A.ang
+            while (dAng > PI) dAng -= (2 * PI).toFloat()
+            while (dAng < -PI) dAng += (2 * PI).toFloat()
+        }
+        // Length dip for large turns: 0 for ≤ ~20°, ~0.72 at 90°.
+        val turn = ((kotlin.math.abs(dAng) - 0.35f) / (PI.toFloat() / 2f - 0.35f)).coerceIn(0f, 1f)
+        val dip = 1f - 0.72f * turn * turn * sin(PI.toFloat() * u)
+        val ang = A.ang + dAng * u
+        val half = mix(A.half, B.half) * dip
+        val ux = cos(ang); val uy = sin(ang)
+        val cx = mix(A.cx, B.cx); val cy = mix(A.cy, B.cy)
+        val pts = List(n) { k ->
+            val sk = mix(A.s[k], B.s[k]) * half
+            val bk = mix(A.b[k], B.b[k]) * dip
+            floatArrayOf(cx + ux * sk - uy * bk, cy + uy * sk + ux * bk)
+        }
+        return EyeState(
+            offX = mix(e0.offX, e1r.offX), offY = mix(e0.offY, e1r.offY),
+            tilt = mix(e0.tilt, e1r.tilt), wid = mix(e0.wid, e1r.wid),
+            lidY = mix(e0.lidY, e1r.lidY), pts = pts,
+            closeK = mix(e0.closeK, e1r.closeK),
+        )
     }
 
     // --- spine helpers (desktop Mk / eh, linear branch) ---
@@ -278,6 +544,38 @@ object WhSphereEyes {
 
     /** Capsule outline from spine + half-width (desktop sS) with rounded caps. */
     fun stadiumOutline(eye: EyeState): List<FloatArray> {
+        val c = eye.closeK
+        if (c <= 0.001f) return stadiumOpen(eye)
+        val open = stadiumOpen(eye.copy(closeK = 0f))
+        if (open.size < 3) return open
+        return lidSquash(open, eye.wid, c.coerceIn(0f, 1f))
+    }
+
+    /**
+     * Engine17.1 blink: the eye squashes about its lid line (lids meet at the lower middle),
+     * widening a little, never thinner than a soft lid bar, and bends into a gentle ‿ only as
+     * it closes — the Grok cousin of Generical's closing eye. Shape stays smooth and convex.
+     */
+    private fun lidSquash(open: List<FloatArray>, wid: Float, c: Float): List<FloatArray> {
+        val minX = open.minOf { it[0] }; val maxX = open.maxOf { it[0] }
+        val minY = open.minOf { it[1] }; val maxY = open.maxOf { it[1] }
+        val h = (maxY - minY).coerceAtLeast(1e-4f)
+        val cx = (minX + maxX) / 2f
+        val yl = minY + h * 0.4f
+        val bar = 2f * (wid * 0.42f).coerceIn(0.035f, 0.06f)
+        val k = c * c * (3f - 2f * c)
+        val sy = max(1f - k, (bar / h).coerceAtMost(1f) * k + (1f - k))
+        val sx = 1f + 0.22f * k
+        val halfW = ((maxX - minX) / 2f * sx).coerceAtLeast(1e-4f)
+        val bend = 0.2f * halfW * k * k
+        return open.map { p ->
+            val x = cx + (p[0] - cx) * sx
+            val f = (x - cx) / halfW
+            floatArrayOf(x, yl + (p[1] - yl) * sy + bend * f * f)
+        }
+    }
+
+    private fun stadiumOpen(eye: EyeState): List<FloatArray> {
         val pts = eye.pts
         if (pts.size < 2) return emptyList()
         val w = eye.wid.coerceAtLeast(0.02f)
@@ -431,15 +729,9 @@ object WhSphereEyes {
         }
         if (flat.size < 3) return null
         @Suppress("UNUSED_VARIABLE") val _u = u
-        return Path().apply {
-            fillType = androidx.compose.ui.graphics.PathFillType.NonZero
-            // Unit sphere XY → He-centered Compose (y-down)
-            moveTo(flat[0][0] * he, -flat[0][1] * he)
-            for (i in 1 until flat.size) {
-                lineTo(flat[i][0] * he, -flat[i][1] * he)
-            }
-            close()
-        }
+        // Unit sphere XY → He-centered Compose (y-down), smooth curve (engine17).
+        return SmoothPath.closed(flat.size, Path().apply { fillType = androidx.compose.ui.graphics.PathFillType.NonZero },
+            x = { flat[it][0] * he }, y = { -flat[it][1] * he })
     }
 
     /**

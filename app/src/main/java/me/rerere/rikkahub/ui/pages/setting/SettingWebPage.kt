@@ -135,18 +135,16 @@ fun SettingWebPage(
     var showBackgroundSetupDialog by remember { mutableStateOf(false) }
 
     fun persistServerPreferencesAndStart(request: PendingWebServerStart) {
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings(afterPersist = {
+            WebServerService.start(context, request.port)
+            pendingStart = null
+        }) { settings -> settings.copy(
                 webServerPort = request.port,
                 webServerAccessPassword = request.password,
                 webServerJwtEnabled = settings.webServerJwtEnabled && request.password.isNotBlank(),
                 webServerEnabled = true,
                 webServerBackgroundSetupShown = true,
-            )
-        ) {
-            WebServerService.start(context, request.port)
-            pendingStart = null
-        }
+            ) }
     }
 
     fun launchBatteryOptimizationRequest(
@@ -364,7 +362,7 @@ fun SettingWebPage(
                                 portText = digits
                                 val port = digits.toIntOrNull()
                                 if (port != null && port in 1024..65535 && !serverLocked) {
-                                    vm.updateSettings(settings.copy(webServerPort = port))
+                                    vm.updateSettings { settings -> settings.copy(webServerPort = port) }
                                 }
                             },
                             stateKey = "web_server_port_${serverLocked}",
@@ -388,12 +386,10 @@ fun SettingWebPage(
                                 checked = settings.webServerJwtEnabled,
                                 enabled = !serverLocked && (settings.webServerJwtEnabled || passwordText.isNotBlank()),
                                 onCheckedChange = { enabled ->
-                                    vm.updateSettings(
-                                        settings.copy(
+                                    vm.updateSettings { settings -> settings.copy(
                                             webServerJwtEnabled = enabled,
                                             webServerAccessPassword = passwordText,
-                                        )
-                                    )
+                                        ) }
                                 }
                             )
                         }
@@ -409,12 +405,10 @@ fun SettingWebPage(
                             onValueChange = { value ->
                                 passwordText = value
                                 if (!serverLocked) {
-                                    vm.updateSettings(
-                                        settings.copy(
+                                    vm.updateSettings { settings -> settings.copy(
                                             webServerAccessPassword = value,
                                             webServerJwtEnabled = settings.webServerJwtEnabled && value.isNotBlank(),
-                                        )
-                                    )
+                                        ) }
                                 }
                             },
                             stateKey = "web_server_password_${serverLocked}",

@@ -44,6 +44,9 @@ val DISABLED_MODEL_ID: Uuid = Uuid.parse("00000000-0000-0000-0000-000000000000")
 data class Settings(
     @Transient
     val init: Boolean = false,
+    /** Write counter persisted next to the settings; lets the store tell stale re-reads from new ones. */
+    @Transient
+    val storeRevision: Long = 0L,
     val setupCompleted: Boolean = false,
     val dynamicColor: Boolean = true,
     val themeId: String = PresetThemes[0].id,
@@ -328,6 +331,17 @@ internal fun Settings.normalizeThemeId(): Settings {
     }
 }
 
+/** Rename only our old preset names; user-created labels remain untouched. */
+internal fun Settings.normalizeAccountProviderNames(): Settings = copy(providers = providers.map { provider ->
+    if (provider !is ProviderSetting.OpenAI) return@map provider
+    val oldName = when (provider.subscriptionAccount) {
+        me.rerere.ai.provider.SubscriptionAccountType.CHATGPT -> "ChatGPT subscription"
+        me.rerere.ai.provider.SubscriptionAccountType.GROK -> "Grok subscription"
+        null -> return@map provider
+    }
+    if (provider.name == oldName) provider.copy(name = provider.subscriptionAccount?.displayName ?: provider.name) else provider
+})
+
 /**
  * The on-device ([ProviderSetting.LiteRtLocal]) provider is an ordinary, user-managed provider: it is
  * NOT seeded by default and may be reordered or deleted like any other. This normalization only
@@ -431,6 +445,28 @@ internal fun Settings.migrateAssistantSummarizerToGlobal(): Settings {
     } else {
         this
     }
+}
+
+/**
+ * Generical's old default picture → its animated mark. Only touches the default
+ * Generical character while it still has the untouched stock picture; any avatar the
+ * user picked stays as it is.
+ */
+internal fun Settings.migrateGenericalDefaultAvatar(): Settings {
+    val stock = Avatar.Resource(R.drawable.default_generical_pfp)
+    val oldMark = Avatar.Animated(colorHex = "#7C5CFF", colorPreset = "indigo")
+    var changed = false
+    val updated = assistants.map { assistant ->
+        val isGenerical = assistant.id == DEFAULT_ASSISTANT_ID || assistant.name == "Generical"
+        if (isGenerical && (assistant.avatar == stock ||
+            (assistant.id == DEFAULT_ASSISTANT_ID && assistant.avatar == oldMark))) {
+            changed = true
+            assistant.copy(avatar = Avatar.Animated.defaultGenerical())
+        } else {
+            assistant
+        }
+    }
+    return if (changed) copy(assistants = updated) else this
 }
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
@@ -721,7 +757,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
     Assistant(
         id = DEFAULT_ASSISTANT_ID,
         name = "Generical",
-        avatar = Avatar.Resource(R.drawable.default_generical_pfp),
+        avatar = Avatar.Animated.defaultGenerical(),
         temperature = 0.6f,
         uiSettings = me.rerere.rikkahub.data.model.AssistantUISettings(newChatShowAvatar = false),
         enableTimeAwareness = true,

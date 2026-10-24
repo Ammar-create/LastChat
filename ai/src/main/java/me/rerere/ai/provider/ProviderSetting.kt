@@ -5,6 +5,13 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlin.uuid.Uuid
 
+/** Browser-authenticated subscription accounts, separate from API billing. */
+@Serializable
+enum class SubscriptionAccountType(val displayName: String, val baseUrl: String) {
+    CHATGPT("ChatGPT", "https://api.openai.com/v1"),
+    GROK("Grok", "https://api.x.ai/v1"),
+}
+
 @Serializable
 sealed class ProviderProxy {
     @Serializable
@@ -84,6 +91,10 @@ sealed class ProviderSetting {
         var baseUrl: String = "https://api.openai.com/v1",
         var chatCompletionsPath: String = "/chat/completions",
         var useResponseApi: Boolean = false,
+        val subscriptionAccount: SubscriptionAccountType? = null,
+        val subscriptionAccountVersion: Int = 0,
+        val subscriptionDnsFallback: Boolean = false,
+        @Transient val subscriptionUsesCodex: Boolean = false,
         val reasoningBehavior: ReasoningRequestBehavior? = null,
         val streamOptionsMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,
         val imageResponseModalitiesMode: OpenAICompatibilityMode = OpenAICompatibilityMode.AUTO,

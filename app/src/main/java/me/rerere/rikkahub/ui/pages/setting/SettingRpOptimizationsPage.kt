@@ -68,14 +68,14 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+    var displaySetting by remember(settings.displaySetting) { mutableStateOf(settings.displaySetting) }
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<RpStyleRule?>(null) }
 
     fun updateDisplaySetting(rules: List<RpStyleRule>) {
         val newSetting = displaySetting.copy(rpStyleRules = rules)
         displaySetting = newSetting
-        vm.updateSettings(settings.copy(displaySetting = newSetting))
+        vm.updateSettings { settings -> settings.copy(displaySetting = settings.displaySetting.copy(rpStyleRules = rules)) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -113,7 +113,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             item {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -187,7 +187,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -240,7 +240,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -320,7 +320,7 @@ private fun RpStyleRuleItem(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = AppShapes.CardLarge,
         onClick = onEdit

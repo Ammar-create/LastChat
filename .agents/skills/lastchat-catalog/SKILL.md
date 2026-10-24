@@ -151,7 +151,9 @@ Use a version when a subset of models within a family differs in `type`, `input_
 }
 ```
 
-Versions are matched in order — first match wins within a family.
+Versions are applied in order: every matching version is applied, and later values override earlier ones.
+Use non-overlapping patterns or put narrower overrides after broad versions. This matches
+`resolveModelEntry` and `ModelCatalogParser` in `ModelCatalog.kt`.
 
 ---
 

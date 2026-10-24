@@ -3,10 +3,8 @@ package me.rerere.rikkahub.ui.pages.assistant
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.Settings
@@ -33,12 +31,15 @@ class AssistantVM(
     private val chatService: ChatService,
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 
-    fun updateSettings(settings: Settings) {
-        viewModelScope.launch {
-            settingsStore.update(settings)
-        }
+    fun updateSettings(edited: Settings) {
+        val base = settings.value
+        updateSettings { latest -> me.rerere.rikkahub.data.datastore.mergeSettingsEdit(base, edited, latest) }
+    }
+
+    /** Applies [transform] to the latest settings via the store's ordered queue. */
+    fun updateSettings(transform: (Settings) -> Settings) {
+        settingsStore.enqueueUpdate(transform)
     }
 
     fun addAssistant(assistant: Assistant) {
@@ -47,7 +48,7 @@ class AssistantVM(
             val newAssistant = if (assistant.name.isBlank()) {
                 assistant.copy(
                     name = "Generical",
-                    avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
+                    avatar = Avatar.Animated.defaultGenerical(),
                     enableTimeAwareness = true,
                     systemPrompt = """
                         You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
@@ -69,11 +70,9 @@ class AssistantVM(
             val seededAssistant = newAssistant.copy(
                 maxSearchResultsRetained = newAssistant.maxSearchResultsRetained ?: 10
             )
-            settingsStore.update(
-                settings.copy(
+            settingsStore.update { settings -> settings.copy(
                     assistants = settings.assistants.plus(seededAssistant)
-                )
-            )
+                ) }
         }
     }
 
@@ -141,11 +140,9 @@ class AssistantVM(
                 name = "${assistant.name} (Clone)",
                 avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
             )
-            settingsStore.update(
-                settings.copy(
+            settingsStore.update { settings -> settings.copy(
                     assistants = settings.assistants.plus(copiedAssistant)
-                )
-            )
+                ) }
         }
     }
 

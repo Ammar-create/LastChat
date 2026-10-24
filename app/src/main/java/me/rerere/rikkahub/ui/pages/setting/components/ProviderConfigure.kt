@@ -112,6 +112,7 @@ fun ProviderConfigure(
     showSavingIndicator: Boolean = false,
     showEnabledToggle: Boolean = true,
     showProviderTypeSelector: Boolean = true,
+    showSubscriptionAccount: Boolean = true,
     enabledToggleEnabled: Boolean = true,
     enabledSupportingText: String? = null,
     onEdit: (provider: ProviderSetting) -> Unit
@@ -138,7 +139,7 @@ fun ProviderConfigure(
     }
 
     Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = modifier
     ) {
         // 1. Enable/Disable Toggle with text
@@ -182,7 +183,9 @@ fun ProviderConfigure(
         }
 
         // 2. Type selector (for non-built-in remote providers)
-        if (showProviderTypeSelector && !provider.builtIn && provider !is ProviderSetting.ComfyUI) {
+        if (showProviderTypeSelector && !provider.builtIn && provider !is ProviderSetting.ComfyUI &&
+            ((provider as? ProviderSetting.OpenAI)?.let { me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(it.baseUrl) } == null) &&
+            (provider as? ProviderSetting.OpenAI)?.subscriptionAccount == null) {
             ProviderTypeSelector(
                 selectedType = provider::class,
                 onTypeSelected = { type ->
@@ -197,7 +200,7 @@ fun ProviderConfigure(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            CustomIconSelector(
+            if ((provider as? ProviderSetting.OpenAI)?.subscriptionAccount == null) CustomIconSelector(
                 customIconUri = provider.customIconUri,
                 onPickFile = {
                     iconPickerLauncher.launch(arrayOf("image/*", "image/svg+xml"))
@@ -236,7 +239,11 @@ fun ProviderConfigure(
         // 4. Provider-specific configuration
         when (provider) {
             is ProviderSetting.OpenAI -> {
-                ProviderConfigureOpenAI(provider, onEdit)
+                if (provider.subscriptionAccount != null) {
+                    if (showSubscriptionAccount) SubscriptionAccountCard(provider, onEdit)
+                } else {
+                    ProviderConfigureOpenAI(provider, onEdit)
+                }
             }
 
             is ProviderSetting.Google -> {
@@ -698,7 +705,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         modifier = Modifier.fillMaxWidth()
     )
 
-    DebouncedTextField(
+    val openCode = me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(provider.baseUrl)
+    if (openCode == null) DebouncedTextField(
         value = provider.baseUrl,
         onValueChange = { onEdit(provider.copy(baseUrl = it.trim())) },
         stateKey = "openai_base_url_${provider.id}",
@@ -706,7 +714,11 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         modifier = Modifier.fillMaxWidth(),
     )
 
-    if (!provider.useResponseApi) {
+    if (openCode != null) {
+        Text("API format is selected automatically for each OpenCode model.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (openCode == null && !provider.useResponseApi) {
         DebouncedTextField(
             value = provider.chatCompletionsPath,
             onValueChange = { onEdit(provider.copy(chatCompletionsPath = it.trim())) },
@@ -717,7 +729,7 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         )
     }
 
-    Row(
+    if (openCode == null) Row(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(stringResource(id = R.string.setting_provider_page_response_api), modifier = Modifier.weight(1f))

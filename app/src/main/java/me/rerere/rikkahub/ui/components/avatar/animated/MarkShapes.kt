@@ -15,8 +15,15 @@ object MarkShapes {
     /** Picker list — no teardrop/droplet. */
     val PICKER_IDS = listOf(
         "blob", "cloud", "square", "sparkle", "clover", "heart", "flower",
-        "tablet", "wedge", "house", "star", "hex",
+        "tablet", "star", "hex",
     )
+
+    /**
+     * Engine17.2 (Julian): the house and the wedge (triangle/cone) are retired. Saved avatars
+     * using them render — and re-save — as the round blob.
+     */
+    val RETIRED = setOf("house", "wedge", "teardrop", "droplet")
+    fun migrate(shapeId: String): String = if (shapeId in RETIRED) "blob" else shapeId
 
     /** @deprecated use PICKER_IDS — kept for call sites expecting SHAPE_IDS */
     val SHAPE_IDS: List<String> get() = PICKER_IDS
@@ -29,7 +36,7 @@ object MarkShapes {
     fun resolve(shapeId: String): GrokShape? {
         if (!AvatarPackData.isLoaded()) return null
         val shapes = AvatarPackData.grok.shapes
-        return shapes[shapeId] ?: shapes["blob"]
+        return shapes[migrate(shapeId)] ?: shapes["blob"]
     }
 
     fun getShapePath(shapeId: String, size: Size): Path {

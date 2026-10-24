@@ -165,7 +165,9 @@ private fun List<MessageNode>.messageNodesSignature(): Long {
             for (part in msg.parts) {
                 hash = when (part) {
                     is me.rerere.ai.ui.UIMessagePart.Text ->
-                        (hash xor 1L xor part.text.length.toLong()) * 1099511628211L
+                        // Content hash, not just length: an edit that keeps the length
+                        // (a typo fix) must still refresh the turn. String caches its hash.
+                        (hash xor 1L xor part.text.length.toLong() xor (part.text.hashCode().toLong() shl 20)) * 1099511628211L
                     is me.rerere.ai.ui.UIMessagePart.ToolCall ->
                         (hash xor 2L xor part.toolCallId.hashCode().toLong()
                             xor part.arguments.length.toLong()) * 1099511628211L
@@ -684,14 +686,51 @@ private fun SharedTransitionScope.ChatListNormal(
 
         LaunchedEffect(loading, displayGroups.size, state) {
             if (!loading || !forceBottomAttachPending) return@LaunchedEffect
-
-            withFrameNanos { }
-            snapToStreamingBottom()
-            withFrameNanos { }
-            snapToStreamingBottom()
+            // A new reply joins the list with the same eased follow as the stream itself,
+            // so the start of a generation glides down instead of snapping.
+            val linePx = with(density) { 24.dp.toPx() }
+            val motion = StreamingFollowMotion()
+            var lastNanos = withFrameNanos { it }
+            var stillFrames = 0
+            while (isActive && forceBottomAttachPending && loadingState) {
+                val now = withFrameNanos { it }
+                val frameSeconds = ((now - lastNanos) / 1_000_000_000f).coerceIn(0.001f, 0.064f)
+                lastNanos = now
+                if (state.isScrollInProgress) {
+                    // The user took the list: hand over to the normal follow / detach logic.
+                    forceBottomAttachPending = false
+                    return@LaunchedEffect
+                }
+                val info = state.layoutInfo
+                val total = info.totalItemsCount
+                val tail = info.visibleItemsInfo.lastOrNull { it.index == total - 1 }
+                if (total <= 0 || tail == null) {
+                    // The new turn is still off screen. One jump gets it in view;
+                    // the glide below finishes the rest.
+                    motion.reset()
+                    try { state.scrollToItem(total - 1) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+                    continue
+                }
+                val distance = streamingBottomDistance(
+                    itemEnd = tail.offset + tail.size,
+                    viewportEnd = info.viewportEndOffset,
+                    afterContentPadding = info.afterContentPadding,
+                ).toFloat()
+                if (distance <= 0.5f) {
+                    if (++stillFrames >= 2) break
+                } else {
+                    stillFrames = 0
+                    val delta = motion.step(distance, frameSeconds, streamingFollowOmega(distance, linePx))
+                    if (delta > 0f) state.dispatchRawDelta(delta)
+                }
+            }
             followStreamingBottom = true
             forceBottomAttachPending = false
         }
+
+        // Only the newest message of each role keeps a moving avatar; older ones rest.
+        val newestAssistantGroup = displayGroups.indexOfLast { it.role == me.rerere.ai.core.MessageRole.ASSISTANT }
+        val newestUserGroup = displayGroups.indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
 
         val assistant = remember(settings.assistants, conversation.assistantId) {
             settings.getAssistantById(conversation.assistantId)
@@ -748,7 +787,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 state = state,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
                     modifier = Modifier
                     .lastChatBlurSource()
                     .sharedBounds(
@@ -818,6 +857,10 @@ private fun SharedTransitionScope.ChatListNormal(
                                     previousGroup = previousGroup,
                                 )
                             }
+                            CompositionLocalProvider(
+                                me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarAnimate provides
+                                    (index == newestAssistantGroup || index == newestUserGroup),
+                            ) {
                             ChatMessageTurn(
                                 group = group,
                                 isLastTurn = isLastTurn,
@@ -837,6 +880,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onExpandedStreamingCodeBlockChanged = null,
                                 modifier = Modifier,
                             )
+                            }
                         }
                         // Show truncate indicator if any node in this group is at the truncate point
                         val hasTruncateNode = truncateTargetNodeId != null && group.nodes.any { it.id == truncateTargetNodeId }
@@ -1239,76 +1283,25 @@ private fun PhantomLoadingTurn(
     val showAssistantBubbles = effectiveDisplay.showAssistantBubbles
     val avatarName = assistant?.name?.ifEmpty { null } ?: "Assistant"
     val avatarValue = assistant?.avatar ?: me.rerere.rikkahub.data.model.Avatar.Dummy
-    val elementSpacing = if (showAssistantBubbles) 4.dp else 3.dp
-    
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(elementSpacing)
-    ) {
-        if (showAssistantBubbles) {
-            // Name above pills (only if enabled)
-            if (showModelName) {
-                Text(
-                    text = avatarName,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.alpha(0f)
-                )
-            }
-
-            // Avatar + Waiting pill row
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(elementSpacing)
-            ) {
-                if (showIcon) {
-                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                        name = avatarName,
-                        modifier = Modifier.size(36.dp),
-                        value = avatarValue,
-                        loading = true,
-                    )
-                }
-
+    // Same header as a real turn ([avatar] [name / pill]) in every layout mode,
+    // so the hand-over to the first tokens doesn't move anything.
+    Column(modifier = modifier.fillMaxWidth()) {
+        me.rerere.rikkahub.ui.components.chat.AssistantTurnHeader(
+            showIcon = showIcon,
+            avatarVisible = true,
+            avatarName = avatarName,
+            avatarValue = avatarValue,
+            loading = true,
+            showModelName = showModelName,
+            nameAlpha = if (showAssistantBubbles) 0f else 1f,
+            pill = {
                 me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
                     state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
                     onClick = { _ -> },
                     connectsToBubbleBelow = false,
                     modifier = Modifier.height(36.dp)
                 )
-            }
-        } else {
-            // No assistant bubbles layout
-            if (showIcon || showModelName) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (showIcon) {
-                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(36.dp),
-                            value = avatarValue,
-                            loading = true,
-                        )
-                    }
-                    if (showModelName) {
-                        Text(
-                            text = avatarName,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(0f)
-                        )
-                    }
-                }
-            }
-
-            me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
-                state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
-                onClick = { _ -> },
-                connectsToBubbleBelow = false,
-                modifier = Modifier.height(36.dp)
-            )
-        }
+            },
+        )
     }
 }

@@ -22,6 +22,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import me.rerere.rikkahub.ui.components.avatar.animated.avatarTarget
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -658,7 +663,7 @@ private fun AttachmentRow(
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .clip(LastChatMessageAttachmentShape)
+                            .clip(MaterialTheme.shapes.medium)
                             .size(72.dp)
                             .then(archivedModifier)
                     )
@@ -666,7 +671,6 @@ private fun AttachmentRow(
 
                 is RenderableAttachment.File -> {
                     LastChatDocumentAttachmentTile(
-                        shape = LastChatMessageAttachmentShape,
                         fileName = if (attachment.archived && attachment.url.isBlank()) {
                             "${attachment.fileName} (archived)"
                         } else {
@@ -698,7 +702,6 @@ private fun AttachmentRow(
 
                 is RenderableAttachment.Placeholder -> {
                     LastChatDocumentAttachmentTile(
-                        shape = LastChatMessageAttachmentShape,
                         fileName = attachment.fileName,
                         modifier = Modifier
                             .size(72.dp)
@@ -1048,6 +1051,14 @@ fun ChatMessageTurn(
     )
     val configuration = LocalConfiguration.current
     val maxBubbleWidth = (configuration.screenWidthDp * 0.85f).dp
+    // Where this turn sits on screen, so avatars can look at what happens to it.
+    val avatarStage = me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage.current
+    val turnBounds = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+    fun stageEmit(kind: me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind) =
+        avatarStage.emit(kind, at = turnBounds[0]?.center)
+    val trackedModifier = modifier.then(
+        Modifier.onGloballyPositioned { turnBounds[0] = it.boundsInWindow() }
+    )
     
     // State for sheets
     var showActionsSheet by remember { mutableStateOf(false) }
@@ -1114,10 +1125,16 @@ fun ChatMessageTurn(
                     showToolbar = showUserToolbar,
                     onToggleToolbar = { showUserToolbar = !showUserToolbar },
                     onCopy = { context.copyMessageToClipboard(group.lastNode.currentMessage) },
-                    onRegenerate = { onRegenerate(group.lastNode) },
-                    onOpenMenu = { showActionsSheet = true },
+                    onRegenerate = {
+                        stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.Regenerated)
+                        onRegenerate(group.lastNode)
+                    },
+                    onOpenMenu = {
+                        showActionsSheet = true
+                        stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.MenuOpened)
+                    },
                     showRegenerate = showRegenerate,
-                    modifier = modifier
+                    modifier = trackedModifier
                 )
             }
             
@@ -1141,6 +1158,7 @@ fun ChatMessageTurn(
                         if (activityState is ActivityState.Hidden) return@AssistantMessageTurn
                         if (timelineOpen && timelineOpenRequest?.focusType == type) {
                             timelineOpen = false
+                            avatarStage.emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.PillCollapsed, at = avatarStage.target(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.ActivityPill)?.center)
                         } else {
                             timelineOpenRequest = TimelineOpenRequest(
                                 focusType = type,
@@ -1151,28 +1169,43 @@ fun ChatMessageTurn(
                                 }
                             )
                             timelineOpen = true
+                            avatarStage.emit(
+                                me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.PillExpanded,
+                                at = avatarStage.target(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.ActivityPill)?.center
+                                    ?: turnBounds[0]?.center,
+                            )
                         }
                     },
-                    onTimelineDismiss = { timelineOpen = false },
+                    onTimelineDismiss = {
+                        if (timelineOpen) avatarStage.emit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.PillCollapsed, at = avatarStage.target(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.ActivityPill)?.center)
+                        timelineOpen = false
+                    },
                     onBubbleClick = {
                         if (timelineOpen) {
                             timelineOpen = false
                         } else if (isLastTurn) {
                             showActionsSheet = true
+                            stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.MenuOpened)
                         } else {
                             actionsExpanded = !actionsExpanded
                         }
                     },
-                    onRegenerate = { onRegenerate(group.lastNode) },
+                    onRegenerate = {
+                        stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.Regenerated)
+                        onRegenerate(group.lastNode)
+                    },
                     onUpdate = onUpdate,
-                    onOpenActionSheet = { showActionsSheet = true },
+                    onOpenActionSheet = {
+                        showActionsSheet = true
+                        stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.MenuOpened)
+                    },
                     showRegenerate = showRegenerate,
                     onEditLorebookEntry = onEditLorebookEntry,
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     ttsProviderOverride = ttsProviderOverride,
-                    modifier = modifier
+                    modifier = trackedModifier
                 )
             }
             
@@ -1184,7 +1217,10 @@ fun ChatMessageTurn(
         ChatMessageActionsSheet(
             message = actionTargetNode.currentMessage,
             onEdit = { onEdit(actionTargetNode) },
-            onDelete = { onDelete(actionTargetNode) },
+            onDelete = {
+                stageEmit(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.Deleted)
+                onDelete(actionTargetNode)
+            },
             onFork = { onFork(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
@@ -1302,15 +1338,7 @@ private fun UserMessageTurn(
         }
         
         // Toolbar - appears on tap
-        AnimatedVisibility(
-            visible = showToolbar,
-            enter = expandVertically(
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
-            ) + fadeIn(),
-            exit = shrinkVertically(
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
-            ) + fadeOut()
-        ) {
+        me.rerere.rikkahub.ui.motion.ExpandableContent(visible = showToolbar) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1445,6 +1473,39 @@ private fun AssistantMessageTurn(
     
     // Check if there's interesting activity (reasoning or tools)
     val hasInterestingActivity = activityState !is ActivityState.Hidden
+    // Only the newest assistant turn shows its avatar (chat list sets this); older
+    // turns ease it away and give the space back.
+    val avatarVisible = me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarAnimate.current
+    val assistantPill: (@Composable () -> Unit)? = if (!hasInterestingActivity) null else {
+        {
+            ActivityPillRow(
+                state = activityState,
+                onClick = { type ->
+                    haptics.perform(HapticPattern.Pop)
+                    onActivityPillClick(type)
+                },
+                connectsToBubbleBelow = false,
+                modifier = Modifier
+                    .widthIn(max = maxWidth)
+                    .then(
+                        if (isLastTurn) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.ActivityPill)
+                        else Modifier
+                    ),
+                reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
+                maxBubbleWidth = maxWidth,
+                timelineOpen = timelineOpen,
+                timelineEntries = timelineEntries,
+                initialTimelineOpenRequest = initialTimelineOpenRequest,
+                assistantId = assistant?.id?.toString(),
+                timelineLive = isTimelineLive,
+                onTimelineDismiss = {
+                    haptics.perform(HapticPattern.Pop)
+                    onTimelineDismiss()
+                },
+                key = group.firstNode.id
+            )
+        }
+    }
     
     // Collect all text parts from filtered nodes (only nodes matching active versionTag)
     val allTextBubbles = mutableListOf<Pair<MessageNode, UIMessagePart.Text>>()
@@ -1456,11 +1517,38 @@ private fun AssistantMessageTurn(
         }
     }
     
+    // When the newest reply finishes, let the avatars react to its tone.
+    val avatarStageForTone = me.rerere.rikkahub.ui.components.avatar.animated.LocalAvatarStage.current
+    val replyTextForTone = allTextBubbles.joinToString("\n") { it.second.text }
+    var toneSeenLoading by remember { mutableStateOf(false) }
+    val toneContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    LaunchedEffect(loading, isLastTurn) {
+        if (loading && isLastTurn) toneSeenLoading = true
+        if (!loading && isLastTurn && toneSeenLoading) {
+            toneSeenLoading = false
+            // LC Smart Core reads the tone when installed (most replies come back neutral → no
+            // reaction); otherwise the small heuristic reader. The avatar's perception gate decides the rest.
+            val smart = if (me.rerere.rikkahub.smartcore.LcSmartCore.isInstalled(toneContext)) {
+                me.rerere.rikkahub.smartcore.LcSmartCore.classify(toneContext, replyTextForTone.take(1500))
+            } else null
+            val tone = if (smart != null) me.rerere.rikkahub.smartcore.LcSmartCoreHeads.toneHint(smart)
+            else me.rerere.rikkahub.ui.components.avatar.animated.ToneAnalyzer.read(replyTextForTone)
+            tone?.let { t ->
+                avatarStageForTone.emit(
+                    me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.EventKind.ReplyTone,
+                    magnitude = t.valence,
+                    extra = (t.emotion?.ordinal ?: -1) + 1,
+                    direction = (t.intensity * 100).toInt(),
+                )
+            }
+        }
+    }
+
     // Consistent spacing between all elements
     val elementSpacing = 4.dp
     
     val chatAnimationsEnabled = LocalChatAnimationsEnabled.current
-    Column(
+    me.rerere.rikkahub.ui.components.settings.CollapseSpacingColumn(
         modifier = modifier
             .fillMaxWidth()
             .then(
@@ -1486,93 +1574,20 @@ private fun AssistantMessageTurn(
                     Modifier
                 }
             ),
-        verticalArrangement = Arrangement.spacedBy(
-            if (showAssistantBubbles) elementSpacing else 3.dp
-        )
+        spacing = if (showAssistantBubbles) elementSpacing else 3.dp,
     ) {
         if (showAssistantBubbles) {
-            // Layout varies based on whether there's an activity bar
-            if (hasInterestingActivity) {
-                // WITH ACTIVITIES:
-                // [Name] (if enabled)
-                // [Avatar] [Pills row]
-                // [Full-width bubble]
-                
-                // Name above pills (only if enabled)
-                if (showModelName) {
-                    Text(
-                        text = avatarName,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.graphicsLayer { alpha = nameAlpha }
-                    )
-                }
-                
-                // Avatar + Pills row
-                Row(
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(elementSpacing)
-                ) {
-                    if (showIcon) {
-                        UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(36.dp),
-                            value = avatarValue,
-                            loading = loading,
-                        )
-                    }
+            AssistantTurnHeader(
+                showIcon = showIcon,
+                avatarVisible = avatarVisible,
+                avatarName = avatarName,
+                avatarValue = avatarValue,
+                loading = loading,
+                showModelName = showModelName,
+                nameAlpha = nameAlpha,
+                pill = assistantPill,
+            )
 
-                    ActivityPillRow(
-                        state = activityState,
-                        onClick = { type ->
-                            haptics.perform(HapticPattern.Pop)
-                            onActivityPillClick(type)
-                        },
-                        connectsToBubbleBelow = false,  // Bubbles are separate - fully rounded
-                        modifier = Modifier.widthIn(max = maxWidth),
-                        reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
-                        maxBubbleWidth = maxWidth,
-                        timelineOpen = timelineOpen,
-                        timelineEntries = timelineEntries,
-                        initialTimelineOpenRequest = initialTimelineOpenRequest,
-                        assistantId = assistant?.id?.toString(),
-                        timelineLive = isTimelineLive,
-                        onTimelineDismiss = {
-                            haptics.perform(HapticPattern.Pop)
-                            onTimelineDismiss()
-                        },
-                        key = group.firstNode.id
-                    )
-                }
-            } else {
-                // WITHOUT ACTIVITIES:
-                // [Avatar] [Name] (side by side)
-                // [Full-width bubble]
-
-                if (showIcon || showModelName) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (showIcon) {
-                            UIAvatar(
-                                name = avatarName,
-                                modifier = Modifier.size(36.dp),
-                                value = avatarValue,
-                                loading = loading,
-                            )
-                        }
-                        if (showModelName) {
-                            Text(
-                                text = avatarName,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.graphicsLayer { alpha = nameAlpha }
-                            )
-                        }
-                    }
-                }
-            }
 
             AssistantBubbleStack(
                 group = group,
@@ -1584,58 +1599,17 @@ private fun AssistantMessageTurn(
                 onCitationClick = onCitationClick,
             )
         } else {
-            // No bubbles for characters:
-            // [Avatar] [Name] (side by side)
-            // [Activity pills] below avatar row
-            // [Full-width text]
-
-            if (showIcon || showModelName) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (showIcon) {
-                        UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(36.dp),
-                            value = avatarValue,
-                            loading = loading,
-                        )
-                    }
-                    if (showModelName) {
-                        Text(
-                            text = avatarName,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.graphicsLayer { alpha = nameAlpha }
-                        )
-                    }
-                }
-            }
-
-            if (activityState !is ActivityState.Hidden) {
-                ActivityPillRow(
-                    state = activityState,
-                    onClick = { type ->
-                        haptics.perform(HapticPattern.Pop)
-                        onActivityPillClick(type)
-                    },
-                    connectsToBubbleBelow = false,
-                    modifier = Modifier.widthIn(max = maxWidth),
-                    reasoningPreviewEnabled = effectiveDisplay.reasoningPreviewEnabled,
-                    maxBubbleWidth = maxWidth,
-                    timelineOpen = timelineOpen,
-                    timelineEntries = timelineEntries,
-                    initialTimelineOpenRequest = initialTimelineOpenRequest,
-                    assistantId = assistant?.id?.toString(),
-                    timelineLive = isTimelineLive,
-                    onTimelineDismiss = {
-                        haptics.perform(HapticPattern.Pop)
-                        onTimelineDismiss()
-                    },
-                    key = group.firstNode.id
-                )
-            }
+            // No bubbles: same header as bubble mode ([avatar] [name / pill]), then text.
+            AssistantTurnHeader(
+                showIcon = showIcon,
+                avatarVisible = avatarVisible,
+                avatarName = avatarName,
+                avatarValue = avatarValue,
+                loading = loading,
+                showModelName = showModelName,
+                nameAlpha = nameAlpha,
+                pill = assistantPill,
+            )
 
             AttachmentRow(
                 attachments = attachments,
@@ -1663,7 +1637,9 @@ private fun AssistantMessageTurn(
                     streamingTextReveal = loading && index == allTextBubbles.lastIndex,
                     onExpandedStreamingCodeBlockChanged = onExpandedStreamingCodeBlockChanged,
                     onClickCitation = { id -> onCitationClick(id) },
-                    modifier = Modifier.clickable { handleBubbleClick() }
+                    modifier = Modifier
+                        .clickable { handleBubbleClick() }
+                        .then(if (loading && index == allTextBubbles.lastIndex) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.StreamingText) else Modifier)
                 )
             }
         }
@@ -1680,15 +1656,9 @@ private fun AssistantMessageTurn(
         // Action buttons
         val showActions = !loading && (isLastTurn || actionsExpanded)
         
-        AnimatedVisibility(
-            visible = showActions,
-            enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) +
-                    slideInVertically(spring(dampingRatio = 0.6f, stiffness = 300f)) { -it } +
-                    fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)),
-            exit = shrinkVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) +
-                   slideOutVertically(spring(dampingRatio = 0.8f, stiffness = 500f)) { -it } +
-                   fadeOut()
-        ) {
+        // Same motion as the fixed settings sections: one tween for height + alpha that
+        // reaches exactly zero, and the column takes its gap down with it (no end snap).
+        me.rerere.rikkahub.ui.motion.ExpandableContent(visible = showActions) {
             ChatMessageActionButtons(
                 message = group.lastNode.currentMessage,
                 onRegenerate = onRegenerate,
@@ -1777,7 +1747,9 @@ private fun AssistantBubbleStack(
                     bubbleLeadingCount = cursor,
                     bubbleTotalCount = total,
                     onBubbleClick = onBubbleClick,
-                    modifier = Modifier.widthIn(max = maxWidth),
+                    modifier = Modifier
+                        .widthIn(max = maxWidth)
+                        .then(if (slot.streaming) Modifier.avatarTarget(me.rerere.rikkahub.ui.components.avatar.animated.AvatarStage.Target.StreamingText) else Modifier),
                 )
             }
             is AssistantStackSlot.Picture -> {
@@ -2037,4 +2009,98 @@ private fun TokenStatisticsInline(
             }
         }
     }
+}
+
+
+/**
+ * Shared assistant turn header for every layout (bubbles on or off):
+ * [avatar] [name above the activity pill]. The avatar always sits left of the pill.
+ */
+@Composable
+internal fun AssistantTurnHeader(
+    showIcon: Boolean,
+    avatarVisible: Boolean,
+    avatarName: String,
+    avatarValue: Avatar,
+    loading: Boolean,
+    showModelName: Boolean,
+    nameAlpha: Float,
+    pill: (@Composable () -> Unit)?,
+    /** Harness only: freeze the avatar slot at this progress. */
+    avatarProgressOverride: Float? = null,
+) {
+    // No name label above assistant replies: just [avatar] [pill]. ([showModelName] /
+    // [nameAlpha] are kept for callers but no longer draw a label.)
+    if (!showIcon && pill == null) return
+    // The name always starts at the message's left edge (same as turns without an
+    // avatar), so nothing above the text shifts sideways between turns. The avatar
+    // sits directly left of the pill, centred on it; without a pill, centred on the
+    // name. Its slot eases open/closed, so only the pill/name glides, never jumps.
+    val avatar: @Composable () -> Unit = {
+        if (showIcon) {
+            AssistantAvatarSlot(visible = avatarVisible, progressOverride = avatarProgressOverride) {
+                UIAvatar(
+                    name = avatarName,
+                    modifier = Modifier.size(AssistantAvatarSize),
+                    value = avatarValue,
+                    loading = loading,
+                )
+            }
+        }
+    }
+    if (pill != null) {
+        Column {
+            // Top-anchored: the collapsed pill is as tall as the avatar (36dp), so they
+            // line up, and when the pill expands into its panel the avatar stays put
+            // on that first row instead of re-centring on the tall panel.
+            Row(verticalAlignment = Alignment.Top) {
+                avatar()
+                pill()
+            }
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            avatar()
+        }
+    }
+}
+
+private val AssistantAvatarSize = 36.dp
+private val AssistantAvatarGap = 4.dp
+
+/**
+ * Avatar that fades and scales away while its layout space (width + height) eases
+ * closed, and comes back the same way. First composition shows the current state
+ * without animating, so older turns simply appear without an avatar.
+ */
+@Composable
+internal fun AssistantAvatarSlot(
+    visible: Boolean,
+    progressOverride: Float? = null,
+    content: @Composable () -> Unit,
+) {
+    val animated by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 420, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "assistantAvatarSlot",
+    )
+    val progress = progressOverride ?: animated
+    if (progress <= 0.001f && (progressOverride != null || !visible)) return
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier.layout { measurable, _ ->
+            val side = AssistantAvatarSize.roundToPx()
+            val placeable = measurable.measure(androidx.compose.ui.unit.Constraints.fixed(side, side))
+            val w = ((AssistantAvatarSize + AssistantAvatarGap).toPx() * progress).toInt()
+            val h = (side * progress).toInt()
+            layout(w, h) {
+                placeable.placeWithLayer(0, (h - side) / 2) {
+                    val s = 0.35f + 0.65f * progress
+                    scaleX = s
+                    scaleY = s
+                    alpha = progress
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                }
+            }
+        }
+    ) { content() }
 }

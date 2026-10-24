@@ -1,5 +1,8 @@
 package me.rerere.ai.provider.providers
 
+import me.rerere.ai.util.toProviderError
+import me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import me.rerere.common.platform.PlatformLog
@@ -91,14 +94,15 @@ internal fun buildGoogleThinkingConfig(
     if (ModelAbility.REASONING !in abilities) return null
 
     val isGeminiPro = modelId.contains(Regex("2\\.5.*pro", RegexOption.IGNORE_CASE))
+    val isGemini4 = ModelRegistry.GEMINI_4.match(modelId = modelId)
     val isGemini3 = ModelRegistry.GEMINI_3_SERIES.match(modelId = modelId)
 
-    if (isGemini3) {
+    if (isGemini3 || isGemini4) {
         return buildJsonObject {
             put("includeThoughts", true)
             when (val level = ReasoningLevel.fromBudgetTokens(thinkingBudget)) {
                 ReasoningLevel.AUTO -> {}
-                ReasoningLevel.OFF -> put("thinkingLevel", "minimal")
+                ReasoningLevel.OFF -> put("thinkingLevel", if (isGemini4) "low" else "minimal")
                 ReasoningLevel.LOW -> put("thinkingLevel", "low")
                 ReasoningLevel.MEDIUM -> put("thinkingLevel", "medium")
                 ReasoningLevel.HIGH, ReasoningLevel.MAX -> put("thinkingLevel", "high")
@@ -194,6 +198,7 @@ class GoogleProvider(
     }
 
     private fun buildUrl(providerSetting: ProviderSetting.Google, path: String, selectedKey: PooledKey? = null): String {
+        if (OpenCodeEndpoint.from(providerSetting.baseUrl) != null) return "${providerSetting.baseUrl}/$path"
         return if (!providerSetting.vertexAI) {
             val key = selectedKey?.value ?: selectKey(providerSetting).value
             "${providerSetting.baseUrl}/$path".appendQueryParameter("key", key)
@@ -205,11 +210,16 @@ class GoogleProvider(
     private suspend fun buildHeaders(
         providerSetting: ProviderSetting.Google,
         customHeaders: List<CustomHeader> = emptyList(),
-        includeJsonContentType: Boolean = false
+        includeJsonContentType: Boolean = false,
+        selectedKey: PooledKey? = null,
     ): Map<String, String> {
         var headers = customHeaders.toHeaderMap().withReferHeaders(providerSetting.baseUrl)
         if (includeJsonContentType) {
             headers = headers + ("Content-Type" to "application/json")
+        }
+        if (OpenCodeEndpoint.from(providerSetting.baseUrl) != null) {
+            val key = selectedKey?.value ?: selectKey(providerSetting).value
+            headers = headers + ("Authorization" to "Bearer $key")
         }
         if (providerSetting.vertexAI) {
             headers = headers + ("Authorization" to "Bearer ${fetchVertexAccessToken(providerSetting)}")
@@ -301,7 +311,8 @@ class GoogleProvider(
                     headers = buildHeaders(
                         providerSetting = providerSetting,
                         customHeaders = params.customHeaders,
-                        includeJsonContentType = true
+                        includeJsonContentType = true,
+                        selectedKey = selectedKey,
                     ),
                     body = encodedRequestBody.encodeToByteArray(),
                     mediaType = "application/json",
@@ -418,7 +429,8 @@ class GoogleProvider(
             headers = buildHeaders(
                 providerSetting = providerSetting,
                 customHeaders = params.customHeaders,
-                includeJsonContentType = true
+                includeJsonContentType = true,
+                selectedKey = selectedKey,
             ),
             body = encodedRequestBody.encodeToByteArray(),
             mediaType = "application/json",
@@ -460,11 +472,15 @@ class GoogleProvider(
                         }
                     }
                     is PlatformServerEvent.Event -> {
+                        if (event.event == "error") {
+                            close(me.rerere.ai.util.providerHttpError(null, event.data))
+                            return@collect
+                        }
                         PlatformLog.i(TAG, "onEvent: ${event.data}")
                         runCatching {
                             parseStreamChunk(event.data, params.model.modelId)?.let {
                                 hasEmittedChunk = true
-                                trySend(it)
+                                send(it)
                             }
                         }.onFailure { error ->
                             error.printStackTrace()
@@ -515,28 +531,7 @@ class GoogleProvider(
         )
     }
 
-    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable {
-        val statusSuffix = event.statusCode?.let { " #$it" }.orEmpty()
-        val fallback = Exception(
-            "Stream failed$statusSuffix: ${event.message?.takeIf { it.isNotBlank() } ?: "(no details)"}"
-        )
-        val bodyRaw = event.body?.trim().orEmpty()
-        if (bodyRaw.isEmpty()) return fallback
-        return try {
-            val bodyElement = json.parseToJsonElement(bodyRaw)
-            println(bodyElement)
-            if (bodyElement is JsonObject) {
-                val apiMessage = bodyElement["error"]?.jsonObjectOrNull?.get("message")?.jsonPrimitive?.contentOrNull
-                Exception(
-                    "Stream failed$statusSuffix: ${apiMessage?.takeIf { it.isNotBlank() } ?: bodyRaw.take(500)}"
-                )
-            } else {
-                Exception("Stream failed$statusSuffix: ${bodyRaw.take(500)}")
-            }
-        } catch (_: Throwable) {
-            Exception("Stream failed$statusSuffix: ${bodyRaw.take(500)}")
-        }
-    }
+    private fun parseStreamFailure(event: PlatformServerEvent.Failure): Throwable = event.toProviderError()
 
 
     private fun buildCompletionRequestBody(

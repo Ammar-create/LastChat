@@ -59,7 +59,6 @@ class LastChatDesignTokensTest {
         val cases = listOf(
             Triple(Color(0xFF261D1E), Color(0xFF524345), AppSurface.GlassAlphaDark),
             Triple(Color(0xFF2A2A2A), Color(0xFF444444), AppSurface.GlassAlphaDark),
-            Triple(Color(0xFFFBEAEB), Color(0xFFD7C1C3), AppSurface.GlassAlphaLight),
         )
         cases.forEach { (surface, outline, glassAlpha) ->
             val stroke = AppSurface.softEdgeLightenStroke(outline, surface, glassAlpha)
@@ -86,6 +85,15 @@ class LastChatDesignTokensTest {
             val lightened = srcOver(stroke, lightBackdrop)
             assertTrue(lightened.red + lightened.green + lightened.blue >= lightBackdrop.red + lightBackdrop.green + lightBackdrop.blue - 0.02f)
         }
+    }
+
+    @Test
+    fun lightGlassKeepsAnOutlineInsteadOfApplyingADarkGlassHighlight() {
+        val scheme = sakuraColorScheme(false).withLastChatContrast(false)
+        assertEquals(AppSurface.softEdgeColor(scheme),
+            AppSurface.borderColor(scheme, scheme.surfaceContainer, blurEnabled = true, dark = false))
+        assertEquals(AppSurface.softEdgeColor(scheme),
+            AppSurface.borderColor(scheme, scheme.surfaceContainer, blurEnabled = false, dark = false))
     }
 
     @Test

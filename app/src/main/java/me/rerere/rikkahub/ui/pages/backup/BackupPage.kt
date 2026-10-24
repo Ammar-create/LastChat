@@ -311,7 +311,7 @@ private fun WebDavPage(
     }
 
     fun updateWebDavConfig(newConfig: WebDavConfig) {
-        vm.updateSettings(settings.copy(webDavConfig = newConfig))
+        vm.updateSettings { settings -> settings.copy(webDavConfig = newConfig) }
     }
 
     Box(
@@ -327,7 +327,7 @@ private fun WebDavPage(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Surface(
-                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = AppShapes.CardLarge,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -773,7 +773,7 @@ private fun BackupItemCard(
     Card(
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
         Column(

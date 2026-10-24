@@ -148,6 +148,13 @@
 
 
     <service
+        android:name=".data.ai.subscription.SubscriptionLoginService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Keeps a user-initiated OAuth loopback callback alive while the system browser completes account sign-in" />
+    </service>
+    <service
         android:name=".service.WebServerService"
         android:exported="false"
         android:foregroundServiceType="specialUse">

@@ -68,8 +68,13 @@ object AppSurface {
     fun softEdgeColor(colorScheme: ColorScheme): Color =
         colorScheme.outlineVariant.copy(alpha = SoftEdgeAlpha)
 
+    fun borderColor(colorScheme: ColorScheme, surface: Color, blurEnabled: Boolean, dark: Boolean): Color =
+        if (!blurEnabled || !dark) softEdgeColor(colorScheme)
+        else softEdgeLightenStroke(colorScheme.outlineVariant, surface, GlassAlphaDark)
+
     /**
-     * Stroke painted over the glass. Src-over this color lightens whatever blur is
+     * Stroke painted over dark glass. Light surfaces use the ordinary outline role.
+     * Src-over this color lightens whatever blur is
      * already under the edge. On a black backdrop it matches a slightly quieter
      * [softEdgeColor] ([SoftEdgeQuiet] of that outline) composited on glass-over-black.
      *

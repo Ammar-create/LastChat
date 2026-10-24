@@ -32,6 +32,32 @@ class SecretKeyManager(
         private const val MCP_OAUTH_PREFIX = "mcp_oauth_"
     }
 
+    fun getSubscriptionSession(providerId: Uuid): String? =
+        secureStore.getSecret("provider_subscription_$providerId")
+
+    fun setSubscriptionSession(providerId: Uuid, session: String?) {
+        if (session == null) secureStore.removeSecret("provider_subscription_$providerId")
+        else secureStore.putSecret("provider_subscription_$providerId", session)
+    }
+
+    fun getSubscriptionPending(providerId: Uuid): String? = secureStore.getSecret("provider_subscription_pending_$providerId")
+
+    fun setSubscriptionPending(providerId: Uuid, pending: String?) {
+        if (pending == null) secureStore.removeSecret("provider_subscription_pending_$providerId")
+        else secureStore.putSecret("provider_subscription_pending_$providerId", pending)
+    }
+
+    fun subscriptionHostId(): String {
+        val saved = secureStore.getSecret("subscription_host_id")
+        val normalized = when {
+            saved == null -> "urn:uuid:${Uuid.random()}"
+            saved.startsWith("urn:uuid:") -> saved
+            else -> "urn:uuid:$saved" // Migrate the original bare UUID without changing installation identity.
+        }
+        if (normalized != saved) secureStore.putSecret("subscription_host_id", normalized)
+        return normalized
+    }
+
     // ========== Provider API Key Management ==========
 
     /**
@@ -116,6 +142,8 @@ class SecretKeyManager(
      * Remove all secrets for a provider (when provider is deleted).
      */
     fun removeProviderSecrets(providerId: Uuid) {
+        setSubscriptionSession(providerId, null)
+        setSubscriptionPending(providerId, null)
         secureStore.removeSecret("$PROVIDER_APIKEY_PREFIX$providerId")
         secureStore.removeSecret("$PROVIDER_PRIVATEKEY_PREFIX$providerId")
         removeAllPoolApiKeys(providerId)

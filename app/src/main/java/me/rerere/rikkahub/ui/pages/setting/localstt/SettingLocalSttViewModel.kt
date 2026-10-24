@@ -40,6 +40,7 @@ class SettingLocalSttViewModel(
     private val install: SherpaModelInstall,
     private val runtime: SherpaSttRuntime,
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
 ) : ViewModel() {
     private val catalogFlow = MutableStateFlow(SherpaModelCatalog())
 
@@ -103,6 +104,12 @@ class SettingLocalSttViewModel(
         }
     }
 
+    fun reorderInstalledModels(ids: List<Any>) {
+        appScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            store.reorder(ids.map { it.toString().removePrefix("sherpa-installed-") })
+        }
+    }
+
     fun moveInstalledModel(from: Int, to: Int) {
         viewModelScope.launch { store.move(from, to) }
     }
@@ -124,7 +131,7 @@ class SettingLocalSttViewModel(
             } else {
                 settings.providers.map { if (it is ProviderSetting.LiteRtLocal) updatedLocal else it }
             }
-            settingsStore.update(settings.copy(providers = providers, sttModelId = aiModel.id))
+            settingsStore.update { settings -> settings.copy(providers = providers, sttModelId = aiModel.id) }
         }
     }
 
@@ -147,7 +154,7 @@ class SettingLocalSttViewModel(
         val selectedStillExists = selectedLocalModel == null || selectedLocalModel.modelId in installedIds
         val sttModelId = settings.sttModelId.takeIf { selectedStillExists }
         if (updated.providers == settings.providers && sttModelId == settings.sttModelId) return
-        settingsStore.update(updated.copy(sttModelId = sttModelId))
+        settingsStore.update { updated -> updated.copy(sttModelId = sttModelId) }
     }
 
     private fun InstalledSherpaModel.toAiModel(existing: Model?): Model = (existing ?: Model()).copy(

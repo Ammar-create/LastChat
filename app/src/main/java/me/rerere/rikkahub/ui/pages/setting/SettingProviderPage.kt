@@ -1,35 +1,32 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,20 +44,13 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -83,7 +73,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,50 +80,37 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.foundation.isSystemInDarkTheme
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -180,11 +156,10 @@ import me.rerere.rikkahub.ui.pages.setting.components.withSpecialProviderPresets
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.tts.provider.withDefaultVoices
 import me.rerere.rikkahub.utils.ImageUtils
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import me.rerere.rikkahub.data.model.Tag as DataTag
 import kotlin.uuid.Uuid
 
@@ -256,6 +231,7 @@ fun SettingProviderPage(
             settings.copy(
                 providers = listOf(providerToAdd) + settings.providers
             ),
+            base = settings,
             afterPersist = if (providerToAdd is ProviderSetting.LiteRtLocal) {
                 { navController.navigate(Screen.SettingLocalLlm) }
             } else {
@@ -278,7 +254,7 @@ fun SettingProviderPage(
                                 p.copyProvider(customIconUri = lobeHubIconUri(slug))
                             } else p
                         }
-                        vm.updateSettings(latestSettings.copy(providers = updatedProviders))
+                        vm.updateSettings { latestSettings -> latestSettings.copy(providers = updatedProviders) }
                     }
                 }
             }
@@ -349,11 +325,9 @@ fun SettingProviderPage(
                         catalogSnapshot = catalogSnapshot,
                         asFab = true
                     ) { newService ->
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 searchServices = listOf(newService) + settings.searchServices
-                            )
-                        )
+                            ) }
                     }
 
                     ProvidersTab.Tts -> AddTTSProviderButton(
@@ -362,11 +336,9 @@ fun SettingProviderPage(
                         asFab = true
                     ) { newProvider ->
                         val providerToAdd = newProvider.withDefaultVoices()
-                        vm.updateSettings(
-                            settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                                 ttsProviders = listOf(providerToAdd) + settings.ttsProviders
-                            )
-                        )
+                            ) }
                     }
                 }
             }
@@ -443,14 +415,8 @@ fun SettingProviderPage(
                     providerToDelete = provider
                     showDeleteDialog = true
                 },
-                onReorder = { fromProvider, toProvider ->
-                    val reorderedProviders = settings.providers.toMutableList()
-                    val from = reorderedProviders.indexOfFirst { it.id == fromProvider.id }
-                    val to = reorderedProviders.indexOfFirst { it.id == toProvider.id }
-                    if (from >= 0 && to >= 0 && from != to) {
-                        reorderedProviders.add(to, reorderedProviders.removeAt(from))
-                        vm.updateSettings(settings.copy(providers = reorderedProviders))
-                    }
+                onReorder = { order ->
+                    vm.updateSettings { latest -> latest.copy(providers = latest.providers.reorderedByKeys(order) { it.id }) }
                 },
                 onAddProvider = { provider ->
                     addProvider(provider)
@@ -539,11 +505,9 @@ fun SettingProviderPage(
             settings = settings,
             onDismissRequest = { showSearchCommonOptions = false },
             onUpdate = { options ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         searchCommonOptions = options
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -553,13 +517,11 @@ fun SettingProviderPage(
             rules = settings.displaySetting.ttsTextFilterRules,
             onDismiss = { showTtsFilterSettings = false },
             onUpdateRules = { newRules ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         displaySetting = settings.displaySetting.copy(
                             ttsTextFilterRules = newRules
                         )
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -613,30 +575,18 @@ private fun ProviderListView(
     providerPresets: List<me.rerere.rikkahub.ui.pages.setting.components.ProviderPreset>,
     onNavigateToDetail: (ProviderSetting) -> Unit,
     onDeleteRequest: (ProviderSetting) -> Unit,
-    onReorder: (ProviderSetting, ProviderSetting) -> Unit,
+    onReorder: (List<Any>) -> Unit,
     onAddProvider: (ProviderSetting) -> Unit
 ) {
     val lazyListState = rememberLazyListState()
-    val density = LocalDensity.current
 
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val fromProvider = providers.getOrNull(from.index)
-        val toProvider = providers.getOrNull(to.index)
-        if (fromProvider != null && toProvider != null) {
-            onReorder(fromProvider, toProvider)
-        }
-    }
+    val orderedProviders = rememberReorderableItems(providers, key = { it.id }, onCommit = onReorder)
+    val reorderableState = rememberAppReorderableLazyListState(
+        lazyListState, orderedProviders,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 104.dp),
+    )
     
-    // State for swipe neighbor tracking
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
-    // Reset neighborsUnlocked when offset returns to 0
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
-    
+    val swipeNeighbors = rememberSwipeNeighborState()
     // Check for matching preset when no providers found
     val matchingPreset = remember(searchQuery, providers) {
         if (providers.isEmpty() && searchQuery.isNotBlank()) {
@@ -769,38 +719,18 @@ private fun ProviderListView(
                 }
             }
 
-            itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
+            itemsIndexed(orderedProviders.items, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
-                    providers.size == 1 -> ItemPosition.ONLY
+                    orderedProviders.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == providers.lastIndex -> ItemPosition.LAST
+                    index == orderedProviders.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 
-                // Calculate neighbor offset
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
-                
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
-                    !neighborsUnlocked
-                
-                val neighborOffset = if (shouldNeighborFollow) {
-                    val distance = kotlin.math.abs(index - draggingIndex)
-                    when (distance) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, orderedProviders.items) { it.id }
                 
 
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableState,
                     key = provider.id
                 ) { isDragging ->
@@ -808,22 +738,12 @@ private fun ProviderListView(
                         position = position,
                         deleteEnabled = true,
                         neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            if (draggingIndex == index) {
-                                draggingIndex = -1
-                                dragOffset = 0f
-                            }
-                        },
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(provider.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(provider.id) },
                         onDelete = {
                             onDeleteRequest(provider)
                         },
                         modifier = Modifier
-                            .scale(if (isDragging) 0.95f else 1f)
                             .fillMaxWidth()
                     ) { animatedShape ->
                         ProviderItemContent(
@@ -1657,10 +1577,7 @@ private fun ProviderItemContent(
     onClick: () -> Unit
 ) {
     // Define the normal card color (used for both enabled background and disabled border)
-    val normalCardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        MaterialTheme.colorScheme.surfaceContainerLow 
-    else 
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    val normalCardColor = MaterialTheme.colorScheme.surfaceContainerLow
     
     val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
         androidx.compose.ui.graphics.Color.Black 

@@ -65,6 +65,7 @@ class SettingLocalLlmViewModel(
     private val embedder: LiteRtEmbedder,
     private val inferenceManager: LocalInferenceManager,
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
     private val modelCatalogService: ModelCatalogService,
     private val secretKeyManager: me.rerere.rikkahub.data.datastore.SecretKeyManager,
 ) : ViewModel() {
@@ -94,11 +95,10 @@ class SettingLocalLlmViewModel(
     ) { installed, cat, downloads, runtimeQueue, settings ->
         val (runtimeState, queue) = runtimeQueue
         val installedIds = installed.map { it.id }.toSet()
-        // Hide on-device embedding models where the device ABI can't run the RAG native libraries.
-        val embeddingSupported = embedder.isSupported
+        // Each embedding runtime ships its own set of native ABIs.
         val downloadable = cat.models
             .filter { it.id !in installedIds }
-            .filter { embeddingSupported || it.kind != LocalModelKind.EMBEDDING }
+            .filter { it.kind != LocalModelKind.EMBEDDING || embedder.isSupported(it) }
         val updates = installed.filter { inst ->
             cat.models.firstOrNull { it.id == inst.id }?.let { it.commitHash != inst.commitHash } == true
         }.map { it.id }.toSet()
@@ -136,10 +136,9 @@ class SettingLocalLlmViewModel(
         // Keep the user-managed local provider's model list in sync with what's installed on disk.
         // Including settings in this flow lets a re-added local provider immediately regain the
         // already installed files.
-        viewModelScope.launch {
-            combine(store.models, settingsStore.settingsFlow) { installed, _ -> installed }
-                .collectLatest { syncModelsToSettings(it) }
-        }
+        // The app-scoped collector in LastChatApp does the ongoing sync; this only covers the
+        // first frame of the screen so the list is right before that collector's next emission.
+        viewModelScope.launch { syncModelsToSettings(store.current()) }
     }
 
     fun download(meta: LocalModelMetadata) = downloadManager.download(meta)
@@ -181,6 +180,12 @@ class SettingLocalLlmViewModel(
         viewModelScope.launch { store.updateConfig(id, config) }
     }
 
+    fun reorderInstalledModels(ids: List<Any>) {
+        appScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            store.reorder(ids.map { it.toString().removePrefix("sherpa-installed-") })
+        }
+    }
+
     fun moveInstalledModel(from: Int, to: Int) {
         viewModelScope.launch { store.move(from, to) }
     }
@@ -204,7 +209,7 @@ class SettingLocalLlmViewModel(
                 }
             }
             if (updatedProviders != settings.providers) {
-                settingsStore.update(settings.copy(providers = updatedProviders))
+                settingsStore.update { settings -> settings.copy(providers = updatedProviders) }
             }
         }
     }

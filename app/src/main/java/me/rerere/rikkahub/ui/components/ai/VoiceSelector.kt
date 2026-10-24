@@ -270,7 +270,7 @@ fun ColumnScope.VoiceList(
                     Text(
                         text = "No TTS voices",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.extendColors.gray6,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp),
                     )
                 }

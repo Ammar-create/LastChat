@@ -17,8 +17,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.Stable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,13 +35,6 @@ internal val CHAT_ROUTE_BASE: String = Screen.Chat.serializer().descriptor.seria
 internal val MENU_ROUTE: String = Screen.Menu.serializer().descriptor.serialName
 internal val SETTING_ROUTE: String = Screen.Setting.serializer().descriptor.serialName
 internal val SETTING_DISPLAY_ROUTE: String = Screen.SettingDisplay.serializer().descriptor.serialName
-
-@Stable
-data class MotionPolicy(
-    val reduceMotion: Boolean
-)
-
-val LocalMotionPolicy = compositionLocalOf { MotionPolicy(reduceMotion = false) }
 
 @Composable
 fun rememberSystemMotionPolicy(): MotionPolicy {

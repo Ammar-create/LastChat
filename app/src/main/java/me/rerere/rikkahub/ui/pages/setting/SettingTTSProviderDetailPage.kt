@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,7 +39,6 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DragIndicator
-import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ViewModule
@@ -40,14 +46,9 @@ import androidx.compose.material.icons.rounded.Widgets
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -61,12 +62,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,7 +73,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,13 +91,11 @@ import kotlinx.serialization.json.contentOrNull
 import me.rerere.common.platform.PlatformHttpClient
 import me.rerere.common.platform.PlatformHttpRequest
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.data.ai.models.ttsProviderIconUri
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -113,11 +108,10 @@ import me.rerere.tts.provider.TTSVoice
 import me.rerere.tts.provider.android.discoverLocalTtsEngines
 import me.rerere.tts.provider.android.discoverLocalTtsVoices
 import me.rerere.tts.provider.withVoiceApplied
-import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlin.uuid.Uuid
 
 @Composable
@@ -129,11 +123,11 @@ fun SettingTTSProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
     val scope = rememberCoroutineScope()
 
     fun updateProvider(updated: TTSProviderSetting) {
-        vm.updateSettings(
-            settings.copy(
-                ttsProviders = settings.ttsProviders.map { if (it.id == updated.id) updated else it }
-            )
-        )
+        vm.updateSettings { settings -> settings.copy(
+                ttsProviders = settings.ttsProviders.map {
+                    if (it.id == updated.id) me.rerere.rikkahub.data.datastore.mergeTtsProviderEdit(provider, updated, it) else it
+                }
+            ) }
     }
 
     Scaffold(
@@ -298,24 +292,21 @@ private fun TtsVoiceTab(
     contentPadding: PaddingValues,
 ) {
     val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onUpdateProvider(provider.moveVoice(from.index, to.index))
+    val voiceOrder = rememberReorderableItems(provider.voices, key = { it.id }) { order ->
+        onUpdateProvider(provider.copyProvider(voices = provider.voices.reorderedByKeys(order) { it.id }))
     }
+    val reorderableState = rememberAppReorderableLazyListState(
+        lazyListState, voiceOrder,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 104.dp),
+    )
     var editingVoice by remember(provider.id) { mutableStateOf<TTSVoice?>(null) }
     var showManualVoiceSheet by remember(provider.id) { mutableStateOf(false) }
     var showProviderVoicesSheet by remember(provider.id) { mutableStateOf(false) }
     val tts = LocalTTSState.current
-    val density = LocalDensity.current
     val haptics = rememberPremiumHaptics()
     var expanded by remember { mutableStateOf(true) }
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
 
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -349,14 +340,14 @@ private fun TtsVoiceTab(
                         Text(
                             text = "Add or fetch voices to use this provider.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 32.dp),
                         )
                     }
                 }
             }
-            itemsIndexed(provider.voices, key = { _, voice -> voice.id }) { index, voice ->
+            itemsIndexed(voiceOrder.items, key = { _, voice -> voice.id }) { index, voice ->
                 val position = when {
                     provider.voices.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
@@ -364,27 +355,9 @@ private fun TtsVoiceTab(
                     else -> ItemPosition.MIDDLE
                 }
 
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, voiceOrder.items) { it.id }
 
-                val shouldNeighborFollow = draggingIndex >= 0 &&
-                    draggingIndex != index &&
-                    !isUnlocked &&
-                    !neighborsUnlocked
-
-                val neighborOffset = if (shouldNeighborFollow) {
-                    when (kotlin.math.abs(index - draggingIndex)) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-
-                ReorderableItem(reorderableState, key = voice.id) { isDragging ->
+                AppReorderableItem(reorderableState, key = voice.id) { isDragging ->
                     TtsVoiceRow(
                         provider = provider,
                         voice = voice,
@@ -392,17 +365,8 @@ private fun TtsVoiceTab(
                         onEdit = { editingVoice = voice },
                         onDelete = { onUpdateProvider(provider.delVoice(voice)) },
                         neighborOffset = neighborOffset,
-                        onDragProgress = { offset, unlocked ->
-                            draggingIndex = index
-                            dragOffset = offset
-                            isUnlocked = unlocked
-                        },
-                        onDragEnd = {
-                            if (draggingIndex == index) {
-                                draggingIndex = -1
-                                dragOffset = 0f
-                            }
-                        },
+                        onDragProgress = { offset, unlocked -> swipeNeighbors.update(voice.id, offset, unlocked) },
+                        onDragEnd = { swipeNeighbors.end(voice.id) },
                         onTest = {
                             tts.speak(
                                 text = "Hello, this is what this voice sounds like.",
@@ -424,15 +388,7 @@ private fun TtsVoiceTab(
                                 Icon(Icons.Rounded.DragIndicator, null)
                             }
                         },
-                        modifier = Modifier.graphicsLayer {
-                            if (isDragging) {
-                                scaleX = 0.95f
-                                scaleY = 0.95f
-                            } else {
-                                scaleX = 1f
-                                scaleY = 1f
-                            }
-                        },
+                        modifier = Modifier,
                     )
                 }
             }
@@ -580,7 +536,7 @@ private fun TtsVoiceRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
-                .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .clickable(onClick = onEdit)
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),

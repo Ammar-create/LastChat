@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.ui.components.avatar.animated
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import kotlin.math.hypot
 import kotlin.random.Random
 
@@ -26,7 +29,41 @@ class AvatarStage(private val rng: Random = Random.Default) {
         var windowH: Float = 0f,
     )
 
-    enum class EventKind { MessageArrived, Scroll, UserTyping }
+    enum class EventKind {
+        MessageArrived, MessageSent, Scroll, UserTyping,
+        /** Soft keyboard shown / hidden. */
+        KeyboardOpened, KeyboardClosed,
+        /** A fast fling; [Event.magnitude] = items per second (roughly). */
+        Fling,
+        /** Long-press / context menu opened at [Event.at]. */
+        MenuOpened,
+        Copied, Regenerated,
+        /** A message was deleted; [Event.at] = where it was. */
+        Deleted,
+        /** A request failed. */
+        Error,
+        /** Tone of a finished reply: [Event.magnitude] = valence, [Event.extra] = Emotion ordinal + 1 (0 = none), [Event.direction] = intensity × 100. */
+        ReplyTone,
+        /** The activity pill / timeline was expanded at [Event.at]. */
+        PillExpanded,
+        /** Engine21.1: the expanded activity timeline was collapsed / dismissed. */
+        PillCollapsed,
+        /** The app came back to the foreground. */
+        AppResumed,
+        /** Another avatar just made a face ([Event.extra] = accent ordinal, [Event.source] = its id). */
+        AvatarAccent,
+        /** Engine21 UI hooks: a file / image attached in the composer ([Event.extra] = count). */
+        AttachmentAdded,
+        /** The model picker sheet opened. */
+        ModelPickerOpened,
+        /** A sent message was opened in the composer for editing. */
+        EditorOpened,
+        /** A composer setting (search, reasoning…) was switched; [Event.direction] = +1 on, −1 off. */
+        SettingToggled,
+    }
+
+    /** UI elements avatars may look at; positions come from the real layout. */
+    enum class Target { ActivityPill, StreamingText, Composer }
 
     class Event(
         val seq: Long,
@@ -36,6 +73,9 @@ class AvatarStage(private val rng: Random = Random.Default) {
         /** Scroll: +1 content moving up (reading down), -1 the other way. */
         val direction: Int = 0,
         val atMs: Long,
+        val magnitude: Float = 0f,
+        val source: Long = 0L,
+        val extra: Int = 0,
     )
 
     /** A pending mutual glance: [from] looks at [to]; [skeptic] (if any) goes 🤨. */
@@ -49,6 +89,47 @@ class AvatarStage(private val rng: Random = Random.Default) {
     private var lastGlanceMs = System.currentTimeMillis()
     private var glanceGapMs = 20_000L + rng.nextLong(20_000L)
     private val glances = HashMap<Long, Glance>()
+
+    // Composer (message input) snapshot — plain fields, read from frame callbacks.
+    var composerLen = 0; private set
+    /** Characters on the line the caret is on (end of text). */
+    var composerLineLen = 0; private set
+    var composerLastKeyMs = 0L; private set
+    /** When the current typing burst began (0 = not typing). */
+    var composerBurstStartMs = 0L; private set
+
+    fun updateComposer(text: CharSequence, nowMs: Long = System.currentTimeMillis()) {
+        val len = text.length
+        if (len == composerLen && len > 0) return
+        if (len == 0) {
+            composerBurstStartMs = 0L
+        } else if (composerBurstStartMs == 0L || nowMs - composerLastKeyMs > 8_000L) {
+            composerBurstStartMs = nowMs
+        }
+        composerLen = len
+        val lastBreak = text.lastIndexOf('\n')
+        composerLineLen = len - (lastBreak + 1)
+        composerLastKeyMs = nowMs
+    }
+
+    private val targets = HashMap<Target, androidx.compose.ui.geometry.Rect>()
+    private val targetOwners = HashMap<Target, Any>()
+
+    /** Latest on-screen bounds (window px) of a UI target, or null when not shown. */
+    fun target(kind: Target): androidx.compose.ui.geometry.Rect? = targets[kind]
+
+    fun setTarget(kind: Target, owner: Any, bounds: androidx.compose.ui.geometry.Rect) {
+        if (bounds.width <= 0f || bounds.height <= 0f) return clearTarget(kind, owner)
+        targets[kind] = bounds
+        targetOwners[kind] = owner
+    }
+
+    fun clearTarget(kind: Target, owner: Any) {
+        if (targetOwners[kind] === owner) {
+            targets.remove(kind)
+            targetOwners.remove(kind)
+        }
+    }
 
     fun newId(): Long = nextId++
 
@@ -86,8 +167,16 @@ class AvatarStage(private val rng: Random = Random.Default) {
             .sortedBy { hypot(it.center.x - me.center.x, it.center.y - me.center.y) }
     }
 
-    fun emit(kind: EventKind, at: Offset? = null, direction: Int = 0, nowMs: Long = System.currentTimeMillis()) {
-        events += Event(++seq, kind, at, direction, nowMs)
+    fun emit(
+        kind: EventKind,
+        at: Offset? = null,
+        direction: Int = 0,
+        nowMs: Long = System.currentTimeMillis(),
+        magnitude: Float = 0f,
+        source: Long = 0L,
+        extra: Int = 0,
+    ) {
+        events += Event(++seq, kind, at, direction, nowMs, magnitude, source, extra)
         while (events.size > 16) events.removeAt(0)
     }
 
@@ -129,3 +218,20 @@ class AvatarStage(private val rng: Random = Random.Default) {
 }
 
 val LocalAvatarStage = staticCompositionLocalOf { AvatarStage.Global }
+
+/**
+ * Registers this element's real window bounds as an avatar look target (the
+ * activity pill, the streaming text, the composer). Last one placed wins; removed
+ * when it leaves composition.
+ */
+fun androidx.compose.ui.Modifier.avatarTarget(kind: AvatarStage.Target): androidx.compose.ui.Modifier =
+    composed {
+        val stage = LocalAvatarStage.current
+        val owner = androidx.compose.runtime.remember { Any() }
+        androidx.compose.runtime.DisposableEffect(stage, kind) {
+            onDispose { stage.clearTarget(kind, owner) }
+        }
+        androidx.compose.ui.Modifier.onGloballyPositioned { c ->
+            stage.setTarget(kind, owner, c.boundsInWindow())
+        }
+    }

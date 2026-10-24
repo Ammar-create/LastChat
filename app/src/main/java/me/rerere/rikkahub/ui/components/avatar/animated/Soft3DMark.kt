@@ -25,6 +25,8 @@ data class SolidSpec(
     val axis: Int = 0,
 )
 
+private fun abs(v: Float) = kotlin.math.abs(v)
+
 object Soft3DMark {
 
     const val FILL = 0.98f
@@ -135,7 +137,7 @@ object Soft3DMark {
             morphProgress = morphProgress,
             allowXBob = allowXBob && !calmFaceOn,
         ) {
-            // Desktop av: <use href="#body" fill="${bodyFill}"/> — one flat fill, never Xx faces.
+            // Desktop av: <use href="#body" fill="${bodyFill}"/> — one flat fill, always (no shading).
             drawPath(paintPath, fill)
         }
         @Suppress("UNUSED_EXPRESSION") gazeX
@@ -167,7 +169,9 @@ object Soft3DMark {
         val bb = bodyPath.getBounds()
         val hArea = (hb.width * hb.height).coerceAtLeast(1e-3f)
         val bArea = (bb.width * bb.height).coerceAtLeast(1e-3f)
-        return if (hArea < bArea * 0.35f) bodyPath else mesh.hull
+        // Edge-on (spins) a thin hull is correct, so the floor scales with how much faces us.
+        val facing = kotlin.math.max(0.08f, kotlin.math.abs(kotlin.math.cos(yaw)) * kotlin.math.abs(kotlin.math.cos(pitch)))
+        return if (hArea < bArea * 0.35f * facing) bodyPath else mesh.hull
     }
 
     fun evenOddBodyWithEyes(body: Path, leftEye: Path, rightEye: Path): Path =

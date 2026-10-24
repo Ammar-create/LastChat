@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.layout.Arrangement
@@ -19,42 +26,30 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -65,13 +60,11 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
-import me.rerere.rikkahub.data.ai.models.ttsProviderIconUri
 import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_ID
 import me.rerere.rikkahub.data.datastore.DEFAULT_SYSTEM_TTS_VOICE_ID
 import me.rerere.rikkahub.Screen
@@ -84,23 +77,18 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
-import me.rerere.rikkahub.utils.plus
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.provider.withDefaultVoices
 import org.koin.androidx.compose.koinViewModel
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.animateFloatAsState
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.listItemShape
 import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
@@ -109,7 +97,6 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -118,7 +105,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -142,11 +128,8 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newProviders = settings.ttsProviders.toMutableList().apply {
-            add(to.index, removeAt(from.index))
-        }
-        vm.updateSettings(settings.copy(ttsProviders = newProviders))
+    val orderedProviders = rememberReorderableItems(settings.ttsProviders, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(ttsProviders = latest.ttsProviders.reorderedByKeys(order) { it.id }) }
     }
 
     // State for TTS text filter settings dialog
@@ -181,29 +164,15 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     enableHaptics = settings.displaySetting.enableUIHaptics,
                     asFab = true
                 ) {
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             ttsProviders = listOf(it.withDefaultVoices()) + settings.ttsProviders
-                        )
-                    )
+                        ) }
                 }
             }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
-        // State for swipe neighbor tracking
-        var draggingIndex by remember { mutableStateOf(-1) }
-        var dragOffset by remember { mutableFloatStateOf(0f) }
-        var isUnlocked by remember { mutableStateOf(false) }
-        var neighborsUnlocked by remember { mutableStateOf(false) }
-        
-        
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        
-        // Reset neighborsUnlocked when offset returns to 0
-        if (dragOffset == 0f && neighborsUnlocked) {
-            neighborsUnlocked = false
-        }
+        val swipeNeighbors = rememberSwipeNeighborState()
         
 
         
@@ -227,6 +196,9 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         }
 
         Box(modifier = Modifier.fillMaxSize()) {
+            val reorderableState = rememberAppReorderableLazyListState(
+                lazyListState, orderedProviders, scrollThresholdPadding = innerPadding + PaddingValues(bottom = 120.dp),
+            )
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -235,7 +207,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 state = lazyListState
             ) {
-                if (settings.ttsProviders.isEmpty()) {
+                if (orderedProviders.items.isEmpty()) {
                     item(key = "empty") {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -278,70 +250,35 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 } else {
-                itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+                itemsIndexed(orderedProviders.items, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
-                    settings.ttsProviders.size == 1 -> ItemPosition.ONLY
+                    orderedProviders.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.ttsProviders.lastIndex -> ItemPosition.LAST
+                    index == orderedProviders.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
                 
-                // Calculate neighbor offset
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
-                
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
-                    !neighborsUnlocked
-                
-                val neighborOffset = if (shouldNeighborFollow) {
-                    val distance = kotlin.math.abs(index - draggingIndex)
-                    when (distance) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, orderedProviders.items) { it.id }
                 
 
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableState,
-                    key = provider.id,
-                    animateItemModifier = Modifier.animateItem()
+                    key = provider.id
                 ) { isDragging ->
-                    val dragScale by animateFloatAsState(
-                        targetValue = if (isDragging) 0.95f else 1f,
-                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                        label = "tts_provider_drag_scale"
-                    )
                     key(provider.id) {
                         PhysicsSwipeToDelete(
                             position = position,
                             groupCornerRadius = 24.dp,
                             deleteEnabled = true,
                             neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(provider.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(provider.id) },
                             onDelete = {
                                 providerToDelete = provider
                                 showDeleteDialog = true
                             },
                             modifier = Modifier
-                                .scale(dragScale)
+
                                 .fillMaxWidth()
                         ) { _ ->
                         TTSProviderItemContent(
@@ -418,11 +355,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         } else {
                             settings.selectedTTSVoiceId
                         }
-                        vm.updateSettings(settings.copy(
+                        vm.updateSettings { settings -> settings.copy(
                             ttsProviders = newProviders,
                             selectedTTSProviderId = newSelectedId,
                             selectedTTSVoiceId = newSelectedVoiceId
-                        ))
+                        ) }
                     }
                     showDeleteDialog = false
                     providerToDelete = null
@@ -518,7 +455,7 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
                             val newProviders = settings.ttsProviders.map {
                                 if (it.id == provider.id) currentProvider else it
                             }
-                            vm.updateSettings(settings.copy(ttsProviders = newProviders))
+                            vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
                             editingProvider = null
                         },
                         modifier = Modifier.weight(1f)
@@ -536,13 +473,11 @@ containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceCon
             rules = settings.displaySetting.ttsTextFilterRules,
             onDismiss = { showFilterSettingsDialog = false },
             onUpdateRules = { newRules ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         displaySetting = settings.displaySetting.copy(
                             ttsTextFilterRules = newRules
                         )
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -559,25 +494,19 @@ internal fun TtsProvidersContent(
     val context = LocalContext.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val lazyListState = rememberLazyListState()
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newProviders = settings.ttsProviders.toMutableList().apply {
-            add(to.index, removeAt(from.index))
-        }
-        vm.updateSettings(settings.copy(ttsProviders = newProviders))
+    val orderedProviders = rememberReorderableItems(settings.ttsProviders, key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(ttsProviders = latest.ttsProviders.reorderedByKeys(order) { it.id }) }
     }
+    val reorderableState = rememberAppReorderableLazyListState(
+        lazyListState, orderedProviders,
+        scrollThresholdPadding = contentPadding + PaddingValues(bottom = 120.dp),
+    )
 
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var providerToDelete by remember { mutableStateOf<TTSProviderSetting?>(null) }
 
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
 
     val tts = LocalTTSState.current
     val ttsError by tts.error.collectAsState()
@@ -601,7 +530,7 @@ internal fun TtsProvidersContent(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
-            if (settings.ttsProviders.isEmpty()) {
+            if (orderedProviders.items.isEmpty()) {
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
@@ -644,67 +573,34 @@ internal fun TtsProvidersContent(
                     }
                 }
             } else {
-            itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
+            itemsIndexed(orderedProviders.items, key = { _, provider -> provider.id }) { index, provider ->
                 val position = when {
-                    settings.ttsProviders.size == 1 -> ItemPosition.ONLY
+                    orderedProviders.items.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.ttsProviders.lastIndex -> ItemPosition.LAST
+                    index == orderedProviders.items.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
 
-                val thresholdPx = with(density) { 35.dp.toPx() }
-                if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                    neighborsUnlocked = true
-                }
+                val neighborOffset = swipeNeighbors.offsetFor(index, orderedProviders.items) { it.id }
 
-                val shouldNeighborFollow = draggingIndex >= 0 &&
-                    draggingIndex != index &&
-                    !isUnlocked &&
-                    !neighborsUnlocked
-
-                val neighborOffset = if (shouldNeighborFollow) {
-                    when (kotlin.math.abs(index - draggingIndex)) {
-                        1 -> dragOffset * 0.35f
-                        2 -> dragOffset * 0.12f
-                        else -> 0f
-                    }
-                } else {
-                    0f
-                }
-
-                ReorderableItem(
+                AppReorderableItem(
                     state = reorderableState,
-                    key = provider.id,
-                    animateItemModifier = Modifier.animateItem()
+                    key = provider.id
                 ) { isDragging ->
-                    val dragScale by animateFloatAsState(
-                        targetValue = if (isDragging) 0.95f else 1f,
-                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                        label = "tts_provider_drag_scale"
-                    )
                     key(provider.id) {
                         PhysicsSwipeToDelete(
                             position = position,
                             groupCornerRadius = 24.dp,
                             deleteEnabled = true,
                             neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(provider.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(provider.id) },
                             onDelete = {
                                 providerToDelete = provider
                                 showDeleteDialog = true
                             },
                             modifier = Modifier
-                                .scale(dragScale)
+
                                 .fillMaxWidth()
                         ) { _ ->
                             TTSProviderItemContent(
@@ -777,13 +673,11 @@ internal fun TtsProvidersContent(
                     } else {
                         settings.selectedTTSVoiceId
                     }
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             ttsProviders = newProviders,
                             selectedTTSProviderId = newSelectedId,
                             selectedTTSVoiceId = newSelectedVoiceId
-                        )
-                    )
+                        ) }
                 }
                 showDeleteDialog = false
                 providerToDelete = null
@@ -798,7 +692,7 @@ internal fun TtsProvidersContent(
             val newProviders = settings.ttsProviders.map {
                 if (it.id == original.id) updated else it
             }
-            vm.updateSettings(settings.copy(ttsProviders = newProviders))
+            vm.updateSettings { settings -> settings.copy(ttsProviders = newProviders) }
             editingProvider = null
         }
     )
@@ -929,7 +823,7 @@ internal fun TtsTextFilterSettingsDialog(
             ) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                     ),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
@@ -949,7 +843,7 @@ internal fun TtsTextFilterSettingsDialog(
                         item {
                             androidx.compose.material3.Card(
                                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                             ) {
@@ -1043,7 +937,7 @@ private fun TtsFilterRuleItem(
     
     androidx.compose.material3.Card(
         colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
         onClick = onEdit
@@ -1444,7 +1338,7 @@ private fun TTSProviderItemContent(
     dragHandle: @Composable () -> Unit
 ) {
     val backgroundColor by androidx.compose.animation.animateColorAsState(
-        targetValue = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest,
+        targetValue = MaterialTheme.colorScheme.surfaceContainerLow,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "ttsProviderBackground"
     )

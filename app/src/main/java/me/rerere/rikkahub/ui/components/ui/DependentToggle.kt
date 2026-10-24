@@ -44,10 +44,7 @@ fun DependentToggle(
     Card(
         shape = AppShapes.CardMedium,
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) 
-                MaterialTheme.colorScheme.surfaceContainerLow 
-            else 
-                MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         modifier = modifier.alpha(alpha)
     ) {

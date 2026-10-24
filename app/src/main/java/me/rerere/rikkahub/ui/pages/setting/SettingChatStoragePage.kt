@@ -383,11 +383,9 @@ fun SettingChatStoragePage(
                             selectedValue = settings.chatStorage.imageMaxLongEdgePx,
                             haptics = haptics,
                             onValueChange = { newValue ->
-                                vm.updateSettings(
-                                    settings.copy(
+                                vm.updateSettings { settings -> settings.copy(
                                         chatStorage = settings.chatStorage.copy(imageMaxLongEdgePx = newValue)
-                                    )
-                                )
+                                    ) }
                             }
                         )
 
@@ -395,11 +393,9 @@ fun SettingChatStoragePage(
                             selectedValue = settings.chatStorage.autoDeleteChatImagesAfterDays,
                             haptics = haptics,
                             onValueChange = { newValue ->
-                                vm.updateSettings(
-                                    settings.copy(
+                                vm.updateSettings { settings -> settings.copy(
                                         chatStorage = settings.chatStorage.copy(autoDeleteChatImagesAfterDays = newValue)
-                                    )
-                                )
+                                    ) }
                             }
                         )
 

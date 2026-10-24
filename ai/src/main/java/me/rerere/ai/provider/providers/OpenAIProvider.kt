@@ -225,10 +225,10 @@ class OpenAIProvider(
             // 4. Forced by forceEmbeddingType parameter (for OpenRouter embedding endpoint)
             val architecture = modelObj["architecture"]?.jsonObject
             val modality = architecture?.get("modality")?.jsonPrimitive?.contentOrNull
-            val inputModalitiesRaw = architecture?.get("input_modalities")?.jsonArray
+            val inputModalitiesRaw = (modelObj["input_modalities"] ?: architecture?.get("input_modalities"))?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 ?: emptyList()
-            val outputModalitiesRaw = architecture?.get("output_modalities")?.jsonArray
+            val outputModalitiesRaw = (modelObj["output_modalities"] ?: architecture?.get("output_modalities"))?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 ?: emptyList()
             val inputModalities = inputModalitiesRaw.toModalities().ifEmpty { listOf(Modality.TEXT) }
@@ -250,10 +250,12 @@ class OpenAIProvider(
             val displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull?.ifBlank { null } ?: id
             val contextLimits = parseOpenAIProviderContextLimits(modelObj)
             val abilities = buildList {
-                if (supportedParameters.any { it == "tools" || it == "tool_choice" }) {
+                if (!isEmbedding && !isImageModel &&
+                    (supportedParameters.isEmpty() || supportedParameters.any { it == "tools" || it == "tool_choice" })) {
                     add(ModelAbility.TOOL)
                 }
-                if (supportedParameters.any { it in setOf("reasoning", "include_reasoning", "reasoning_effort", "thinking") }) {
+                if ((modelObj["effort"] as? JsonObject)?.get("supported_levels")?.jsonArray?.isNotEmpty() == true ||
+                    supportedParameters.any { it in setOf("reasoning", "include_reasoning", "reasoning_effort", "thinking") }) {
                     add(ModelAbility.REASONING)
                 }
             }
@@ -510,8 +512,8 @@ internal fun parseOpenAIProviderContextLimits(model: JsonObject): OpenAIProvider
 
     val topProvider = model["top_provider"] as? JsonObject
     val combinedCandidates = listOfNotNull(
-        model.positiveInt("context_length", "max_context_length", "max_model_len"),
-        topProvider?.positiveInt("context_length", "max_context_length", "max_model_len"),
+        model.positiveInt("context_window", "context_length", "max_context_length", "max_model_len"),
+        topProvider?.positiveInt("context_window", "context_length", "max_context_length", "max_model_len"),
     )
     // Gateways can expose both a model-family limit and a smaller deployment/routing limit.
     // The smaller reported value is the only one that can guarantee overflow protection.

@@ -21,7 +21,7 @@ data class Model(
     val customBodies: List<CustomBody> = emptyList(),
     val inputModalities: List<Modality> = listOf(Modality.TEXT),
     val outputModalities: List<Modality> = listOf(Modality.TEXT),
-    val abilities: List<ModelAbility> = emptyList(),
+    val abilities: List<ModelAbility> = if (type == ModelType.CHAT) listOf(ModelAbility.TOOL) else emptyList(),
     val tools: Set<BuiltInTools> = emptySet(),
     val providerOverwrite: ProviderSetting? = null,
     val iconUrl: String? = null,

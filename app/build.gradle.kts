@@ -201,6 +201,11 @@ android {
             isIncludeAndroidResources = true
             all {
                 it.systemProperty("lastchat.renderDir", System.getProperty("lastchat.renderDir") ?: "")
+                it.systemProperty("lastchat.videoDir", System.getProperty("lastchat.videoDir") ?: "")
+                it.systemProperty("lastchat.videoOnly", System.getProperty("lastchat.videoOnly") ?: "")
+                it.systemProperty("lastchat.videoShapes", System.getProperty("lastchat.videoShapes") ?: "")
+                it.systemProperty("lastchat.gridModes", System.getProperty("lastchat.gridModes") ?: "")
+                it.systemProperty("lastchat.markColor", System.getProperty("lastchat.markColor") ?: "")
                 it.maxHeapSize = "2g"
             }
         }
@@ -227,6 +232,8 @@ android {
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += "lib/*/libtermux.so"
+            // sherpa-onnx and LC Smart Core both ship ONNX Runtime 1.27.0; keep one copy.
+            pickFirsts += "lib/*/libonnxruntime.so"
         }
     }
     androidResources {
@@ -421,6 +428,8 @@ dependencies {
     // sherpa-onnx AAR must be provided at the app level because :speech uses compileOnly
     // (AGP forbids direct local AAR deps inside library modules)
     implementation(files(rootProject.file("speech/build/sherpa/sherpa-onnx-1.13.4.aar")))
+    // LC Smart Core (decision model) runtime; same ORT version as the sherpa-onnx AAR (1.27.0).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
     implementation(project(":common"))
     implementation(project(":workspace"))
     implementation(project(":local-llm"))
@@ -435,6 +444,7 @@ dependencies {
 
     // tests
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.ui.test.junit4)
     // Avatar render harness: Robolectric native-graphics screenshots of the mark.
     testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation(libs.androidx.junit)

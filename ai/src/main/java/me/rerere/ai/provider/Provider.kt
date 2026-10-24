@@ -17,6 +17,8 @@ interface Provider<T : ProviderSetting> {
 
     suspend fun listModels(providerSetting: T): List<Model>
 
+    suspend fun getUsage(providerSetting: T): ProviderUsage? = null
+
     suspend fun getBalance(providerSetting: T): String {
         return "TODO"
     }

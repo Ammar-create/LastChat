@@ -75,7 +75,7 @@ fun AssistantSkillsSubPage(
         item(key = "description") {
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 ),
                 shape = AppShapes.CardLarge
             ) {
@@ -101,7 +101,7 @@ fun AssistantSkillsSubPage(
         item(key = "automatic_skill_invocation") {
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                 ),
                 shape = AppShapes.CardMedium,
                 onClick = {
@@ -201,7 +201,7 @@ private fun SkillSelectionCard(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = shape,
         onClick = onClick

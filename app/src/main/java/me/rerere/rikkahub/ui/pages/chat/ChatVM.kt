@@ -58,7 +58,6 @@ import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.ChatPersistenceMode
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.service.ContextManagementActivity
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -98,10 +97,12 @@ class ChatVM(
     val contextUsage: StateFlow<ContextUsageBreakdown?> = chatService.contextUsage
         .map { usageByConversation -> usageByConversation[_conversationId] }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-    val contextManagementActivity: StateFlow<ContextManagementActivity?> =
-        chatService.contextManagementActivity
-            .map { activityByConversation -> activityByConversation[_conversationId] }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val contextCompressionStatus = chatService.observeContextCompression(_conversationId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun optimizeContext() = chatService.requestContextCompression(_conversationId)
+    fun cancelContextOptimization() = chatService.cancelContextCompression(_conversationId)
+
     private val _conversationInitialized = MutableStateFlow(false)
     val conversationInitialized: StateFlow<Boolean> = _conversationInitialized
     internal var chatListScrollPosition: ChatListScrollPosition? = null
@@ -173,7 +174,7 @@ class ChatVM(
 
     // 用户设置
     val settings: StateFlow<Settings> =
-        settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
+        settingsStore.settingsFlow
 
     val conversationContext: StateFlow<ConversationContext> =
         combine(settings, conversation) { currentSettings, currentConversation ->
@@ -181,7 +182,7 @@ class ChatVM(
         }.stateIn(
             viewModelScope,
             SharingStarted.Lazily,
-            Settings.dummy().resolveConversationContext(conversation.value)
+            settings.value.resolveConversationContext(conversation.value)
         )
 
     val conversationAssistant: StateFlow<Assistant> =
@@ -196,31 +197,25 @@ class ChatVM(
             is me.rerere.rikkahub.data.model.AssistantSearchMode.BuiltIn -> true
             is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> true
         }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    }.stateIn(viewModelScope, SharingStarted.Lazily,
+        conversationContext.value.searchMode !is me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
 
     // 获取当前会话助手的searchMode
     val currentSearchMode = conversationContext.map { it.searchMode }
         .stateIn(
             viewModelScope,
             SharingStarted.Lazily,
-            me.rerere.rikkahub.data.model.AssistantSearchMode.Off
+            conversationContext.value.searchMode
         )
 
     // 更新当前会话助手的searchMode
     fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.data.model.AssistantSearchMode) {
-        viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == conversation.value.assistantId) {
-                            it.copy(searchMode = searchMode)
-                        } else {
-                            it
-                        }
-                    }
-                )
-            }
-        }
+        val assistantId = conversation.value.assistantId
+        settingsStore.enqueueUpdate { settings -> settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == assistantId) it.copy(searchMode = searchMode) else it
+            },
+        ) }
     }
 
     // 搜索关键词
@@ -329,12 +324,17 @@ class ChatVM(
     val mcpManager = chatService.mcpManager
 
     // 更新设置
-    fun updateSettings(newSettings: Settings) {
-        viewModelScope.launch {
-            val oldSettings = settings.value
-            // 检查用户头像是否有变化，如果有则删除旧头像
+    /** Whole-snapshot save from [base]; merged onto the latest settings (see [mergeSettingsEdit]). */
+    fun updateSettings(newSettings: Settings, base: Settings = settings.value) =
+        updateSettings { latest -> me.rerere.rikkahub.data.datastore.mergeSettingsEdit(base, newSettings, latest) }
+
+    /** Applies [transform] to the latest settings via the store's ordered queue. */
+    fun updateSettings(transform: (Settings) -> Settings) {
+        val result = settingsStore.enqueueUpdate(transform)
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch {
+            val (oldSettings, newSettings) = runCatching { result.await() }.getOrNull() ?: return@launch
             checkUserAvatarDelete(oldSettings, newSettings)
-            settingsStore.update(newSettings)
             appStorageRepository.deleteFilesIfUnreferenced(
                 collectRemovedUserAvatarRefs(oldSettings, newSettings)
             )
@@ -347,26 +347,25 @@ class ChatVM(
     }
 
     fun updateConversationAssistant(updatedAssistant: Assistant) {
-        viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.map {
-                        if (it.id == updatedAssistant.id) {
-                            updatedAssistant
-                        } else {
-                            it
-                        }
-                    })
-            }
-        }
+        val base = conversationAssistant.value.takeIf { it.id == updatedAssistant.id }
+            ?: settings.value.assistants.firstOrNull { it.id == updatedAssistant.id }
+            ?: return
+        settingsStore.enqueueUpdate { settings -> settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == updatedAssistant.id) {
+                    me.rerere.rikkahub.data.datastore.mergeAssistantEdit(base, updatedAssistant, it)
+                } else it
+            },
+        ) }
     }
 
-    // 设置聊天模型
     fun setChatModel(model: Model) {
-        val assistant = conversationAssistant.value
-        updateConversationAssistant(
-            assistant.copy(chatModelId = model.id)
-        )
+        val assistantId = conversation.value.assistantId
+        settingsStore.enqueueUpdate { settings -> settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == assistantId) it.copy(chatModelId = model.id) else it
+            },
+        ) }
     }
 
     // 更新模型上下文限制
@@ -413,8 +412,8 @@ class ChatVM(
     }
 
     fun setSelectedAssistant(assistantId: Uuid) {
-        viewModelScope.launch {
-            settingsStore.updateAssistant(assistantId)
+        settingsStore.enqueueUpdate { current ->
+            if (current.assistants.any { it.id == assistantId }) current.copy(assistantId = assistantId) else current
         }
     }
 
@@ -532,7 +531,11 @@ class ChatVM(
         viewModelScope.launch {
             val lastTruncateIndex = conversation.value.messageNodes.lastIndex + 1
             // 如果截断在最后一个索引，则取消截断，否则更新 truncateIndex 到最后一个截断位置
+            chatService.cancelContextCompression(_conversationId)
             val newConversation = conversation.value.copy(
+                contextSummary = null,
+                contextSummaryUpToIndex = -1,
+                lastRefreshTime = maxOf(System.currentTimeMillis(), conversation.value.lastRefreshTime + 1),
                 truncateIndex = if (conversation.value.truncateIndex == lastTruncateIndex) -1 else lastTruncateIndex,
                 title = "",
                 chatSuggestions = emptyList(), // 清空建议
@@ -621,6 +624,12 @@ class ChatVM(
         }
     }
 
+    fun restoreConversationHistory(snapshot: Conversation) {
+        viewModelScope.launch {
+            chatService.replaceConversationHistory(_conversationId, snapshot)
+        }
+    }
+
     fun updateConversation(newConversation: Conversation) {
         viewModelScope.launch {
             chatService.saveConversation(_conversationId, newConversation)
@@ -631,11 +640,6 @@ class ChatVM(
         appScope.launch(Dispatchers.IO) {
             chatAttachmentRepository.discardImportedUri(uri)
         }
-    }
-
-    // Context Refresh - summarize conversation and update context
-    suspend fun refreshContext(): ChatService.ContextRefreshResult {
-        return chatService.summarizeAndRefresh(_conversationId)
     }
 
     private fun getDateLabel(date: LocalDate): String {

@@ -138,10 +138,7 @@ fun AssistantProfileSubPage(
             // Tags - vertical layout to prevent height growth
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
             ) {
                 Column(

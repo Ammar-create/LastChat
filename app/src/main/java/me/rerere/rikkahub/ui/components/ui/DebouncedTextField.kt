@@ -102,6 +102,25 @@ fun DebouncedTextField(
         }
     }
 
+    // Leaving the screen inside the debounce window cancels both effects above, which used to
+    // drop the last keystrokes (an API key or prompt that "didn't apply"). Commit them here.
+    // Also commit on ON_PAUSE so backgrounding or killing the app right after typing keeps it.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(stateKey, lifecycleOwner) {
+        fun commitPending() {
+            val currentText = textFieldState.text.toString()
+            if (currentText != latestValue) latestOnValueChange(currentText)
+        }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) commitPending()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            commitPending()
+        }
+    }
+
     val hasPendingChanges = textFieldState.text.toString() != value
     LaunchedEffect(hasPendingChanges) {
         latestOnPendingChange(hasPendingChanges)

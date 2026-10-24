@@ -6,9 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.ai.models.ModelCatalogSnapshot
@@ -26,6 +24,7 @@ import me.rerere.common.platform.PlatformHttpClient
 
 class SettingVM(
     private val settingsStore: SettingsStore,
+    private val appScope: me.rerere.rikkahub.AppScope,
     private val mcpManager: McpManager,
     private val context: Context,
     private val platformHttpClient: PlatformHttpClient,
@@ -43,7 +42,6 @@ class SettingVM(
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
     val modelCatalogStatus: StateFlow<ModelCatalogStatus> = modelCatalogService.status
     val modelCatalogSnapshot: StateFlow<ModelCatalogSnapshot?> = modelCatalogService.snapshotFlow
 
@@ -65,34 +63,101 @@ class SettingVM(
                 }
             }
             val current = settings.value
-            updateSettings(
-                current.copy(providers = current.providers.filter { it.id != provider.id })
-            )
+            updateSettings { current -> current.copy(providers = current.providers.filter { it.id != provider.id }) }
         }
     }
 
+    private val _pendingProviderEdit = kotlinx.coroutines.flow.MutableStateFlow<me.rerere.ai.provider.ProviderSetting?>(null)
+
+    /** The provider being edited on the detail page, ahead of its debounced save. */
+    val pendingProviderEdit: StateFlow<me.rerere.ai.provider.ProviderSetting?> = _pendingProviderEdit
+    private var providerSaveJob: Job? = null
+    private var pendingProviderBase: me.rerere.ai.provider.ProviderSetting? = null
+
+    /**
+     * Typing in provider fields (API key, base URL, headers…) updates local state at once and is
+     * saved after a short pause, applied to the latest settings so other changes aren't lost.
+     */
+    fun editProvider(provider: me.rerere.ai.provider.ProviderSetting) {
+        if (_pendingProviderEdit.value?.id != provider.id) {
+            flushProviderEditNow()
+            pendingProviderBase = settingsStore.settingsFlow.value.providers.firstOrNull { it.id == provider.id }
+        }
+        _pendingProviderEdit.value = provider
+        providerSaveJob?.cancel()
+        // Draft changes and the debounce handoff stay on Main. A background timer could
+        // cancel a newer edit's save job while trying to flush the preceding snapshot.
+        providerSaveJob = viewModelScope.launch {
+            delay(PROVIDER_SAVE_DEBOUNCE_MS)
+            enqueueProviderFlush()
+        }
+    }
+
+    suspend fun flushProviderEdit() {
+        enqueueProviderFlush()?.await()
+    }
+
+    private fun enqueueProviderFlush(): kotlinx.coroutines.Deferred<Pair<Settings, Settings>>? {
+        val pending = _pendingProviderEdit.value ?: return null
+        providerSaveJob?.cancel()
+        val base = pendingProviderBase ?: pending
+        val result = settingsStore.enqueueUpdate { latest ->
+            latest.copy(providers = latest.providers.map {
+                if (it.id == pending.id) me.rerere.rikkahub.data.datastore.mergeProviderEdit(base, pending, it) else it
+            })
+        }
+        _pendingProviderEdit.compareAndSet(pending, null)
+        return result
+    }
+
+    /** Saves a pending provider edit now (leaving the screen, app backgrounded). Survives the ViewModel. */
+    fun flushProviderEditNow() {
+        enqueueProviderFlush()
+    }
+
+    /** Drops the pending edit because the caller is saving a newer copy of the same provider. */
+    fun supersedeProviderEdit() {
+        providerSaveJob?.cancel()
+        _pendingProviderEdit.value = null
+    }
+
+    override fun onCleared() {
+        flushProviderEditNow()
+        super.onCleared()
+    }
+
+    /**
+     * Whole-snapshot save. Only the fields that differ from the snapshot the screen is showing
+     * are applied to the latest settings (see [mergeSettingsEdit]), so nothing saved meanwhile
+     * is overwritten. Prefer the transform overload.
+     */
     fun updateSettings(
         newSettings: Settings,
         afterPersist: (() -> Unit)? = null,
+        base: Settings = settings.value,
+    ) = updateSettings(afterPersist) { latest -> me.rerere.rikkahub.data.datastore.mergeSettingsEdit(base, newSettings, latest) }
+
+    /**
+     * Applies [transform] to the latest stored settings through the store's ordered queue, so
+     * quick successive changes from any screen all land and a change made while leaving the
+     * screen still persists.
+     */
+    fun updateSettings(
+        afterPersist: (() -> Unit)? = null,
+        transform: (Settings) -> Settings,
     ) {
-        viewModelScope.launch {
-            val oldSettings = settings.value
-            settingsStore.update(newSettings)
+        val result = settingsStore.enqueueUpdate(transform)
+        appScope.launch(Dispatchers.Main.immediate) {
+            val (oldSettings, newSettings) = runCatching { result.await() }.getOrNull() ?: return@launch
             afterPersist?.invoke()
-            
-            // Check if providers were removed and trigger icon cleanup
             val oldProviderIds = oldSettings.providers.map { it.id }.toSet()
             val newProviderIds = newSettings.providers.map { it.id }.toSet()
-            
             if (oldProviderIds != newProviderIds) {
-                // Providers changed, schedule cleanup in background
-                launch(Dispatchers.IO) {
-                    cleanupUnusedIcons(newSettings)
-                }
+                launch(Dispatchers.IO) { cleanupUnusedIcons(newSettings) }
             }
         }
     }
-    
+
     /**
      * Clean up icons that are no longer used by any model/provider.
      */
@@ -167,13 +232,13 @@ class SettingVM(
             runCatching {
                 val status = modelCatalogService.refreshCatalog()
                 modelCatalogService.snapshotOrNull()?.let { snapshot ->
-                    settingsStore.update(
+                    settingsStore.update { latest ->
                         mergeCatalogIntoSettings(
-                            settings = settings.value,
+                            settings = latest,
                             snapshot = snapshot,
                             resolver = modelMetadataResolver,
                         )
-                    )
+                    }
                 }
                 status
             }.onSuccess {
@@ -213,3 +278,5 @@ class SettingVM(
         }
     }
 }
+
+private const val PROVIDER_SAVE_DEBOUNCE_MS = 400L

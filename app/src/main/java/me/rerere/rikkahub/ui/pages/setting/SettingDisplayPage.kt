@@ -81,19 +81,18 @@ import org.koin.androidx.compose.koinViewModel
 fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val modelCatalogStatus by vm.modelCatalogStatus.collectAsStateWithLifecycle()
-    var displaySetting by remember(settings) { mutableStateOf(settings.displaySetting) }
+    var displaySetting by remember(settings.displaySetting) { mutableStateOf(settings.displaySetting) }
     var amoledDarkMode by rememberAmoledDarkMode()
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
     fun updateDisplaySetting(setting: DisplaySetting) {
+        val before = displaySetting
         displaySetting = setting
-        vm.updateSettings(
-            settings.copy(
-                displaySetting = setting
-            )
-        )
+        vm.updateSettings { current -> current.copy(
+            displaySetting = me.rerere.rikkahub.data.datastore.mergeSettingsValue(before, setting, current.displaySetting),
+        ) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -160,7 +159,7 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                             HapticSwitch(
                                 checked = settings.dynamicColor,
                                 onCheckedChange = {
-                                    vm.updateSettings(settings.copy(dynamicColor = it))
+                                    vm.updateSettings { settings -> settings.copy(dynamicColor = it) }
                                 },
                             )
                         }
@@ -172,7 +171,7 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                             themeId = settings.themeId,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp, vertical = 8.dp),
                             onChangeTheme = {
-                                vm.updateSettings(settings.copy(themeId = it))
+                                vm.updateSettings { settings -> settings.copy(themeId = it) }
                             }
                         )
                     }
@@ -304,7 +303,7 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
 //                        HapticSwitch(
 //                            checked = settings.developerMode,
 //                            onCheckedChange = {
-//                                vm.updateSettings(settings.copy(developerMode = it))
+//                                vm.updateSettings { settings -> settings.copy(developerMode = it) }
 //                            }
 //                        )
 //                    },
@@ -324,15 +323,13 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                             HapticSwitch(
                                 checked = settings.ttsAutoplayMode != TtsAutoplayMode.OFF,
                                 onCheckedChange = { enabled ->
-                                    vm.updateSettings(
-                                        settings.copy(
+                                    vm.updateSettings { settings -> settings.copy(
                                             ttsAutoplayMode = if (enabled) {
                                                 TtsAutoplayMode.WHILE_GENERATING
                                             } else {
                                                 TtsAutoplayMode.OFF
                                             }
-                                        )
-                                    )
+                                        ) }
                                 }
                             )
                         }

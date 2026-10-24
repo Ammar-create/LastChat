@@ -665,7 +665,7 @@ object WhMesh {
 
     /** Desktop `ox` — front face plane. */
     fun ox(faceZ: Float, eyes: EyeLoops, ctx: ProjectCtx): List<List<V2>> {
-        if (ctx.rotate(V3(0f, 0f, 1f)).z <= 0.03f) return emptyList()
+        if (ctx.rotate(V3(0f, 0f, 1f)).z <= 0f) return emptyList()
         val o = sin(eyes.shiftY)
         return eyes.loops.filter { it.size >= 3 }.map { loop ->
             loop.map { a -> ctx.project(V3(a.x, a.y - o, faceZ)) }
@@ -674,7 +674,7 @@ object WhMesh {
 
     /** Desktop `ix` — loft surface with tangent plane. */
     fun ix(surfaceZ: (Float, Float) -> Float, eyes: EyeLoops, ctx: ProjectCtx): List<List<V2>> {
-        if (ctx.rotate(V3(0f, 0f, 1f)).z < 0.05f) return emptyList()
+        if (ctx.rotate(V3(0f, 0f, 1f)).z <= 0f) return emptyList()
         val i = sin(eyes.shiftY)
         val a = ArrayList<List<V2>>()
         for (c in eyes.loops) {
@@ -687,7 +687,7 @@ object WhMesh {
             val f = (surfaceZ(l + h, d) - surfaceZ(l - h, d)) / (2f * h)
             val p = (surfaceZ(l, d + h) - surfaceZ(l, d - h)) / (2f * h)
             val m = hypot(hypot(f, p), 1f)
-            if (ctx.rotate(V3(-f / m, -p / m, 1f / m)).z < 0.12f) continue
+            if (ctx.rotate(V3(-f / m, -p / m, 1f / m)).z <= 0f) continue // hidden exactly when its surface turns past the limb
             val g = surfaceZ(l, d)
             a += u.map { y -> ctx.project(V3(y.x, y.y, g + (y.x - l) * f + (y.y - d) * p)) }
         }
@@ -714,7 +714,7 @@ object WhMesh {
                 if (c != null) {
                     O = -(c(min(a, A + 0.012f)) - c(max(i, A - 0.012f))) / (2f * 0.012f)
                 }
-                if (ctx.rotate(V3(sin(F), O, cos(F))).z >= 0.05f) {
+                if (ctx.rotate(V3(sin(F), O, cos(F))).z >= 0f) {
                     x += ctx.project(V3(j * sin(F), A, j * cos(F)))
                 }
             }
@@ -790,7 +790,7 @@ object WhMesh {
                 val S = u + max(-2.6f, min(2.6f, g.y / max(0.12f, o)))
                 val v = 0.012f
                 val x = -(c(min(a, y + v)) - c(max(i, y - v))) / (2f * v)
-                if (ctx.rotate(V3(x, sin(S), cos(S))).z >= 0.05f) {
+                if (ctx.rotate(V3(x, sin(S), cos(S))).z >= 0f) {
                     m += ctx.project(V3(y, w * sin(S), w * cos(S)))
                 }
             }
@@ -928,11 +928,7 @@ object WhMesh {
         val seated = sx(seat, EyeLoops(loopsNorm, shiftY), ctx)
         return seated.mapNotNull { loop ->
             val flat = vh(loop).firstOrNull() ?: return@mapNotNull null
-            Path().apply {
-                moveTo(flat[0], flat[1])
-                for (i in 1 until flat.size / 2) lineTo(flat[i * 2], flat[i * 2 + 1])
-                close()
-            }
+            SmoothPath.closed(flat.size / 2, x = { flat[it * 2] }, y = { flat[it * 2 + 1] })
         }
     }
 }

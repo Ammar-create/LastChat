@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.nav
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.material3.Icon
@@ -16,6 +14,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.ui.motion.rememberControlPressValue
 
 /** The production LastChat top-app-bar back control shared by Android and iOS. */
 @Composable
@@ -27,11 +26,7 @@ fun LastChatBackButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.85f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "back_button_scale",
-    )
+    val scale by rememberControlPressValue(isPressed, 0.92f, "back_button_scale")
 
     IconButton(
         onClick = {

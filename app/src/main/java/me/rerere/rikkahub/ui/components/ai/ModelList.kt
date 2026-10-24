@@ -1,6 +1,10 @@
 package me.rerere.rikkahub.ui.components.ai
 
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
@@ -9,7 +13,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -31,7 +34,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -40,11 +42,8 @@ import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lightbulb
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -55,22 +54,18 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import androidx.compose.ui.res.stringResource
@@ -85,7 +80,6 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Title
@@ -104,8 +98,6 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.EmptyStateCard
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
@@ -113,15 +105,12 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.ui.components.settings.LastChatGroupedModelRow
 import me.rerere.rikkahub.ui.components.settings.LastChatModelGroupPosition
 import me.rerere.rikkahub.utils.toDp
 import org.koin.compose.koinInject
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
-import kotlin.math.roundToInt
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlin.uuid.Uuid
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -300,18 +289,27 @@ internal fun ColumnScope.ModelList(
     
     // activeProviderId is null initially and is set upon explicit user click
 
-    val favoriteModels = settings.value.favoriteModels.mapNotNull { modelId ->
-        val model = providers.findModelById(modelId) ?: return@mapNotNull null
-        val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
-        val isTypeMatch = if (modelType == ModelType.STT) {
-            val resolvedModel = modelMetadataResolver.applyToModel(model, provider)
-            resolvedModel.type == ModelType.STT
-        } else {
-            model.type == modelType
+    // Resolve/filter once, then reorder the visible rows. Hidden model types retain their
+    // positions in the stored favorites and catalog lookups stay out of the drag loop.
+    val availableFavorites = remember(settings.value.favoriteModels, providers, modelType, modelFilter) {
+        settings.value.favoriteModels.mapNotNull { modelId ->
+            val model = providers.findModelById(modelId) ?: return@mapNotNull null
+            val provider = model.findProvider(providers = providers, checkOverwrite = false) ?: return@mapNotNull null
+            val isTypeMatch = if (modelType == ModelType.STT) {
+                val resolvedModel = modelMetadataResolver.applyToModel(model, provider)
+                resolvedModel.type == ModelType.STT
+            } else {
+                model.type == modelType
+            }
+            if (!isTypeMatch || !modelFilter(model)) return@mapNotNull null
+            model to provider
         }
-        if (!isTypeMatch || !modelFilter(model)) return@mapNotNull null
-        model to provider
     }
+    val favoriteOrder = rememberReorderableItems(availableFavorites, key = { "favorite:${it.first.id}" }) { order ->
+        val ids = order.mapNotNull { runCatching { Uuid.parse(it.toString().removePrefix("favorite:")) }.getOrNull() }
+        settingsStore.enqueueUpdate { latest -> latest.copy(favoriteModels = latest.favoriteModels.reorderedByKeys(ids) { it }) }
+    }
+    val favoriteModels = favoriteOrder.items
     val favoriteListItems = remember(favoriteModels) {
         favoriteModels.mapIndexed { index, (model, provider) ->
             FavoriteListItem(
@@ -414,33 +412,7 @@ internal fun ColumnScope.ModelList(
             lazyListState.animateScrollToItem(selectedModelPosition, centerOffset)
         }
     }
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // 计算favorite models在列表中的位置偏移
-        var favoriteStartIndex = 0
-        if (providers.isEmpty()) {
-            favoriteStartIndex = 1 // no providers item
-        }
-        if (favoriteModels.isNotEmpty()) {
-            favoriteStartIndex += 1 // favorite header
-        }
-
-        val fromIndex = from.index - favoriteStartIndex
-        val toIndex = to.index - favoriteStartIndex
-
-        // 只处理favorite models范围内的拖拽
-        if (fromIndex >= 0 && toIndex >= 0 &&
-            fromIndex < favoriteModels.size && toIndex < favoriteModels.size
-        ) {
-            val newFavoriteModels = settings.value.favoriteModels.toMutableList().apply {
-                add(toIndex, removeAt(fromIndex))
-            }
-            coroutineScope.launch {
-                settingsStore.update { oldSettings ->
-                    oldSettings.copy(favoriteModels = newFavoriteModels)
-                }
-            }
-        }
-    }
+    val reorderableState = rememberAppReorderableLazyListState(lazyListState, favoriteOrder)
     val haptics = rememberPremiumHaptics(enabled = settings.value.displaySetting.enableUIHaptics)
 
     // Calculate the LazyColumn item index for each provider header
@@ -535,21 +507,14 @@ internal fun ColumnScope.ModelList(
                         items = favoriteListItems,
                         key = { "favorite:" + it.model.id.toString() }
                     ) { favoriteItem ->
-                        ReorderableItem(
+                        AppReorderableItem(
                             state = reorderableState,
                             key = "favorite:" + favoriteItem.model.id.toString()
                         ) { isDragging ->
-                            val dragScale by animateFloatAsState(
-                                targetValue = if (isDragging) 0.95f else 1f,
-                                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                                label = "favorite_drag_scale"
-                            )
                             ModelItem(
                                 model = favoriteItem.model,
                                 onSelect = onSelect,
-                                modifier = Modifier
-                                    .scale(dragScale)
-                                    .animateItem(),
+                                modifier = Modifier,
                                 providerSetting = favoriteItem.provider,
                                 select = favoriteItem.model.id == currentModel,
                                 inGroup = true,
@@ -608,14 +573,24 @@ internal fun ColumnScope.ModelList(
                 ) { item ->
                     when (item) {
                         is ProviderListItem.Header -> {
-                            ModelSectionHeader(
-                                title = item.provider.name
-                            ) {
-                                ProviderBalanceText(
-                                    providerSetting = item.provider,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                            val accountProvider = item.provider as? ProviderSetting.OpenAI
+                            val showUsage = accountProvider != null && (accountProvider.subscriptionAccount != null ||
+                                me.rerere.ai.provider.providers.opencode.OpenCodeEndpoint.from(accountProvider.baseUrl)?.go == true)
+                            Column {
+                                ModelSectionHeader(title = item.provider.name) {
+                                    if (!showUsage) ProviderBalanceText(
+                                        providerSetting = item.provider,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                if (showUsage && accountProvider != null) {
+                                    val navController = LocalNavController.current
+                                    ProviderUsageSummary(accountProvider, onManage = {
+                                        onDismiss()
+                                        navController.navigate(Screen.SettingProviderDetail(accountProvider.id.toString()))
+                                    })
+                                }
                             }
                         }
                         is ProviderListItem.ModelEntry -> {
@@ -932,9 +907,9 @@ private fun ModelSectionHeader(
             text = title,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
-
-        Spacer(modifier = Modifier.weight(1f))
 
         trailingContent()
     }

@@ -248,10 +248,7 @@ fun AssistantPromptSubPage(
             } else {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    else
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
                 ) {
                     CollapseSpacingColumn(
@@ -410,10 +407,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Column(

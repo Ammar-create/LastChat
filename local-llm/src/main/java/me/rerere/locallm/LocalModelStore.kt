@@ -69,6 +69,11 @@ class LocalModelStore(private val context: Context) {
     suspend fun setIcon(id: String, customIconUri: String?) =
         update(id) { it.copy(customIconUri = customIconUri) }
 
+    suspend fun reorder(ids: List<String>) = mutate { models ->
+        val rank = ids.withIndex().associate { it.value to it.index }
+        models.sortedBy { rank[it.id] ?: Int.MAX_VALUE }
+    }
+
     suspend fun move(from: Int, to: Int) = mutate { list ->
         if (from !in list.indices || to !in list.indices || from == to) {
             list

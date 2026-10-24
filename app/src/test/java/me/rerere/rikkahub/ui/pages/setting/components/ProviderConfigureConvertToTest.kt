@@ -131,15 +131,14 @@ class ProviderConfigureConvertToTest {
     }
 
     @Test
-    fun `comfyui preset should create image provider with local defaults`() {
+    fun `comfyui preset retains local defaults without selecting a model`() {
         val provider = SPECIAL_PROVIDER_PRESETS.single { it.name == "ComfyUI" }.toProviderSetting()
 
         assertTrue(provider is ProviderSetting.ComfyUI)
         val comfy = provider as ProviderSetting.ComfyUI
         assertEquals("http://127.0.0.1:8188", comfy.baseUrl)
         assertEquals("icons/comfyui.svg", comfy.customIconUri)
-        assertEquals(ModelType.IMAGE, comfy.models.single().type)
-        assertEquals("model.safetensors", comfy.models.single().modelId)
+        assertTrue(comfy.models.isEmpty())
     }
 
 }

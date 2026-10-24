@@ -1,5 +1,12 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.utils.plus
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
+import me.rerere.rikkahub.ui.hooks.rememberReorderableItems
+import me.rerere.rikkahub.ui.hooks.reorderedByKeys
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -12,7 +19,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,7 +36,6 @@ import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
-import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Close
@@ -45,8 +50,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -57,17 +60,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -109,12 +105,11 @@ import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.importOwnedFile
 import me.rerere.rikkahub.utils.importOwnedFiles
 import me.rerere.rikkahub.utils.LorebookExportImport
-import me.rerere.rikkahub.utils.plus
 import androidx.activity.result.contract.ActivityResultContracts
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import me.rerere.rikkahub.ui.hooks.AppReorderableItem
+import me.rerere.rikkahub.ui.hooks.rememberAppReorderableLazyListState
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.rag.EmbeddingService
 import androidx.compose.runtime.rememberCoroutineScope
@@ -151,8 +146,13 @@ fun SettingLorebookDetailPage(
     var searchQuery by remember { mutableStateOf("") }
     
     // Filter entries based on search query (name and keywords only)
-    val filteredEntries = remember(lorebook?.entries, searchQuery) {
-        val entries = lorebook?.entries ?: emptyList()
+    val entryOrder = rememberReorderableItems(lorebook?.entries.orEmpty(), key = { it.id }) { order ->
+        vm.updateSettings { latest -> latest.copy(lorebooks = latest.lorebooks.map { book ->
+            if (book.id == lorebook?.id) book.copy(entries = book.entries.reorderedByKeys(order) { it.id }) else book
+        }) }
+    }
+    val filteredEntries = remember(entryOrder.items, searchQuery) {
+        val entries = entryOrder.items
         if (searchQuery.isBlank()) {
             entries
         } else {
@@ -165,14 +165,8 @@ fun SettingLorebookDetailPage(
     val isFiltering = searchQuery.isNotBlank()
     
     // Track drag state for neighbor offset
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    var isUnlocked by remember { mutableStateOf(false) }
-    var neighborsUnlocked by remember { mutableStateOf(false) }
+    val swipeNeighbors = rememberSwipeNeighborState()
 
-    if (dragOffset == 0f && neighborsUnlocked) {
-        neighborsUnlocked = false
-    }
     
     // Scroll to specific entry if requested
     val configuration = LocalConfiguration.current
@@ -231,11 +225,11 @@ fun SettingLorebookDetailPage(
     val canDelete = true
     
     fun updateLorebook(updated: Lorebook) {
-        vm.updateSettings(settings.copy(
+        vm.updateSettings { settings -> settings.copy(
             lorebooks = settings.lorebooks.map {
                 if (it.id == lorebook.id) updated else it
             }
-        ))
+        ) }
     }
     
     fun exportLorebook(format: String) {
@@ -250,21 +244,7 @@ fun SettingLorebookDetailPage(
         exportLauncher.launch(LorebookExportImport.getSuggestedFileName(lorebook, format))
     }
     
-    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        if (isFiltering) {
-            return@rememberReorderableLazyListState
-        }
-        val fromIndex = from.index - 1
-        val toIndex = to.index - 1
-        if (fromIndex !in lorebook.entries.indices || toIndex !in 0..lorebook.entries.size) {
-            return@rememberReorderableLazyListState
-        }
-        val newEntries = lorebook.entries.toMutableList().apply {
-            add(toIndex, removeAt(fromIndex))
-        }
-        updateLorebook(lorebook.copy(entries = newEntries))
-        haptics.perform(HapticPattern.Pop)
-    }
+    val reorderableState = rememberAppReorderableLazyListState(lazyListState, entryOrder, enabled = !isFiltering)
     
     Scaffold(
         topBar = {
@@ -413,7 +393,7 @@ fun SettingLorebookDetailPage(
                 item(key = "empty") {
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                         ),
                         shape = AppShapes.CardLarge
                     ) {
@@ -448,100 +428,70 @@ fun SettingLorebookDetailPage(
                         else -> ItemPosition.MIDDLE
                     }
                     
-                    val thresholdPx = with(density) { 35.dp.toPx() }
-                    if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                        neighborsUnlocked = true
-                    }
+                    val neighborOffset = swipeNeighbors.offsetFor(index, filteredEntries) { it.id }
 
-                    val shouldNeighborFollow = draggingIndex >= 0 &&
-                        draggingIndex != index &&
-                        !isUnlocked &&
-                        !neighborsUnlocked
-
-                    val neighborOffset = if (shouldNeighborFollow) {
-                        when (kotlin.math.abs(index - draggingIndex)) {
-                            1 -> dragOffset * 0.35f
-                            2 -> dragOffset * 0.12f
-                            else -> 0f
-                        }
-                    } else {
-                        0f
-                    }
-
-                    ReorderableItem(
+                    AppReorderableItem(
                         state = reorderableState, 
                         key = entry.id
                     ) { isDragging ->
-                        androidx.compose.runtime.key(canDelete) {
-                            PhysicsSwipeToDelete(
-                                position = position,
-                                deleteEnabled = canDelete,
-                                neighborOffset = neighborOffset,
-                                onDragProgress = { offset, unlocked ->
-                                    draggingIndex = index
-                                    dragOffset = offset
-                                    isUnlocked = unlocked
-                                },
-                                onDragEnd = {
-                                    if (draggingIndex == index) {
-                                        draggingIndex = -1
-                                        dragOffset = 0f
-                                    }
-                                },
-                                onDelete = {
-                                    val deletedEntry = entry
-                                    val cleanupKey = "lorebook-entry:${deletedEntry.id}"
-                                    updateLorebook(lorebook.copy(
-                                        entries = lorebook.entries.filter { it.id != entry.id }
-                                    ))
-                                    vm.cleanupFilesIfUnreferenced(
-                                        fileRefs = deletedEntry.collectAttachmentFileRefs(),
-                                        delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
-                                        cleanupKey = cleanupKey,
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = canDelete,
+                            neighborOffset = neighborOffset,
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(entry.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(entry.id) },
+                            onDelete = {
+                                val deletedEntry = entry
+                                val cleanupKey = "lorebook-entry:${deletedEntry.id}"
+                                updateLorebook(lorebook.copy(
+                                    entries = lorebook.entries.filter { it.id != entry.id }
+                                ))
+                                vm.cleanupFilesIfUnreferenced(
+                                    fileRefs = deletedEntry.collectAttachmentFileRefs(),
+                                    delayMs = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+                                    cleanupKey = cleanupKey,
+                                )
+                                toaster.show(
+                                    message = context.getString(R.string.lorebook_entry_deleted, entry.name.ifEmpty { context.getString(R.string.lorebook_entry_unnamed) }),
+                                    duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
+                                    action = ToastAction(
+                                        label = context.getString(R.string.undo),
+                                        onClick = {
+                                            vm.cancelUnreferencedFileCleanup(cleanupKey)
+                                            updateLorebook(lorebook.copy(
+                                                entries = lorebook.entries.toMutableList().apply {
+                                                    add(index.coerceAtMost(size), deletedEntry)
+                                                }
+                                            ))
+                                        }
                                     )
-                                    toaster.show(
-                                        message = context.getString(R.string.lorebook_entry_deleted, entry.name.ifEmpty { context.getString(R.string.lorebook_entry_unnamed) }),
-                                        duration = me.rerere.rikkahub.data.deletion.DESTRUCTIVE_UNDO_WINDOW_MS,
-                                        action = ToastAction(
-                                            label = context.getString(R.string.undo),
-                                            onClick = {
-                                                vm.cancelUnreferencedFileCleanup(cleanupKey)
-                                                updateLorebook(lorebook.copy(
-                                                    entries = lorebook.entries.toMutableList().apply {
-                                                        add(index.coerceAtMost(size), deletedEntry)
-                                                    }
-                                                ))
-                                            }
-                                        )
-                                    )
-                                },
-                                modifier = Modifier
-                                    .scale(if (isDragging) 0.95f else 1f)
-                                    .fillMaxWidth()
-                            ) { _ ->
-                                EntryCard(
-                                    entry = entry,
-                                    priority = (lorebook.entries.indexOf(entry) + 1),
-                                    onEdit = { editingEntry = entry },
-                                    dragHandle = {
-                                        if (!isFiltering) {
-                                            IconButton(
-                                                onClick = {},
-                                                modifier = Modifier.longPressDraggableHandle(
-                                                    onDragStarted = {
-                                                        haptics.perform(HapticPattern.Pop)
-                                                    },
-                                                    onDragStopped = {
-                                                        haptics.perform(HapticPattern.Thud)
-                                                    }
-                                                )
-                                            ) {
-                                                Icon(Icons.Rounded.DragIndicator, contentDescription = null)
-                                            }
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                        ) { _ ->
+                            EntryCard(
+                                entry = entry,
+                                priority = (lorebook.entries.indexOf(entry) + 1),
+                                onEdit = { editingEntry = entry },
+                                dragHandle = {
+                                    if (!isFiltering) {
+                                        IconButton(
+                                            onClick = {},
+                                            modifier = Modifier.longPressDraggableHandle(
+                                                onDragStarted = {
+                                                    haptics.perform(HapticPattern.Pop)
+                                                },
+                                                onDragStopped = {
+                                                    haptics.perform(HapticPattern.Thud)
+                                                }
+                                            )
+                                        ) {
+                                            Icon(Icons.Rounded.DragIndicator, contentDescription = null)
                                         }
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }
@@ -662,11 +612,11 @@ fun SettingLorebookDetailPage(
             lorebook = lorebook,
             assistants = settings.assistants,
             onUpdateAssistant = { assistant ->
-                vm.updateSettings(settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                     assistants = settings.assistants.map { 
                         if (it.id == assistant.id) assistant else it 
                     }
-                ))
+                ) }
             },
             onDismiss = { showAssistantToggleSheet = false }
         )
@@ -683,7 +633,7 @@ private fun EntryCard(
     Card(
         onClick = onEdit,
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
         shape = AppShapes.CardLarge
     ) {

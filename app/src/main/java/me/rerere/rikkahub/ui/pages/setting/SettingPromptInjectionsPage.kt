@@ -87,7 +87,7 @@ fun SettingPromptInjectionsPage(
             is SkillExportImport.ImportResult.Success -> {
                 runCatching { SkillExportImport.installPackage(context, result) }
                     .onSuccess { installedSkill ->
-                        vm.updateSettings(settings.copy(skills = settings.skills + installedSkill))
+                        vm.updateSettings { settings -> settings.copy(skills = settings.skills + installedSkill) }
                         haptics.perform(HapticPattern.Success)
                         toaster.show(context.getString(R.string.skill_import_success, installedSkill.name))
                     }
@@ -110,7 +110,7 @@ fun SettingPromptInjectionsPage(
         if (uri == null) return@rememberLauncherForActivityResult
         when (val result = LorebookExportImport.importFromUri(context, uri)) {
             is LorebookExportImport.ImportResult.Success -> {
-                vm.updateSettings(settings.copy(lorebooks = settings.lorebooks + result.lorebook))
+                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks + result.lorebook) }
                 haptics.perform(HapticPattern.Success)
                 toaster.show(
                     message = context.getString(R.string.lorebook_import_success, result.lorebook.name),
@@ -299,48 +299,40 @@ fun SettingPromptInjectionsPage(
             onSave = { savedSkill ->
                 val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
                 if (editingSkill == null) {
-                    vm.updateSettings(settings.copy(skills = settings.skills + persistedSkill))
+                    vm.updateSettings { settings -> settings.copy(skills = settings.skills + persistedSkill) }
                 } else {
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             skills = settings.skills.map {
                                 if (it.id == persistedSkill.id) persistedSkill else it
                             }
-                        )
-                    )
+                        ) }
                 }
                 showAddSkillDialog = false
                 editingSkill = null
             },
             onSavePreservingPackage = { savedSkill ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         skills = settings.skills.map {
                             if (it.id == savedSkill.id) savedSkill else it
                         }
-                    )
-                )
+                    ) }
                 showAddSkillDialog = false
                 editingSkill = null
             },
             onPackageMetadataChanged = { savedSkill ->
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         skills = settings.skills.map {
                             if (it.id == savedSkill.id) savedSkill else it
                         }
-                    )
-                )
+                    ) }
             },
             onAutoSave = { savedSkill ->
                 val persistedSkill = SkillExportImport.syncManagedSkill(context, savedSkill)
-                vm.updateSettings(
-                    settings.copy(
+                vm.updateSettings { settings -> settings.copy(
                         skills = settings.skills.map {
                             if (it.id == persistedSkill.id) persistedSkill else it
                         }
-                    )
-                )
+                    ) }
             }
         )
     }
@@ -349,7 +341,7 @@ fun SettingPromptInjectionsPage(
         LorebookCreatorSheet(
             onDismiss = { showAddLorebookDialog = false },
             onSave = { lorebook ->
-                vm.updateSettings(settings.copy(lorebooks = settings.lorebooks + lorebook))
+                vm.updateSettings { settings -> settings.copy(lorebooks = settings.lorebooks + lorebook) }
                 showAddLorebookDialog = false
                 navController.navigate(Screen.SettingLorebookDetail(lorebook.id.toString()))
             }

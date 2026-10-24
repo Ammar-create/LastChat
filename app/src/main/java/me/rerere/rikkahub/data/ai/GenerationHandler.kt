@@ -2,6 +2,9 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -68,6 +71,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.data.model.contextCompressionPolicy
 import me.rerere.rikkahub.data.model.AssistantMemory
 import me.rerere.rikkahub.data.model.InjectionPosition
 import me.rerere.rikkahub.data.model.Lorebook
@@ -689,6 +693,7 @@ class GenerationHandler(
         var currentTurnScopedSkillIds = emptySet<Uuid>()
 
         for (stepIndex in 0 until maxSteps) {
+            currentCoroutineContext().ensureActive()
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
             val toolsInternal = buildList {
@@ -774,6 +779,7 @@ class GenerationHandler(
                 contextUsageSourceKey = contextUsageSourceKey,
                 contextBudgetScale = contextBudgetScale,
             )
+            currentCoroutineContext().ensureActive()
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
                 context = context,
@@ -803,6 +809,7 @@ class GenerationHandler(
             val results = arrayListOf<UIMessagePart.ToolResult>()
             val pendingToolCallIds = mutableSetOf<String>()
             toolCalls.forEach { toolCall ->
+                currentCoroutineContext().ensureActive()
                 runCatching {
                     val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
                         ?: error("Tool ${toolCall.toolName} not found")
@@ -813,6 +820,7 @@ class GenerationHandler(
                     }
                     Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
                     val result = tool.execute(args)
+                    currentCoroutineContext().ensureActive()
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
                         toolCallId = toolCall.toolCallId,
@@ -821,6 +829,7 @@ class GenerationHandler(
                         metadata = toolCall.metadata
                     )
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     Log.e(TAG, "Tool execution failed: ${toolCall.toolName}", it)
                     results += UIMessagePart.ToolResult(
                         toolName = toolCall.toolName,
@@ -908,8 +917,7 @@ class GenerationHandler(
         fun estimateTokens(text: String) = ContextTokenEstimator.textTokens(text, model)
         fun estimateTokens(message: UIMessage) = ContextTokenEstimator.messageTokens(message, model)
 
-        val smartEnabled = assistant.smartContextManagement &&
-            model.contextCapacityTokens?.let { it > 0 } == true
+        val smartEnabled = model.contextCapacityTokens?.let { it > 0 } == true
         val maxTokens = if (smartEnabled) {
             smartInputBudget(model, assistant.maxTokens) ?: assistant.maxTokenUsage
         } else {
@@ -1235,6 +1243,7 @@ class GenerationHandler(
                 messages = historyWithPreservedOcr,
                 model = model,
                 availableBudgetTokens = (maxTokens - currentTokens).coerceAtLeast(1),
+                policy = assistant.contextCompressionPolicy,
             )
         } else assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
@@ -1617,6 +1626,7 @@ class GenerationHandler(
                 messages = rawBuiltMessages,
                 model = model,
                 messageBudgetTokens = smartMessageBudget,
+                policy = assistant.contextCompressionPolicy,
             )
         } else {
             rawBuiltMessages

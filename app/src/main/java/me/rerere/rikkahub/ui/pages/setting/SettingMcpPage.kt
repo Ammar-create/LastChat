@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.background
@@ -34,7 +37,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -42,7 +44,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,8 +61,6 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.pullToRefresh
@@ -69,12 +68,9 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -92,7 +88,6 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Extension
-import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.automirrored.rounded.Input
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -128,7 +123,6 @@ import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
-import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -142,15 +136,12 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val mcpConfigs = settings.mcpServers
     val creationState = useEditState<McpServerConfig> {
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 mcpServers = mcpConfigs + it
-            )
-        )
+            ) }
     }
     val editState = useEditState<McpServerConfig> { newConfig ->
-        vm.updateSettings(
-            settings.copy(
+        vm.updateSettings { settings -> settings.copy(
                 mcpServers = mcpConfigs.map {
                     if (it.id == newConfig.id) {
                         newConfig
@@ -158,7 +149,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         it
                     }
                 }
-            ))
+            ) }
     }
     
     // Delete confirmation state - at function level so accessible by dialog
@@ -187,6 +178,7 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
         val config = preset.createConfig()
         vm.updateSettings(
             settings.copy(mcpServers = listOf(config) + mcpConfigs),
+            base = settings,
             afterPersist = if (preset.authMode == McpAuthMode.OAUTH) {
                 { oauthManager.startAuthorization(config) }
             } else {
@@ -266,22 +258,8 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                     }
                 )
         ) {
-            // Track which item is being dragged and its offset
-            var draggingIndex by remember { mutableStateOf(-1) }
-            var dragOffset by remember { mutableFloatStateOf(0f) }
-            var isUnlocked by remember { mutableStateOf(false) }
-            var neighborsUnlocked by remember { mutableStateOf(false) }
+            val swipeNeighbors = rememberSwipeNeighborState()
             
-            // Reset neighborsUnlocked when offset returns to 0 (entry back in place)
-            if (dragOffset == 0f && neighborsUnlocked) {
-                neighborsUnlocked = false
-            }
-            
-            // Screen-level fade on left edge
-            val density = androidx.compose.ui.platform.LocalDensity.current
-            val unlockThresholdPx = with(density) { 35.dp.toPx() }
-            val fadeProgress = (kotlin.math.abs(dragOffset) / unlockThresholdPx).coerceIn(0f, 1f)
-            val backgroundColor = MaterialTheme.colorScheme.surfaceContainerLowest
             
             Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
@@ -343,45 +321,14 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                         }
                         
                         // Calculate neighbor offset based on distance from dragging item
-                        val thresholdPx = with(density) { 35.dp.toPx() }
-                        
-                        // Check if we just crossed the threshold
-                        if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
-                            neighborsUnlocked = true
-                        }
-                        
-                        // Neighbors only follow if we haven't unlocked yet
-                        val shouldNeighborFollow = draggingIndex >= 0 && 
-                            draggingIndex != index && 
-                            !isUnlocked && 
-                            !neighborsUnlocked
-                        
-                        val neighborOffset = if (shouldNeighborFollow) {
-                            val distance = kotlin.math.abs(index - draggingIndex)
-                            when (distance) {
-                                1 -> dragOffset * 0.35f  // Direct neighbors get 35%
-                                2 -> dragOffset * 0.12f  // Neighbors of neighbors get 12%
-                                else -> 0f
-                            }
-                        } else {
-                            0f
-                        }
+                        val neighborOffset = swipeNeighbors.offsetFor(index, mcpConfigs) { it.id }
                         
                         McpServerItem(
                             item = mcpConfig,
                             position = position,
                             neighborOffset = neighborOffset,
-                            onDragProgress = { offset, unlocked ->
-                                draggingIndex = index
-                                dragOffset = offset
-                                isUnlocked = unlocked
-                            },
-                            onDragEnd = {
-                                if (draggingIndex == index) {
-                                    draggingIndex = -1
-                                    dragOffset = 0f
-                                }
-                            },
+                            onDragProgress = { offset, unlocked -> swipeNeighbors.update(mcpConfig.id, offset, unlocked) },
+                            onDragEnd = { swipeNeighbors.end(mcpConfig.id) },
                             onEdit = {
                                 editState.open(mcpConfig)
                             },
@@ -427,11 +374,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
             },
             onConfirm = {
                 mcpToDelete?.let { mcp ->
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             mcpServers = mcpConfigs.filter { it.id != mcp.id }
-                        )
-                    )
+                        ) }
                 }
                 showDeleteDialog = false
                 mcpToDelete = null
@@ -462,11 +407,9 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
                 val existingNames = mcpConfigs.map { it.commonOptions.name.trim().lowercase() }.toSet()
                 val newConfigs = importedConfigs.filter { it.commonOptions.name.trim().lowercase() !in existingNames }
                 if (newConfigs.isNotEmpty()) {
-                    vm.updateSettings(
-                        settings.copy(
+                    vm.updateSettings { settings -> settings.copy(
                             mcpServers = mcpConfigs + newConfigs
-                        )
-                    )
+                        ) }
                 }
                 showImportDialog = false
             }
@@ -712,10 +655,7 @@ private fun McpServerItem(
         modifier = modifier
     ) { animatedShape ->
         // Define the normal card color (used for both enabled background and disabled border)
-        val normalCardColor = if (LocalDarkMode.current) 
-            MaterialTheme.colorScheme.surfaceContainerLow 
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHigh
+        val normalCardColor = MaterialTheme.colorScheme.surfaceContainerLow
         
         val disabledBackground = MaterialTheme.colorScheme.surfaceContainerHighest
         
@@ -1300,7 +1240,7 @@ private fun McpToolsConfigure(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow
                 )
             ) {
                 Row(
