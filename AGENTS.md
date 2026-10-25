@@ -384,3 +384,31 @@ Enables the AI to emit self-contained HTML/CSS blocks mid-message that render as
   - UI hooks: `@hook.typing_animation`, `@hook.custom_emojis`, `@hook.slash_command`.
 - Built-in In-App Code Editor: Read and write `.py` scripts directly in a dialog with monospace styling without external editors.
 - Individual Enable/Disable toggle switches persisted across sessions.
+
+---
+
+## 14. Architecture: Persistent Python Server Foreground Service & Agent Python/MCP Control Tools
+
+### 1. Persistent Foreground Service Architecture (`PythonServerService.kt`)
+- **Android LMK Immunity**: When a background Python daemon or server (e.g., FastMCP, Flask, HTTP) is started, `PythonServerService` promotes LastChat to an active Android Foreground Service (`specialUse`).
+- **Persistent Notification (`PYTHON_SERVER_NOTIFICATION_CHANNEL_ID`)**:
+  - Displays ongoing notification: *"Python Server Running: <name> (port <port>) • PRoot Sandboxed"*.
+  - Features an inline action button `"Stop"` allowing direct termination from the notification shade.
+  - Automatically acquires `WifiManager.WifiLock` (`WIFI_MODE_FULL_HIGH_PERF`) to prevent Android OS from putting network sockets to sleep.
+  - Automatically tears down and removes the notification when all running servers terminate.
+
+### 2. Running Python Servers Dashboard (`SettingMcpPage.kt`)
+- Live reactive card in the **Python Extensions** tab:
+  - Displays each running server with a green status indicator, process name, and execution command.
+  - Port badge pill (`:8000`).
+  - Uptime counter in seconds.
+  - **"Add to MCP" Action**: Automatically adds the local loopback server (`http://127.0.0.1:<port>/sse`) directly into LastChat's `SettingsStore.mcpServers` with one tap.
+  - **"Stop" Action**: Stops the server and frees the port.
+
+### 3. Agent Tool Capabilities (`WorkspaceTools.kt`, `ChatService.kt`)
+The AI assistant in LastChat now has 5 specialized tools for complete autonomous control of the Python runtime:
+1. `python_server_start`: Starts a background Python server/daemon, attaches log output, and triggers `PythonServerService`.
+2. `python_server_stop`: Stops an active server by ID, port, or process name.
+3. `python_server_list`: Returns all active background servers, ports, uptimes, and log paths.
+4. `mcp_add_local_connection`: Registers a local MCP connection in app settings, immediately exposing its tools to the assistant.
+5. `python_extension_manage`: Lists, enables, disables, reads, or writes Python extensions directly in `/workspace/plugins/`.
