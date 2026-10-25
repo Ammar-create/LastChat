@@ -1188,6 +1188,24 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(toolSystemPromptText)
         }
 
+        if (settings.displaySetting.enableInWorldArtifacts) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                """
+                ### In-World Visuals
+                - When an in-world visual object appears on-page, render it as HTML: text messages, phone screens, letters, notes, signs, posters, menus, receipts, newspapers, item cards, game boards, etc.
+                - Wrap the visual object in ```visual ... ``` (or ```html ... ```).
+                - Narration and dialogue stay plain prose.
+                - One container div per visual, under ~1200 characters.
+                - Inline styles preferred. Animation allowed only via one short <style> block; prefix every class name uniquely (e.g. .v7-note), never style generic elements (div, p, span, body).
+                - No <script>, external images, links, or iframes.
+                - No blank lines and no indentation inside HTML.
+                - Always set both background and text color for readability.
+                - Match the object's real material (paper, screen, neon, chalk, ink) with CSS: color, border, font, gradient, shadow, rotation.
+                """.trimIndent()
+            )
+        }
+
         val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }

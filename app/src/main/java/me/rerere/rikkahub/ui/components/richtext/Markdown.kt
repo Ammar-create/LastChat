@@ -108,6 +108,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.data.datastore.RpStyleRule
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.table.DataTable
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.chat.chatImageOutline
@@ -1879,11 +1880,23 @@ private fun MarkdownNode(
             val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
+            val isArtifact = hasEnd && (
+                normalizedLanguage in listOf("visual", "artifact", "inworld") ||
+                (normalizedLanguage == "html" && ArtifactSanitizer.isArtifactCandidate(code))
+            )
+            val inWorldArtifactsEnabled = LocalSettings.current.getEffectiveDisplaySetting().enableInWorldArtifacts
 
-            // Mermaid diagrams: render directly without HighlightCodeBlock wrapper
+            // Mermaid diagrams and in-world artifacts: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 if (hasEnd && normalizedLanguage == "mermaid") {
                     Mermaid(
+                        code = code,
+                        modifier = modifier
+                            .mediaEdgePadding(node, paragraphSpacing)
+                            .fillMaxWidth(),
+                    )
+                } else if (isArtifact && inWorldArtifactsEnabled) {
+                    InWorldArtifact(
                         code = code,
                         modifier = modifier
                             .mediaEdgePadding(node, paragraphSpacing)

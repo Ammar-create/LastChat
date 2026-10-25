@@ -270,3 +270,28 @@ Synthesizes fragmented episodic and semantic user memories into an elegant, high
 | `40124377842` | APK bloat (~106 MB) and UI lag | Dev debug flavor lacked R8 minification and resource shrinking | Created `build-stable.yml` running `:app:assembleStableRelease` with `-Plastchat.release.minify=true` (reduced to ~66MB / 81MB) |
 | `40181722514` | Keystore exposed in public git & model search kicked out by keyboard | Insecure hardcoded keystore in workflow; `isImeVisible` auto-dismissing `showPicker` | Moved keystore to GitHub Secret `SIGNING_KEYSTORE_BASE64`; bound picker dismissal to composer `isFocused`; paginated memories 10/page |
 | `[PENDING]` | Provider model fetch UI hang | Under investigation (suspect network timeout in `listModels` or recomposition storm in provider settings) | Next session diagnostic checklist documented in Section 9 |
+
+---
+
+## 11. Architecture: In-World Visual Artifacts (HTML Render)
+
+### High-Level Design
+Enables the AI to emit self-contained HTML blocks mid-message that render as physical in-world objects (notes, letters, phone screens, receipts, item cards) directly within the chat stream without developer chrome.
+
+### Core Architectural Components
+1. **Sanitization Engine (`ArtifactSanitizer.kt`):**
+   - Tag allowlist: `div, span, p, b, i, u, s, em, strong, small, br, hr, ul, ol, li, table, thead, tbody, tr, td, th, h1-h6, style, img`.
+   - Strips all `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<input>`, `<button>`, etc.
+   - Strips all `on*` event handlers unconditionally.
+   - Strips external URLs (`http://`, `https://`, `url(http...)`, `@import`, `javascript:`, `file://`).
+   - Only allows safe `data:image/*;base64` URIs.
+   - Enforces hard character cap (1600 chars) and tag cap (120 tags).
+2. **Visual Composable (`InWorldArtifact.kt`):**
+   - Renders a transparent, frameless WebView inside `Markdown.kt`.
+   - Auto-measures layout height via safe `AndroidInterface.onHeightChanged`.
+   - Interactive bottom sheet on tap/long-press: Copy HTML, View Source toggle, Save as Image (`exportImage`).
+   - Safe fallback: cleanly renders `HighlightCodeBlock` if sanitization fails or size exceeds limit.
+3. **Settings & Prompt Injection:**
+   - User toggle in `SettingRpOptimizationsPage.kt` (`DisplaySetting.enableInWorldArtifacts`).
+   - Injected into system prompt via `GenerationHandler.kt` instructing the model on in-world visual formatting.
+

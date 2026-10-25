@@ -109,6 +109,45 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             contentPadding = contentPadding + PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // In-World Visual Artifacts Toggle
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                    shape = AppShapes.CardLarge
+                ) {
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_title),
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            HapticSwitch(
+                                checked = displaySetting.enableInWorldArtifacts,
+                                onCheckedChange = { enabled ->
+                                    val newSetting = displaySetting.copy(enableInWorldArtifacts = enabled)
+                                    displaySetting = newSetting
+                                    vm.updateSettings { settings ->
+                                        settings.copy(displaySetting = settings.displaySetting.copy(enableInWorldArtifacts = enabled))
+                                    }
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+
             // Description
             item {
                 Card(
