@@ -356,3 +356,31 @@ Enables the AI to emit self-contained HTML/CSS blocks mid-message that render as
 - Interactive fullscreen inspection dialog with `detectTransformGestures` (scale 0.75x–6.0x and pan translation).
 - Floating control pill with Zoom Out, zoom percentage, Zoom In, and reset.
 - Native pinch-to-zoom enabled directly on WebView (`setSupportZoom(true)`, `builtInZoomControls = true`, `displayZoomControls = false`).
+
+---
+
+## 13. Architecture: Python Extensions System in Plugins Page (`SettingMcpPage.kt`)
+
+### 1. Dual-Tab Architecture on Plugins Page (`SettingMcpPage.kt`)
+- Added `SecondaryTabRow` splitting **Plugins** (`Screen.SettingMcp`) into:
+  1. **MCP Tools**: Original remote/local Model Context Protocol connections.
+  2. **Python Extensions**: ExteraGram-style native Python client extensions executed via PRoot Linux.
+
+### 2. PRoot Environment Lifecycle & Python Bootstrap (`PythonPluginManager.kt`)
+- **Environment Status Detection**:
+  - Validates active workspace existence via `WorkspaceDAO`.
+  - Audits PRoot rootfs state (`WorkspaceShellStatus.READY`).
+  - Verifies Python 3 runtime via `WorkspaceRepository.isPythonInstalled()`.
+- **One-Tap Automated Installation**:
+  - If Rootfs or Python is missing, displays an inline setup card.
+  - Tapping *"Install Environment & Python"* triggers `WorkspaceEnvironmentManager.installRootfs(..., installPythonAfter = true)` using the verified Ubuntu 24.04 arm64 rootfs and `PYTHON_BOOTSTRAP_COMMAND` (`apt-get install -y python3 python3-pip`).
+  - Tracks live progress with `LinearProgressIndicator` bound to `WorkspaceEnvironmentTask`.
+
+### 3. Plugin Management & Storage (`/workspace/plugins/`)
+- Plugins reside in `/workspace/plugins/` (`filesDir/workspaces/<workspace.root>/files/plugins/`).
+- Auto-generates `starter_extension.py` with templates for:
+  - Header metadata parsing (`# Name:`, `# Description:`, `# Version:`, `# Hooks:`).
+  - Data hooks: `@hook.before_prompt`, `@hook.after_reply`.
+  - UI hooks: `@hook.typing_animation`, `@hook.custom_emojis`, `@hook.slash_command`.
+- Built-in In-App Code Editor: Read and write `.py` scripts directly in a dialog with monospace styling without external editors.
+- Individual Enable/Disable toggle switches persisted across sessions.
