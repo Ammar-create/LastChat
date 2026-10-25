@@ -254,10 +254,12 @@ fun InWorldArtifact(
                                 factory = { ctx ->
                                     WebView(ctx).apply {
                                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = false
-                                        settings.allowFileAccess = false
-                                        settings.allowContentAccess = false
+                                        with(this.settings) {
+                                            javaScriptEnabled = true
+                                            domStorageEnabled = false
+                                            allowFileAccess = false
+                                            allowContentAccess = false
+                                        }
                                         isVerticalScrollBarEnabled = false
                                         isHorizontalScrollBarEnabled = false
                                         tag = code
