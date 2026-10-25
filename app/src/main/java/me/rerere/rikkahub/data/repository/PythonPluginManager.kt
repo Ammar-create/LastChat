@@ -2,16 +2,25 @@ package me.rerere.rikkahub.data.repository
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.model.McpCommonOptions
+import me.rerere.rikkahub.data.model.McpServerConfig
+import me.rerere.rikkahub.service.PythonServerService
 import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentManager
 import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentTask
 import me.rerere.rikkahub.service.workspace.defaultRootfsUrl
@@ -28,6 +37,16 @@ data class PythonPlugin(
     val enabled: Boolean = true,
     val hooks: List<String> = emptyList(),
     val filePath: String = "",
+)
+
+data class PythonServerProcess(
+    val id: String,
+    val name: String,
+    val command: String,
+    val port: Int?,
+    val startedAt: Long = System.currentTimeMillis(),
+    val isRunning: Boolean = true,
+    val logFilePath: String = "",
 )
 
 data class PythonEnvStatus(
@@ -50,12 +69,98 @@ class PythonPluginManager(
     private val workspaceRepository: WorkspaceRepository,
     private val workspaceDao: WorkspaceDAO,
     private val environmentManager: WorkspaceEnvironmentManager,
+    private val settingsStore: SettingsStore,
 ) {
     private val _uiState = MutableStateFlow(PythonPluginUiState())
     val uiState: StateFlow<PythonPluginUiState> = _uiState.asStateFlow()
 
+    private val _runningServers = MutableStateFlow<Map<String, PythonServerProcess>>(emptyMap())
+    val runningServers: StateFlow<Map<String, PythonServerProcess>> = _runningServers.asStateFlow()
+
+    private val activeJobs = mutableMapOf<String, Job>()
+    private val serverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val disabledPluginsFile by lazy {
         File(context.filesDir, "disabled_python_plugins.txt")
+    }
+
+    fun isAnyServerRunning(): Boolean = _runningServers.value.isNotEmpty()
+
+    suspend fun startServer(
+        workspace: WorkspaceEntity,
+        name: String,
+        command: String,
+        port: Int? = null,
+    ): PythonServerProcess = withContext(Dispatchers.IO) {
+        val id = "server_" + System.currentTimeMillis().toString().takeLast(6)
+        val logFile = File(context.filesDir, "workspaces/${workspace.root}/files/server_${id}.log")
+        val proc = PythonServerProcess(
+            id = id,
+            name = name,
+            command = command,
+            port = port,
+            startedAt = System.currentTimeMillis(),
+            isRunning = true,
+            logFilePath = logFile.absolutePath,
+        )
+
+        _runningServers.update { it + (id to proc) }
+        PythonServerService.start(context, name, port)
+
+        val job = serverScope.launch {
+            try {
+                workspaceRepository.executeCommand(
+                    id = workspace.id,
+                    command = "$command > \"/workspace/server_${id}.log\" 2>&1",
+                    timeoutMillis = Long.MAX_VALUE,
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Server $id terminated with error", e)
+            } finally {
+                _runningServers.update { it - id }
+                if (_runningServers.value.isEmpty()) {
+                    PythonServerService.stop(context)
+                }
+            }
+        }
+        activeJobs[id] = job
+        proc
+    }
+
+    fun stopServer(id: String): Boolean {
+        val job = activeJobs.remove(id)
+        job?.cancel()
+        _runningServers.update { it - id }
+        if (_runningServers.value.isEmpty()) {
+            PythonServerService.stop(context)
+        }
+        return true
+    }
+
+    fun stopAllServers() {
+        activeJobs.values.forEach { it.cancel() }
+        activeJobs.clear()
+        _runningServers.value = emptyMap()
+        PythonServerService.stop(context)
+    }
+
+    suspend fun addLocalMcpServer(name: String, url: String, transport: String = "sse") = withContext(Dispatchers.IO) {
+        val config = if (transport.lowercase() == "streamable_http") {
+            McpServerConfig.StreamableHTTPServer(
+                commonOptions = McpCommonOptions(name = name),
+                url = url
+            )
+        } else {
+            McpServerConfig.SseTransportServer(
+                commonOptions = McpCommonOptions(name = name),
+                url = url
+            )
+        }
+        val currentSettings = settingsStore.settingsFlowRaw.first()
+        val exists = currentSettings.mcpServers.any { it.commonOptions.name.equals(name, ignoreCase = true) }
+        if (!exists) {
+            settingsStore.update { it.copy(mcpServers = it.mcpServers + config) }
+        }
     }
 
     private fun getDisabledPluginIds(): Set<String> {

@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.CircleShape
 import me.rerere.rikkahub.ui.hooks.rememberSwipeNeighborState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -1501,6 +1502,7 @@ private fun PythonExtensionsContent(
 
     var envStatus by remember { mutableStateOf<PythonEnvStatus?>(null) }
     var plugins by remember { mutableStateOf<List<PythonPlugin>>(emptyList()) }
+    val runningServers by pluginManager.runningServers.collectAsStateWithLifecycle()
     var isRefreshing by remember { mutableStateOf(false) }
     var newPluginName by remember { mutableStateOf("") }
     var editingPlugin by remember { mutableStateOf<PythonPlugin?>(null) }
@@ -1732,6 +1734,145 @@ private fun PythonExtensionsContent(
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                             )
                         )
+                    }
+                }
+            }
+        }
+
+        // Running Python Servers Section
+        if (runningServers.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                        Text(
+                            text = "Running Python Servers",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "${runningServers.size} active (Foreground Service)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            items(runningServers.values.toList(), key = { it.id }) { server ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ),
+                    shape = AppShapes.CardMedium
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Terminal,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Column {
+                                    Text(
+                                        text = server.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = server.command,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (server.port != null) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text(":${server.port}") },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val uptimeSec = (System.currentTimeMillis() - server.startedAt) / 1000
+                            Text(
+                                text = "Running for ${uptimeSec}s • Foreground Notification Active",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (server.port != null) {
+                                    TextButton(
+                                        onClick = {
+                                            scope.launch {
+                                                pluginManager.addLocalMcpServer(
+                                                    name = server.name,
+                                                    url = "http://127.0.0.1:${server.port}/sse"
+                                                )
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Added ${server.name} to MCP servers",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    ) {
+                                        Text("Add to MCP")
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Thud)
+                                        pluginManager.stopServer(server.id)
+                                    },
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                ) {
+                                    Text("Stop")
+                                }
+                            }
+                        }
                     }
                 }
             }

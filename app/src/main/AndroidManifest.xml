@@ -162,6 +162,14 @@
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
           android:value="Persistent local HTTP server that serves the LastChat web UI on the LAN" />
     </service>
+    <service
+        android:name=".service.PythonServerService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+      <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Persistent local Python runtime and MCP server running in sandboxed PRoot Linux." />
+    </service>
 
     <service
         android:name="androidx.work.impl.foreground.SystemForegroundService"
