@@ -78,7 +78,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.data.memory.MemorySummaryCadence
 import me.rerere.rikkahub.data.memory.parseMemorySummaryJson
@@ -983,6 +986,14 @@ private fun ManageMemoriesSection(
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
+    val pageSize = 10
+    var currentPage by remember { mutableIntStateOf(0) }
+    var showJumpDialog by remember { mutableStateOf(false) }
+
+    // Reset to first page when filtering or sorting changes
+    LaunchedEffect(selectedTab, memorySearchQuery, sortOrder) {
+        currentPage = 0
+    }
     
     // Auto-select tab when navigating from context sources
     LaunchedEffect(initialMemoryTab) {
@@ -991,16 +1002,6 @@ private fun ManageMemoriesSection(
         }
     }
     
-    // Auto-open memory editor when navigating from context sources
-    LaunchedEffect(scrollToMemoryId, memories) {
-        if (scrollToMemoryId != null && memories.isNotEmpty()) {
-            val targetMemory = memories.find { it.id == scrollToMemoryId }
-            if (targetMemory != null) {
-                onEditMemory(targetMemory)
-            }
-        }
-    }
-
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
     
@@ -1020,6 +1021,29 @@ private fun ManageMemoriesSection(
             MemorySortOrder.OLDEST_FIRST -> list.sortedBy { it.timestamp }
             MemorySortOrder.ALPHABETICAL -> list.sortedBy { it.content.lowercase() }
         }
+    }
+
+    // Auto-open memory editor and jump to page when navigating from context sources
+    LaunchedEffect(scrollToMemoryId, displayMemories) {
+        if (scrollToMemoryId != null && displayMemories.isNotEmpty()) {
+            val targetIndex = displayMemories.indexOfFirst { it.id == scrollToMemoryId }
+            if (targetIndex >= 0) {
+                currentPage = targetIndex / pageSize
+                val targetMemory = displayMemories[targetIndex]
+                onEditMemory(targetMemory)
+            }
+        }
+    }
+
+    val totalItems = displayMemories.size
+    val totalPages = (totalItems + pageSize - 1) / pageSize.coerceAtLeast(1)
+    val validPage = if (totalPages > 0) currentPage.coerceIn(0, totalPages - 1) else 0
+    val pageStart = validPage * pageSize
+    val pageEnd = (pageStart + pageSize).coerceAtMost(totalItems)
+    val pagedMemories = if (totalItems > 0 && pageStart < totalItems) {
+        displayMemories.subList(pageStart, pageEnd)
+    } else {
+        emptyList()
     }
 
     CollapseSpacingColumn(spacing = 12.dp) {
@@ -1143,12 +1167,12 @@ private fun ManageMemoriesSection(
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            displayMemories.forEachIndexed { index, memory ->
+            pagedMemories.forEachIndexed { index, memory ->
                 key(memory.id) {
                     val position = when {
-                        displayMemories.size == 1 -> "ONLY"
+                        pagedMemories.size == 1 -> "ONLY"
                         index == 0 -> "FIRST"
-                        index == displayMemories.size - 1 -> "LAST"
+                        index == pagedMemories.size - 1 -> "LAST"
                         else -> "MIDDLE"
                     }
                     MemoryItem(
@@ -1182,6 +1206,117 @@ private fun ManageMemoriesSection(
                 }
             }
         }
+
+        // Pagination controls
+        if (totalPages > 1) {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (validPage > 0) currentPage = validPage - 1
+                        },
+                        enabled = validPage > 0
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Previous Page"
+                        )
+                    }
+
+                    Surface(
+                        onClick = { showJumpDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Page ${validPage + 1} of $totalPages",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "(${pageStart + 1}–$pageEnd of $totalItems)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (validPage < totalPages - 1) currentPage = validPage + 1
+                        },
+                        enabled = validPage < totalPages - 1
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowForward,
+                            contentDescription = "Next Page"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showJumpDialog && totalPages > 1) {
+        var targetPageText by remember { mutableStateOf((validPage + 1).toString()) }
+        AlertDialog(
+            onDismissRequest = { showJumpDialog = false },
+            title = { Text("Jump to Page") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter page (1–$totalPages):",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextField(
+                        value = targetPageText,
+                        onValueChange = { input ->
+                            targetPageText = input.filter { it.isDigit() }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val target = targetPageText.toIntOrNull()
+                        if (target != null && target in 1..totalPages) {
+                            currentPage = target - 1
+                        }
+                        showJumpDialog = false
+                    }
+                ) {
+                    Text("Go")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJumpDialog = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        )
     }
 }
 

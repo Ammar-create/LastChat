@@ -60,7 +60,6 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -451,14 +450,15 @@ fun MinimalChatInput(
         toolApprovalTextState.setTextAndPlaceCursorAtEnd("")
     }
 
-    // Collapse picker when keyboard opens
-    val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(imeVisible) {
-        if (imeVisible) {
-            showPicker = false
-        } else {
+    LaunchedEffect(showPicker) {
+        if (showPicker) {
             focusManager.clearFocus()
+        }
+    }
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            showPicker = false
         }
     }
     LaunchedEffect(isQuestionnaireActive, isToolApprovalActive) {
