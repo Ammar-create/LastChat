@@ -65,10 +65,12 @@ When building or modifying CI/CD workflows for LastChat:
 2. **Bun is MANDATORY:** The Gradle task `:web:installWebUiDeps` directly executes `bun` in `web-ui`. If missing, build fails immediately. Include `oven-sh/setup-bun@v2`.
 3. **Node & PNPM:** PNPM v11 (`pnpm/action-setup@v4`) and Node 22 (`actions/setup-node@v4`).
 4. **Mock `google-services.json`:** Must include client objects for BOTH application IDs (`lastchat.rikkafork.velvet` and `lastchat.rikkafork.velvet.dev`).
-5. **Static Deterministic `debug.keystore`:**
-   - Decoded into `app/debug.keystore` before Gradle executes.
-   - In `app/build.gradle.kts`, `signingConfigs.getByName("debug")` targets `file("debug.keystore")`.
-   - `buildTypes.getByName("release")` falls back to `signingConfigs.debug` if no `local.properties` release keystore exists.
+5. **Secure Deterministic Keystore via GitHub Secrets:**
+   - Instead of committing keystores to git, the permanent release keystore is stored as repository secret `SIGNING_KEYSTORE_BASE64` in `Ammar-create/LastChat`.
+   - Workflows decode it: `echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > app/debug.keystore`.
+   - Fallback for PRs: ephemeral `keytool -genkey` fallback so builds outside the main repo don't break.
+   - Local backup stored on device: `/workspace/.secrets/lastchat-release.keystore` and `.b64`.
+   - Certificate SHA256: `AA:DD:E5:26:3E:A7:3C:61:20:6D:33:AF:40:47:AA:BA:86:DE:E3:D5:0B:F8:4F:96:86:0A:03:9D:FA:C2:96:8A`.
 
 ### Runner Memory Configuration (`gradle.properties`)
 - `kotlin.daemon.jvmargs=-Xmx4096m -XX:+UseParallelGC -Dfile.encoding=UTF-8` (never cap at 2048m — KSP and Compose IR will OOM).
@@ -178,7 +180,77 @@ Synthesizes fragmented episodic and semantic user memories into an elegant, high
 
 ---
 
-## 8. Incident Post-Mortem Log
+## 7. Known Upstream & Provider Quirks
+
+### Aqua / DeepSeek Cloudflare 502 Bad Gateway on Full Regeneration
+- **Symptom:** In "Memory Summary", clicking "Regenerate" yields a `502 Bad Gateway` (HTML Cloudflare page from `api.aquadevs.com`), while "Ask or update" edits work perfectly.
+- **Root Cause:**
+  - `askOrUpdate` sends only the current summary + **top 6 keyword-matched memories** (small payload, short completion).
+  - `fullRegenerate` dumps **every memory in SQLite verbatim** plus the schema into one giant prompt.
+  - On cheaper flash backends (`deepseek-v4.1-flash`), the massive input + extended JSON generation exceeds the upstream origin timeout, causing Cloudflare to emit a 502 Bad Gateway error.
+- **Remedy / Future Hardening:**
+  - Map-reduce chunked summarization for memory pools > 50 entries.
+  - Retry-on-5xx logic with automatic fallback to secondary models (`gemini-3.8-flash` or `gpt-oss`).
+  - Truncate HTML error bodies in `MemorySummaryPage.kt` so raw Cloudflare error pages are never dumped into the UI banner.
+
+---
+
+## 8. UI Performance & Mobile Navigation Architecture
+
+### Chat Model Search Keyboard Dismissal Fix (`MinimalChatInput.kt`)
+- **Symptom:** In the chat screen composer, opening the `+` menu $\rightarrow$ Model Picker and typing a single letter in the search field kicked the user out of the sheet directly back to the chat screen.
+- **Root Cause:**
+  - `MinimalChatInput.kt` had a global listener:
+    ```kotlin
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(imeVisible) {
+        if (imeVisible) showPicker = false
+    }
+    ```
+  - `WindowInsets.isImeVisible` tracks keyboard visibility globally for the window. When the user focused the search field inside the nested model picker sheet, IME opened, immediately triggering `showPicker = false` and dismissing the bottom sheet.
+- **Resolution:**
+  - Removed the `LaunchedEffect(imeVisible)` auto-dismissal.
+  - Replaced it with explicit focus tracking on the composer's text input (`isFocused`). The picker now only dismisses when the primary chat message input field itself gains focus, leaving nested search fields inside sheets unaffected.
+
+### Assistant Settings Memory Pagination (10 Per Page) (`AssistantMemorySubPage.kt`)
+- **Symptom:** Opening the Assistant Memory settings on devices with large memory counts (e.g. 300+ memories) froze the UI for several seconds or caused severe jank.
+- **Root Cause:**
+  - The page used a vertical scrollable `Column` containing an unvirtualized `displayMemories.forEachIndexed { ... MemoryItem(...) }`.
+  - For 300 memories, Compose instantiated and measured >5,000 animated nodes (`animateFloatAsState`, `animateDpAsState`, springs, haptics) on the main thread simultaneously.
+- **Resolution:**
+  - Implemented 10-per-page slicing (`pagedMemories`) directly in `ManageMemoriesSection`.
+  - Added a clean Material 3 navigation toolbar at the bottom: `< Prev`, `Page X of Y (Start–End of Total)`, and `Next >`.
+  - Tapping the page counter pill opens a "Jump to Page" numerical dialog for direct navigation without multi-tapping.
+  - Search, sort, and tab switching automatically reset to page 1 (`currentPage = 0`).
+  - Deep-linking from context sources (`scrollToMemoryId`) calculates target page `targetIndex / 10`, navigates to that page, and opens the editor dialog.
+
+---
+
+## 9. Open Ticket / Handoff: Provider Model Fetching Hang
+
+### Observed Symptom
+- In `SettingProviderDetailPage.kt` (Provider Settings), fetching/reloading models from a remote provider causes the UI to hang.
+
+### Progress & What Was Changed (`commit ad10b453`)
+- `resolveProviderModels` and `syncFreshModelMetadata` were previously invoked on `Dispatchers.Main` inside `reloadApiModels()`.
+- Pushed model resolution and metadata sync to `Dispatchers.IO` / `Dispatchers.Default`.
+- Added an $O(1)$ lowercase `modelId` dictionary lookup before falling back to fuzzy matching in `syncFreshModelMetadata`.
+- Wrapped `filteredModels` and selection checks in `remember` inside `SettingProviderDetailPage.kt`.
+
+### Outstanding Diagnosis for Next Session
+1. **Network Layer (`OpenAIProvider.kt` / `PlatformHttpClient`):**
+   - Check `listModels(providerSetting: ProviderSetting.OpenAI)`.
+   - Notice that if `providerSetting.isLikelyOllama()` is true, it calls `/api/ps`. If Ollama is unreachable or firewalled, does this request hang indefinitely due to missing socket read/connect timeouts?
+   - OpenRouter calls `/models?output_modalities=embeddings`. Verify if the second call is blocking or slow.
+2. **Recomposition / State Loop:**
+   - Does `onUpdateProvider(updatedProvider)` mutate the provider in `SettingsStore`, causing `SettingProviderDetailPage` to re-compose its entire tab pager and trigger recursive `LaunchedEffect(apiModelCacheKey)`?
+   - Check if `apiModelCacheKey` changes during `syncFreshModelMetadata` (e.g., if model IDs or hashes fluctuate).
+3. **LazyColumn Item Keys:**
+   - Verify keys in `LazyColumn` for API model selection dialog (`showPicker` in `SettingProviderDetailPage.kt`). If items lack stable keys or if item composables are heavy, scrolling or rendering large model sets (e.g., OpenRouter's 400+ models) stalls the main thread.
+
+---
+
+## 10. Incident Post-Mortem Log
 
 | Run ID / Date | Failure Point | Root Cause | Permanent Resolution |
 |---|---|---|---|
@@ -196,3 +268,5 @@ Synthesizes fragmented episodic and semantic user memories into an elegant, high
 | `38136735025` | UI Format Disruption | LLM output string array for `dive_deeper` & raw JSON fell through to content | Built 6-stage parser with string array support, unescaped newline escaping, and auto-healing |
 | `40122405532` | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Attempted to upgrade official v1.4.8 release signed with developer's key | Assigned unique `applicationId: "lastchat.rikkafork.velvet"` so fork coexists safely |
 | `40124377842` | APK bloat (~106 MB) and UI lag | Dev debug flavor lacked R8 minification and resource shrinking | Created `build-stable.yml` running `:app:assembleStableRelease` with `-Plastchat.release.minify=true` (reduced to ~66MB / 81MB) |
+| `40181722514` | Keystore exposed in public git & model search kicked out by keyboard | Insecure hardcoded keystore in workflow; `isImeVisible` auto-dismissing `showPicker` | Moved keystore to GitHub Secret `SIGNING_KEYSTORE_BASE64`; bound picker dismissal to composer `isFocused`; paginated memories 10/page |
+| `[PENDING]` | Provider model fetch UI hang | Under investigation (suspect network timeout in `listModels` or recomposition storm in provider settings) | Next session diagnostic checklist documented in Section 9 |
