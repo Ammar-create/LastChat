@@ -42,16 +42,30 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.ZoomIn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,15 +75,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.data.repository.ArtifactStorageManager
 import me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
@@ -179,6 +200,7 @@ fun InWorldArtifact(
 
     var showSource by remember { mutableStateOf(false) }
     var showActionSheet by remember { mutableStateOf(false) }
+    var showZoomDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val sanitizeResult: ArtifactSanitizeResult = remember(code, darkMode) {
@@ -288,6 +310,9 @@ fun InWorldArtifact(
                                                 domStorageEnabled = false
                                                 allowFileAccess = false
                                                 allowContentAccess = false
+                                                setSupportZoom(true)
+                                                builtInZoomControls = true
+                                                displayZoomControls = false
                                             }
                                             isVerticalScrollBarEnabled = false
                                             isHorizontalScrollBarEnabled = false
@@ -318,6 +343,11 @@ fun InWorldArtifact(
                                                                 val imgBmp = b.asImageBitmap()
                                                                 artifactBitmapCache.put(code, imgBmp)
                                                                 cachedBitmap = imgBmp
+                                                                if (settings.displaySetting.autoSaveArtifactsToStorage) {
+                                                                    scope.launch(Dispatchers.IO) {
+                                                                        ArtifactStorageManager.saveArtifact(context, code, b)
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }, 300)
@@ -362,112 +392,378 @@ fun InWorldArtifact(
             // Bottom action sheet on click/long-press
             if (showActionSheet) {
                 ModalBottomSheet(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     onDismissRequest = { showActionSheet = false },
                     sheetState = sheetState,
                     shape = AppShapes.BottomSheet
                 ) {
+                    val groupContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 24.dp)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = stringResource(R.string.artifact_in_world_visual),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                        )
-
-                        // Copy HTML action
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.artifact_copy_html)) },
-                            leadingContent = {
-                                Icon(Icons.Rounded.ContentCopy, contentDescription = null)
-                            },
-                            modifier = Modifier.combinedClickable {
-                                haptics.perform(HapticPattern.Pop)
-                                context.writeClipboardText(code)
-                                toaster.show(
-                                    context.getString(R.string.artifact_copy_success),
-                                    type = ToastType.Success
-                                )
-                                scope.launch {
-                                    sheetState.hide()
-                                    showActionSheet = false
-                                }
-                            }
-                        )
-
-                        // View Source / Visual toggle
-                        ListItem(
-                            headlineContent = {
-                                Text(
-                                    stringResource(
-                                        if (showSource) R.string.artifact_view_rendered
-                                        else R.string.artifact_view_source
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            ArtifactActionGroupItem(
+                                label = stringResource(R.string.artifact_zoom_inspect),
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ZoomIn,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(4.dp)
                                     )
-                                )
-                            },
-                            leadingContent = {
-                                Icon(
-                                    if (showSource) Icons.Rounded.Visibility else Icons.Rounded.Code,
-                                    contentDescription = null
-                                )
-                            },
-                            modifier = Modifier.combinedClickable {
-                                haptics.perform(HapticPattern.Pop)
-                                showSource = !showSource
-                                scope.launch {
-                                    sheetState.hide()
-                                    showActionSheet = false
-                                }
-                            }
-                        )
-
-                        // Save as Image action
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.artifact_save_image)) },
-                            leadingContent = {
-                                Icon(Icons.Rounded.Download, contentDescription = null)
-                            },
-                            modifier = Modifier.combinedClickable {
-                                haptics.perform(HapticPattern.Pop)
-                                val currentActivity = activity
-                                if (currentActivity != null) {
-                                    runCatching {
-                                        val exportBmp: Bitmap? = if (cachedBitmap != null) {
-                                            cachedBitmap!!.asAndroidBitmap()
-                                        } else if (webViewInstance != null && webViewInstance!!.width > 0 && webViewInstance!!.height > 0) {
-                                            val b = Bitmap.createBitmap(webViewInstance!!.width, webViewInstance!!.height, Bitmap.Config.ARGB_8888)
-                                            val c = Canvas(b)
-                                            webViewInstance!!.draw(c)
-                                            b
-                                        } else null
-
-                                        checkNotNull(exportBmp) { "Could not capture full artifact bitmap" }
-                                        context.exportImage(
-                                            currentActivity,
-                                            exportBmp,
-                                            "artifact_${System.currentTimeMillis()}.png"
-                                        )
-                                        toaster.show(
-                                            context.getString(R.string.artifact_save_success),
-                                            type = ToastType.Success
-                                        )
-                                    }.onFailure {
-                                        toaster.show(
-                                            context.getString(R.string.artifact_save_failed),
-                                            type = ToastType.Error
-                                        )
+                                },
+                                position = ArtifactActionItemPosition.FIRST,
+                                containerColor = groupContainerColor,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    scope.launch {
+                                        sheetState.hide()
+                                        showActionSheet = false
+                                        showZoomDialog = true
                                     }
                                 }
-                                scope.launch {
-                                    sheetState.hide()
-                                    showActionSheet = false
+                            )
+
+                            ArtifactActionGroupItem(
+                                label = stringResource(R.string.artifact_copy_html),
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(4.dp)
+                                    )
+                                },
+                                position = ArtifactActionItemPosition.MIDDLE,
+                                containerColor = groupContainerColor,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    context.writeClipboardText(code)
+                                    toaster.show(
+                                        context.getString(R.string.artifact_copy_success),
+                                        type = ToastType.Success
+                                    )
+                                    scope.launch {
+                                        sheetState.hide()
+                                        showActionSheet = false
+                                    }
                                 }
-                            }
-                        )
+                            )
+
+                            ArtifactActionGroupItem(
+                                label = stringResource(
+                                    if (showSource) R.string.artifact_view_rendered
+                                    else R.string.artifact_view_source
+                                ),
+                                icon = {
+                                    Icon(
+                                        imageVector = if (showSource) Icons.Rounded.Visibility else Icons.Rounded.Code,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(4.dp)
+                                    )
+                                },
+                                position = ArtifactActionItemPosition.MIDDLE,
+                                containerColor = groupContainerColor,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    showSource = !showSource
+                                    scope.launch {
+                                        sheetState.hide()
+                                        showActionSheet = false
+                                    }
+                                }
+                            )
+
+                            ArtifactActionGroupItem(
+                                label = stringResource(R.string.artifact_save_image),
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(4.dp)
+                                    )
+                                },
+                                position = ArtifactActionItemPosition.LAST,
+                                containerColor = groupContainerColor,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    val currentActivity = activity
+                                    if (currentActivity != null) {
+                                        runCatching {
+                                            val exportBmp: Bitmap? = if (cachedBitmap != null) {
+                                                cachedBitmap!!.asAndroidBitmap()
+                                            } else if (webViewInstance != null && webViewInstance!!.width > 0 && webViewInstance!!.height > 0) {
+                                                val b = Bitmap.createBitmap(webViewInstance!!.width, webViewInstance!!.height, Bitmap.Config.ARGB_8888)
+                                                val c = Canvas(b)
+                                                webViewInstance!!.draw(c)
+                                                b
+                                            } else null
+
+                                            checkNotNull(exportBmp) { "Could not capture full artifact bitmap" }
+                                            context.exportImage(
+                                                currentActivity,
+                                                exportBmp,
+                                                "artifact_${System.currentTimeMillis()}.png"
+                                            )
+                                            toaster.show(
+                                                context.getString(R.string.artifact_save_success),
+                                                type = ToastType.Success
+                                            )
+                                        }.onFailure {
+                                            toaster.show(
+                                                context.getString(R.string.artifact_save_failed),
+                                                type = ToastType.Error
+                                            )
+                                        }
+                                    }
+                                    scope.launch {
+                                        sheetState.hide()
+                                        showActionSheet = false
+                                    }
+                                }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.size(4.dp))
+
+                        ProvideTextStyle(MaterialTheme.typography.labelSmall) {
+                            Text(stringResource(R.string.artifact_in_world_visual))
+                        }
                     }
+                }
+            }
+
+            if (showZoomDialog) {
+                ArtifactZoomDialog(
+                    code = sanitizeResult.documentHtml,
+                    cachedBitmap = cachedBitmap,
+                    onDismissRequest = { showZoomDialog = false }
+                )
+            }
+        }
+    }
+}
+
+private enum class ArtifactActionItemPosition {
+    FIRST,
+    MIDDLE,
+    LAST,
+    SINGLE
+}
+
+private fun groupedArtifactActionShape(position: ArtifactActionItemPosition): RoundedCornerShape {
+    return when (position) {
+        ArtifactActionItemPosition.FIRST -> RoundedCornerShape(
+            topStart = 24.dp,
+            topEnd = 24.dp,
+            bottomStart = 10.dp,
+            bottomEnd = 10.dp
+        )
+        ArtifactActionItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+        ArtifactActionItemPosition.LAST -> RoundedCornerShape(
+            topStart = 10.dp,
+            topEnd = 10.dp,
+            bottomStart = 24.dp,
+            bottomEnd = 24.dp
+        )
+        ArtifactActionItemPosition.SINGLE -> RoundedCornerShape(24.dp)
+    }
+}
+
+@Composable
+private fun ArtifactActionGroupItem(
+    label: String,
+    icon: @Composable () -> Unit,
+    position: ArtifactActionItemPosition,
+    containerColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(groupedArtifactActionShape(position))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+            .padding(16.dp)
+    ) {
+        icon()
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}
+
+@Composable
+fun ArtifactZoomDialog(
+    code: String,
+    cachedBitmap: ImageBitmap?,
+    onDismissRequest: () -> Unit
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.94f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(0.75f, 6.0f)
+                            offset = Offset(offset.x + pan.x, offset.y + pan.y)
+                        }
+                    }
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (cachedBitmap != null) {
+                    Image(
+                        bitmap = cachedBitmap,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth(0.92f)
+                            .wrapContentSize()
+                    )
+                } else {
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                with(this.settings) {
+                                    javaScriptEnabled = true
+                                    domStorageEnabled = false
+                                    setSupportZoom(true)
+                                    builtInZoomControls = true
+                                    displayZoomControls = false
+                                }
+                                isVerticalScrollBarEnabled = false
+                                isHorizontalScrollBarEnabled = false
+                                loadDataWithBaseURL("http://localhost/", code, "text/html", "utf-8", null)
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth(0.92f)
+                            .height(500.dp)
+                    )
+                }
+            }
+
+            // Top Toolbar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 20.dp, vertical = 28.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onDismissRequest,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Close",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.artifact_zoom_inspect),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+
+                IconButton(
+                    onClick = {
+                        scale = 1f
+                        offset = Offset.Zero
+                    },
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.RestartAlt,
+                        contentDescription = "Reset Zoom",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            // Bottom Floating Zoom Controls Pill
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 36.dp)
+                    .clip(RoundedCornerShape(32.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.92f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                IconButton(
+                    onClick = { scale = (scale - 0.25f).coerceAtLeast(0.75f) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Remove,
+                        contentDescription = "Zoom Out",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Text(
+                    text = "${(scale * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            scale = 1f
+                            offset = Offset.Zero
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+
+                IconButton(
+                    onClick = { scale = (scale + 0.25f).coerceAtMost(6.0f) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Add,
+                        contentDescription = "Zoom In",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }

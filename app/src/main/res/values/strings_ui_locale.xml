@@ -329,6 +329,13 @@
     <string name="setting_in_world_artifacts_title">In-World Visual Artifacts</string>
     <string name="setting_in_world_artifacts_desc">Render self-contained HTML blocks as in-world objects (notes, letters, phone screens, receipts).</string>
     <string name="artifact_in_world_visual">In-World Visual</string>
+    <string name="artifact_zoom_inspect">Inspect &amp; Zoom</string>
+    <string name="artifact_browse_title">Browse Artifacts</string>
+    <string name="artifact_browse_desc">View and manage saved in-world visuals and rendered images</string>
+    <string name="artifact_auto_save_title">Auto-Save to Chat Storage</string>
+    <string name="artifact_auto_save_desc">Automatically cache rendered artifacts and bitmaps in local app storage.</string>
+    <string name="artifact_clear_all">Clear all artifacts</string>
+    <string name="artifact_empty_gallery">No saved artifacts found</string>
     <string name="artifact_copy_html">Copy HTML</string>
     <string name="artifact_view_source">View Source</string>
     <string name="artifact_view_rendered">View Visual</string>

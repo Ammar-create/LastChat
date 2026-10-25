@@ -254,6 +254,8 @@ data class DisplaySetting(
     val showArtifactBubble: Boolean = false,
     val showArtifactOrb: Boolean = true,
     val inWorldArtifactsPrompt: String = "",
+    val autoSaveArtifactsToStorage: Boolean = true,
+    val enableSmoothStreamingAnimation: Boolean = true,
     val rpStyleRules: List<RpStyleRule> = emptyList(),
         val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,

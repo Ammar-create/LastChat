@@ -962,9 +962,15 @@ fun MarkdownBlock(
     val (preprocessed, astTree) = data
     val blockDirection = rememberContentDirection(preprocessed)
     val streamingContent by rememberUpdatedState(content)
-    val streamingActive by rememberUpdatedState(streamingTextReveal)
+    val smoothStreamingEnabled = settings.displaySetting.enableSmoothStreamingAnimation
+    val streamingActive by rememberUpdatedState(streamingTextReveal && smoothStreamingEnabled)
     val onStreamingLayoutChanged by rememberUpdatedState(onExpandedStreamingCodeBlockChanged)
-    LaunchedEffect(Unit) {
+    LaunchedEffect(smoothStreamingEnabled) {
+        if (!smoothStreamingEnabled) {
+            displayContent = streamingContent
+            settleRanges = emptyList()
+            streamingPresentation.snapTo(streamingContent)
+        }
         var previousFrameMillis = withFrameMillis { it }
         while (isActive) {
             val now = withFrameMillis { it }
@@ -972,6 +978,17 @@ fun MarkdownBlock(
             previousFrameMillis = now
             val raw = streamingContent
             val streaming = streamingActive
+            if (!smoothStreamingEnabled) {
+                if (displayContent != raw) {
+                    displayContent = raw
+                    streamingPresentation.snapTo(raw)
+                    if (streamingTextReveal) onStreamingLayoutChanged?.invoke()
+                }
+                settleRanges = emptyList()
+                snapshotFlow { streamingContent != displayContent }.first { it }
+                previousFrameMillis = withFrameMillis { it }
+                continue
+            }
             val edited = streamingPresentation.updateContent(raw, now, streaming)
             val advanced = streamingPresentation.step(nowMillis = now, elapsedMillis = elapsed)
             if (edited || advanced) {
