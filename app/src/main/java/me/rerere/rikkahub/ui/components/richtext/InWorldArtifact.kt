@@ -51,11 +51,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import androidx.activity.compose.LocalActivity
 import me.rerere.rikkahub.ui.components.chat.LocalMessageBubbleShape
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
-import me.rerere.rikkahub.ui.context.LocalActivity
 import me.rerere.rikkahub.ui.context.LocalChatAnimationsEnabled
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -64,8 +64,8 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.LocalOpticalFrame
-import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.exportImage
+import me.rerere.rikkahub.utils.writeClipboardText
 
 private val artifactHeightCache = LruCache<String, Int>(100)
 
@@ -102,7 +102,7 @@ fun InWorldArtifact(
     var showActionSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val sanitizeResult = remember(code, darkMode) {
+    val sanitizeResult: ArtifactSanitizeResult = remember(code, darkMode) {
         ArtifactSanitizer.sanitize(code, darkMode)
     }
 
@@ -167,7 +167,7 @@ fun InWorldArtifact(
                                 showActionSheet = true
                             },
                             onLongClick = {
-                                haptics.perform(HapticPattern.Heavy)
+                                haptics.perform(HapticPattern.Thud)
                                 showActionSheet = true
                             }
                         ),
@@ -238,7 +238,7 @@ fun InWorldArtifact(
                             },
                             modifier = Modifier.combinedClickable {
                                 haptics.perform(HapticPattern.Pop)
-                                context.copyMessageToClipboard(code)
+                                context.writeClipboardText(code)
                                 toaster.show(
                                     context.getString(R.string.artifact_copy_success),
                                     type = ToastType.Success
@@ -285,7 +285,8 @@ fun InWorldArtifact(
                             modifier = Modifier.combinedClickable {
                                 haptics.perform(HapticPattern.Pop)
                                 val webView = webViewState.webView
-                                if (webView != null && activity != null) {
+                                val currentActivity = activity
+                                if (webView != null && currentActivity != null) {
                                     runCatching {
                                         val width = webView.width
                                         val height = webView.height
@@ -294,7 +295,7 @@ fun InWorldArtifact(
                                         val canvas = Canvas(bitmap)
                                         webView.draw(canvas)
                                         context.exportImage(
-                                            activity,
+                                            currentActivity,
                                             bitmap,
                                             "artifact_${System.currentTimeMillis()}.png"
                                         )

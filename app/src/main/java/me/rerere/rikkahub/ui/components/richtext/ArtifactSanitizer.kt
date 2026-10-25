@@ -25,7 +25,7 @@ sealed interface ArtifactSanitizeResult {
  * - Strict tag allowlist (no scripts, iframes, objects, forms, or embeds)
  * - Strict attribute allowlist (no on* event handlers)
  * - Absolute denial of external URLs, @import, and external image requests
- * - Safe data:image/* URLs only
+ * - Safe data:image URIs only
  */
 object ArtifactSanitizer {
     const val MAX_ARTIFACT_CHARS = 1600
