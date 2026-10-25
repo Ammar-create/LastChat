@@ -329,3 +329,30 @@ Enables the AI to emit self-contained HTML/CSS blocks mid-message that render as
    - Dynamic subtitle shows active tools: *"Web Search & Visual Artifacts active"*, *"Visual Artifacts active"*, etc.
    - Tools bottom sheet features a direct quick toggle for In-World Visual Artifacts right above the Search Provider configuration.
 
+
+---
+
+## 12. Architecture: Artifacts Action Redesign, Zoom Inspector, Storage Auto-Save & Smooth Streaming Toggle
+
+### 1. Grouped Action Menu Redesign (`InWorldArtifact.kt`)
+- Replaced flat unstyled `ListItem` bottom sheet with native grouped card architecture matching `ChatMessageActions.kt` (`92588f18-614c-489a-b344-9d918aaf9771.png`).
+- Container: `MaterialTheme.colorScheme.surfaceContainerLow`.
+- Item grouping: `ArtifactActionGroupItem` on `surfaceContainerHighest` with responsive corner shapes (`FIRST` 24/10dp, `MIDDLE` 10dp, `LAST` 10/24dp) and 4dp spacing.
+- Integrated actions: "Inspect & Zoom", "Copy HTML", "View Source" / "View Visual", and "Save as Image".
+- Centered `labelSmall` footer: "In-World Visual".
+
+### 2. Smooth Streaming / Slow-Motion Toggle (`Markdown.kt`, `SettingUICustomizationPage.kt`)
+- Added `enableSmoothStreamingAnimation: Boolean = true` to `DisplaySetting`.
+- Configurable under **UI Customization $\rightarrow$ Advanced Settings**.
+- When disabled, `displayContent` immediately tracks `rawContent` (`streamingContent`) via `streamingPresentation.snapTo()`, clearing `settleRanges`. Eliminates the artificial drain horizon delay, instantly completing in-world visual code fences the millisecond the API emits the closing markdown fence.
+
+### 3. Artifact Storage Auto-Save & Gallery Browser (`ArtifactStorageManager.kt`, `SettingArtifactsPage.kt`, `SettingChatStoragePage.kt`)
+- `ArtifactStorageManager`: Manages persistent disk storage of artifacts under `context.filesDir/artifacts/` (HTML + rendered PNG preview).
+- Auto-save: Automatically writes HTML and rendered bitmap upon successful WebView draw when `autoSaveArtifactsToStorage` is enabled.
+- Storage Accounting: `CATEGORY_ARTIFACTS` integrated into `AppStorageRepository`, reporting real bytes in Chat Storage with clearable action.
+- Artifact Browser Sheet: Visual gallery in `SettingArtifactsPage.kt` with thumbnails, title extraction, timestamps, file sizes, single-item deletion, and "Clear all".
+
+### 4. Fullscreen Zoom & Pan Lightbox (`ArtifactZoomDialog`)
+- Interactive fullscreen inspection dialog with `detectTransformGestures` (scale 0.75x–6.0x and pan translation).
+- Floating control pill with Zoom Out, zoom percentage, Zoom In, and reset.
+- Native pinch-to-zoom enabled directly on WebView (`setSupportZoom(true)`, `builtInZoomControls = true`, `displayZoomControls = false`).
