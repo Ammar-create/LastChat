@@ -1016,6 +1016,11 @@ fun MarkdownBlock(
         LocalLayoutDirection provides blockDirection.toLayoutDirection(),
     ) {
         ProvideTextStyle(style) {
+            val effectiveDisplay = LocalSettings.current.getEffectiveDisplaySetting()
+            val inWorldArtifactsEnabled = effectiveDisplay.enableInWorldArtifacts
+            val showArtifactBubble = effectiveDisplay.showArtifactBubble
+            val showArtifactOrb = effectiveDisplay.showArtifactOrb
+
             val bubbleRuns = remember(astTree, preprocessed, splitIntoMessageBubbles) {
                 if (splitIntoMessageBubbles) groupMarkdownBubbleRuns(astTree.children, preprocessed) else emptyList()
             }
@@ -1039,10 +1044,10 @@ fun MarkdownBlock(
                                 total = total,
                             ),
                             role = me.rerere.rikkahub.ui.components.chat.BubbleRole.ASSISTANT,
-                            containerColor = if (isArtifactBlock) Color.Transparent else null,
+                            containerColor = if (isArtifactBlock && !showArtifactBubble) Color.Transparent else null,
                             onClick = onBubbleClick,
-                            contentPaddingHorizontal = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingHorizontal,
-                            contentPaddingVertical = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
+                            contentPaddingHorizontal = if (rich && (!isArtifactBlock || !showArtifactBubble)) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingHorizontal,
+                            contentPaddingVertical = if (rich && (!isArtifactBlock || !showArtifactBubble)) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
                             modifier = if (rich) Modifier.fillMaxWidth() else Modifier,
                         ) {
                             run.forEachIndexed { pieceIndex, piece ->
@@ -1909,27 +1914,39 @@ private fun MarkdownNode(
                             .fillMaxWidth(),
                     )
                 } else if (isArtifactFence) {
-                    AnimatedContent(
-                        targetState = hasEnd,
-                        transitionSpec = {
-                            (fadeIn(animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)) +
-                             scaleIn(initialScale = 0.95f, animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)))
-                                .togetherWith(
-                                    fadeOut(animationSpec = tween(450, easing = FastOutLinearInEasing)) +
-                                    scaleOut(targetScale = 1.08f, animationSpec = tween(450, easing = FastOutLinearInEasing))
+                    val showArtifactOrb = LocalSettings.current.getEffectiveDisplaySetting().showArtifactOrb
+                    if (showArtifactOrb) {
+                        AnimatedContent(
+                            targetState = hasEnd,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)) +
+                                 scaleIn(initialScale = 0.95f, animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)))
+                                    .togetherWith(
+                                        fadeOut(animationSpec = tween(450, easing = FastOutLinearInEasing)) +
+                                        scaleOut(targetScale = 1.08f, animationSpec = tween(450, easing = FastOutLinearInEasing))
+                                    )
+                            },
+                            label = "ArtifactPhaseTransition"
+                        ) { finished ->
+                            if (finished) {
+                                InWorldArtifact(
+                                    code = code,
+                                    modifier = modifier
+                                        .mediaEdgePadding(node, paragraphSpacing)
+                                        .fillMaxWidth(),
                                 )
-                        },
-                        label = "ArtifactPhaseTransition"
-                    ) { finished ->
-                        if (finished) {
+                            } else {
+                                ArtifactOrbGenerating(
+                                    modifier = modifier
+                                        .mediaEdgePadding(node, paragraphSpacing)
+                                        .fillMaxWidth(),
+                                )
+                            }
+                        }
+                    } else {
+                        if (hasEnd) {
                             InWorldArtifact(
                                 code = code,
-                                modifier = modifier
-                                    .mediaEdgePadding(node, paragraphSpacing)
-                                    .fillMaxWidth(),
-                            )
-                        } else {
-                            ArtifactOrbGenerating(
                                 modifier = modifier
                                     .mediaEdgePadding(node, paragraphSpacing)
                                     .fillMaxWidth(),

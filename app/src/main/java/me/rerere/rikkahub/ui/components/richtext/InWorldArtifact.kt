@@ -9,6 +9,10 @@ import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
@@ -80,6 +84,7 @@ import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.writeClipboardText
 
 private val artifactHeightCache = LruCache<String, Int>(150)
+private val artifactBitmapCache = LruCache<String, ImageBitmap>(80)
 
 private class ArtifactInterface(
     private val onHeightChanged: (Int) -> Unit
@@ -196,6 +201,9 @@ fun InWorldArtifact(
             var contentHeightDp by remember(code) {
                 mutableIntStateOf(estimatedInitial)
             }
+            var cachedBitmap by remember(code) {
+                mutableStateOf(artifactBitmapCache.get(code))
+            }
 
             val jsInterface = remember(code) {
                 ArtifactInterface { measuredHeight ->
@@ -262,67 +270,90 @@ fun InWorldArtifact(
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    WebView(ctx).apply {
-                                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                        with(this.settings) {
-                                            javaScriptEnabled = true
-                                            domStorageEnabled = false
-                                            allowFileAccess = false
-                                            allowContentAccess = false
-                                        }
-                                        isVerticalScrollBarEnabled = false
-                                        isHorizontalScrollBarEnabled = false
-                                        overScrollMode = View.OVER_SCROLL_NEVER
-                                        tag = code
-                                        addJavascriptInterface(jsInterface, "AndroidInterface")
-                                        webViewClient = object : WebViewClient() {
-                                            override fun onPageFinished(view: WebView?, url: String?) {
-                                                super.onPageFinished(view, url)
-                                                view?.evaluateJavascript(
-                                                    "(function() { var r = document.getElementById('artifact-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : (document.body.scrollHeight || 0); })();"
-                                                ) { result ->
-                                                    val measured = result?.replace("\"", "")?.toIntOrNull() ?: 0
-                                                    if (measured > 30) {
-                                                        val finalH = measured + 14
-                                                        contentHeightDp = finalH
-                                                        artifactHeightCache.put(code, finalH)
+                            if (cachedBitmap != null) {
+                                Image(
+                                    bitmap = cachedBitmap!!,
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(contentHeightDp.dp)
+                                )
+                            } else {
+                                AndroidView(
+                                    factory = { ctx ->
+                                        WebView(ctx).apply {
+                                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                            with(this.settings) {
+                                                javaScriptEnabled = true
+                                                domStorageEnabled = false
+                                                allowFileAccess = false
+                                                allowContentAccess = false
+                                            }
+                                            isVerticalScrollBarEnabled = false
+                                            isHorizontalScrollBarEnabled = false
+                                            overScrollMode = View.OVER_SCROLL_NEVER
+                                            tag = code
+                                            addJavascriptInterface(jsInterface, "AndroidInterface")
+                                            webViewClient = object : WebViewClient() {
+                                                override fun onPageFinished(view: WebView?, url: String?) {
+                                                    super.onPageFinished(view, url)
+                                                    view?.evaluateJavascript(
+                                                        "(function() { var r = document.getElementById('artifact-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : (document.body.scrollHeight || 0); })();"
+                                                    ) { result ->
+                                                        val measured = result?.replace("\"", "")?.toIntOrNull() ?: 0
+                                                        if (measured > 30) {
+                                                            val finalH = measured + 14
+                                                            contentHeightDp = finalH
+                                                            artifactHeightCache.put(code, finalH)
+                                                        }
                                                     }
+                                                    view?.postDelayed({
+                                                        runCatching {
+                                                            val w = view.width
+                                                            val h = view.height
+                                                            if (w > 0 && h > 0) {
+                                                                val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                                                                val c = Canvas(b)
+                                                                view.draw(c)
+                                                                val imgBmp = b.asImageBitmap()
+                                                                artifactBitmapCache.put(code, imgBmp)
+                                                                cachedBitmap = imgBmp
+                                                            }
+                                                        }
+                                                    }, 300)
                                                 }
                                             }
+                                            loadDataWithBaseURL(
+                                                "http://localhost/",
+                                                sanitizeResult.documentHtml,
+                                                "text/html",
+                                                "utf-8",
+                                                null
+                                            )
+                                            webViewInstance = this
                                         }
-                                        loadDataWithBaseURL(
-                                            "http://localhost/",
-                                            sanitizeResult.documentHtml,
-                                            "text/html",
-                                            "utf-8",
-                                            null
-                                        )
-                                        webViewInstance = this
-                                    }
-                                },
-                                update = { webView ->
-                                    webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                                    webViewInstance = webView
-                                    // Resilience against LazyColumn recycling: reload if tag does not match
-                                    if (webView.tag != code) {
-                                        webView.tag = code
-                                        webView.loadDataWithBaseURL(
-                                            "http://localhost/",
-                                            sanitizeResult.documentHtml,
-                                            "text/html",
-                                            "utf-8",
-                                            null
-                                        )
-                                    } else {
-                                        webView.invalidate()
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(contentHeightDp.dp)
-                            )
+                                    },
+                                    update = { webView ->
+                                        webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                        webViewInstance = webView
+                                        if (webView.tag != code) {
+                                            webView.tag = code
+                                            webView.loadDataWithBaseURL(
+                                                "http://localhost/",
+                                                sanitizeResult.documentHtml,
+                                                "text/html",
+                                                "utf-8",
+                                                null
+                                            )
+                                        } else {
+                                            webView.invalidate()
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(contentHeightDp.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -401,19 +432,22 @@ fun InWorldArtifact(
                             },
                             modifier = Modifier.combinedClickable {
                                 haptics.perform(HapticPattern.Pop)
-                                val webView = webViewInstance
                                 val currentActivity = activity
-                                if (webView != null && currentActivity != null) {
+                                if (currentActivity != null) {
                                     runCatching {
-                                        val width = webView.width
-                                        val height = webView.height
-                                        check(width > 0 && height > 0) { "WebView dimensions zero" }
-                                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                                        val canvas = Canvas(bitmap)
-                                        webView.draw(canvas)
+                                        val exportBmp: Bitmap? = if (cachedBitmap != null) {
+                                            cachedBitmap!!.asAndroidBitmap()
+                                        } else if (webViewInstance != null && webViewInstance!!.width > 0 && webViewInstance!!.height > 0) {
+                                            val b = Bitmap.createBitmap(webViewInstance!!.width, webViewInstance!!.height, Bitmap.Config.ARGB_8888)
+                                            val c = Canvas(b)
+                                            webViewInstance!!.draw(c)
+                                            b
+                                        } else null
+
+                                        checkNotNull(exportBmp) { "Could not capture full artifact bitmap" }
                                         context.exportImage(
                                             currentActivity,
-                                            bitmap,
+                                            exportBmp,
                                             "artifact_${System.currentTimeMillis()}.png"
                                         )
                                         toaster.show(

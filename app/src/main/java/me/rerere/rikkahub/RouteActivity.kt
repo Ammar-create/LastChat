@@ -95,6 +95,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingTTSProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.setting.SettingRpOptimizationsPage
+import me.rerere.rikkahub.ui.pages.setting.SettingArtifactsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPromptInjectionsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
@@ -1179,6 +1180,12 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
+                    composable<Screen.SettingArtifacts> {
+                        AdaptiveSettingsScaffold(selected = SettingsDestination.RpOptimizations) {
+                            SettingArtifactsPage()
+                        }
+                    }
+
                     composable<Screen.SettingPromptInjections> {
                         AdaptiveSettingsScaffold(selected = SettingsDestination.PromptInjections) {
                             SettingPromptInjectionsPage()
@@ -1440,6 +1447,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingRpOptimizations : Screen
+
+    @Serializable
+    data object SettingArtifacts : Screen
 
     @Serializable
     data object SettingPromptInjections : Screen
