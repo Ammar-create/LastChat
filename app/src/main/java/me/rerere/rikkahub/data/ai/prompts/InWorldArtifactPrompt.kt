@@ -2,16 +2,24 @@ package me.rerere.rikkahub.data.ai.prompts
 
 val DEFAULT_IN_WORLD_ARTIFACTS_PROMPT = """
 ### In-World Visual Artifacts
-You have an In-World Visual Artifact renderer. Whenever a physical, in-world object appears in the narrative or roleplay (such as a handwritten letter, note, diary page, phone screen, receipt, contract, menu, newspaper, wanted poster, or item card), render it inside an ```artifact ... ``` block.
+You have an In-World Visual Artifact renderer. Whenever a tangible physical object appears in the narrative or roleplay (such as a handwritten letter, note, diary page, phone screen, receipt, contract, menu, newspaper, wanted poster, or item card), render it inside an ```artifact ... ``` block.
+
+CRITICAL DISTINCTION — SVG / GENERAL CODING vs. IN-WORLD ARTIFACTS:
+- If the user asks you to draw an SVG, write code, create an illustration, or provide standard web/software snippets (HTML, JavaScript, Python, CSS, XML):
+  * Use standard markdown code blocks with the exact language tag: ```svg ... ```, ```xml ... ```, or ```html ... ```.
+  * Standard code blocks render as regular syntax-highlighted code.
+  * Do NOT use ```artifact``` for regular code, SVG graphics, or developer requests.
+- Use ```artifact ... ``` ONLY when depicting a real, physical in-world narrative prop inside the scene.
 
 RULES FOR IN-WORLD VISUALS:
-1. Always use ```artifact ... ``` as the code fence tag. NEVER use ```html```, ```plaintext```, or ```markdown``` for in-world visuals.
-2. Inside ```artifact```, output pure HTML and CSS. Do NOT output markdown, explanations, or python inside this block.
-3. Keep the visual self-contained in one root container element. Let the object size itself naturally (full-width or centered with max-width/padding).
-4. Set explicit background colors and text colors on the container so it matches the real physical object (parchment, dark OLED screen, receipt paper, neon sign, etc.).
-5. Use real CSS styling: borders, box-shadows, subtle rotation (e.g. `transform: rotate(-1.5deg)`), cursive fonts, gradients.
-6. NO `<script>`, `<iframe>`, external images, or external web links. Use pure CSS shapes and gradients.
-7. For standard programming, coding, or web development requests, use standard markdown code blocks (e.g. ```html, ```javascript, ```python) — do NOT use ```artifact``` for regular coding.
+1. Tag: Always use ```artifact ... ```.
+2. Content: Inside ```artifact```, output pure HTML and CSS only. Do not put markdown headers, markdown bold/italic, or commentary inside it.
+3. Full Display & Sizing: The client displays the artifact at 100% full height with zero internal scrolling. Let the object size itself naturally:
+   * For letters, newspapers, contracts, and documents: make it wide and comfortable (`width: 100%; box-sizing: border-box;`).
+   * For phones, tickets, or receipts: center it (`max-width: 320px; margin: 0 auto;`).
+   * Never wrap the object in an empty outer halo.
+4. Material Styling: Set explicit background colors and text colors on the container matching the real object (aged parchment, dark glass screen, thermal paper, neon sign, etc.). Use borders, box-shadows, subtle rotation (e.g. `transform: rotate(-1.5deg)`), cursive fonts, and gradients.
+5. Security: Zero `<script>`, zero `<iframe>`, zero external image URLs. Use pure CSS.
 
 EXAMPLE:
 ```artifact

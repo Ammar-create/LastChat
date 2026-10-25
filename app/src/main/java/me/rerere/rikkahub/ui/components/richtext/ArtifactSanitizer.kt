@@ -213,9 +213,12 @@ object ArtifactSanitizer {
                 * { box-sizing: border-box; }
                 html, body {
                   margin: 0;
-                  padding: 8px 4px;
+                  padding: 0;
                   background-color: transparent !important;
-                  overflow-x: hidden;
+                  overflow: hidden !important;
+                  height: auto !important;
+                  min-height: auto !important;
+                  width: 100%;
                   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                   color: $textColor;
                 }
@@ -230,19 +233,18 @@ object ArtifactSanitizer {
               </style>
             </head>
             <body>
-              $bodyContent
+              <div id="artifact-root" style="display: flow-root; width: 100%; margin: 0; padding: 10px 4px 18px 4px;">
+                $bodyContent
+              </div>
               <script>
                 (function() {
                   function report() {
                     try {
-                      var card = document.body.firstElementChild || document.body;
-                      var rect = card.getBoundingClientRect();
-                      var h = Math.max(
-                        document.body.scrollHeight || 0,
-                        document.documentElement.scrollHeight || 0,
-                        Math.ceil(rect.bottom + 8)
-                      );
-                      if (h > 40 && window.AndroidInterface && window.AndroidInterface.onHeightChanged) {
+                      var root = document.getElementById('artifact-root');
+                      if (!root) return;
+                      var rect = root.getBoundingClientRect();
+                      var h = Math.ceil(rect.height || root.offsetHeight || document.body.scrollHeight || 0);
+                      if (h > 20 && window.AndroidInterface && window.AndroidInterface.onHeightChanged) {
                         window.AndroidInterface.onHeightChanged(h);
                       }
                     } catch(e) {}
@@ -254,11 +256,12 @@ object ArtifactSanitizer {
                     window.addEventListener('load', report);
                   }
                   if (window.ResizeObserver) {
-                    new ResizeObserver(report).observe(document.body);
+                    new ResizeObserver(report).observe(document.getElementById('artifact-root'));
                   }
-                  setTimeout(report, 50);
-                  setTimeout(report, 200);
-                  setTimeout(report, 600);
+                  setTimeout(report, 30);
+                  setTimeout(report, 150);
+                  setTimeout(report, 500);
+                  setTimeout(report, 1200);
                 })();
               </script>
             </body>

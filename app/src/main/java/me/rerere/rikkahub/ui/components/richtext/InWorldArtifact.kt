@@ -2,9 +2,13 @@ package me.rerere.rikkahub.ui.components.richtext
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
 import android.util.LruCache
+import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
@@ -78,11 +82,15 @@ import me.rerere.rikkahub.utils.writeClipboardText
 private val artifactHeightCache = LruCache<String, Int>(150)
 
 private class ArtifactInterface(
-    val onHeightChanged: (Int) -> Unit
+    private val onHeightChanged: (Int) -> Unit
 ) {
+    private val handler = Handler(Looper.getMainLooper())
+
     @JavascriptInterface
     fun onHeightChanged(height: Int) {
-        onHeightChanged(height)
+        handler.post {
+            onHeightChanged(height)
+        }
     }
 }
 
@@ -182,15 +190,19 @@ fun InWorldArtifact(
             )
         }
         is ArtifactSanitizeResult.Success -> {
+            val estimatedInitial = remember(code) {
+                artifactHeightCache.get(code) ?: maxOf(360, (code.length * 0.85f).toInt().coerceAtMost(1200))
+            }
             var contentHeightDp by remember(code) {
-                mutableIntStateOf(artifactHeightCache.get(code) ?: 200)
+                mutableIntStateOf(estimatedInitial)
             }
 
             val jsInterface = remember(code) {
                 ArtifactInterface { measuredHeight ->
-                    if (measuredHeight > 40) {
-                        contentHeightDp = measuredHeight
-                        artifactHeightCache.put(code, measuredHeight)
+                    if (measuredHeight > 30) {
+                        val finalH = measuredHeight + 14
+                        contentHeightDp = finalH
+                        artifactHeightCache.put(code, finalH)
                     }
                 }
             }
@@ -262,8 +274,24 @@ fun InWorldArtifact(
                                         }
                                         isVerticalScrollBarEnabled = false
                                         isHorizontalScrollBarEnabled = false
+                                        overScrollMode = View.OVER_SCROLL_NEVER
                                         tag = code
                                         addJavascriptInterface(jsInterface, "AndroidInterface")
+                                        webViewClient = object : WebViewClient() {
+                                            override fun onPageFinished(view: WebView?, url: String?) {
+                                                super.onPageFinished(view, url)
+                                                view?.evaluateJavascript(
+                                                    "(function() { var r = document.getElementById('artifact-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : (document.body.scrollHeight || 0); })();"
+                                                ) { result ->
+                                                    val measured = result?.replace("\"", "")?.toIntOrNull() ?: 0
+                                                    if (measured > 30) {
+                                                        val finalH = measured + 14
+                                                        contentHeightDp = finalH
+                                                        artifactHeightCache.put(code, finalH)
+                                                    }
+                                                }
+                                            }
+                                        }
                                         loadDataWithBaseURL(
                                             "http://localhost/",
                                             sanitizeResult.documentHtml,
@@ -287,6 +315,8 @@ fun InWorldArtifact(
                                             "utf-8",
                                             null
                                         )
+                                    } else {
+                                        webView.invalidate()
                                     }
                                 },
                                 modifier = Modifier
