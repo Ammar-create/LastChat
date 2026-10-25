@@ -18,8 +18,8 @@ import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
-import me.rerere.rikkahub.data.model.McpCommonOptions
-import me.rerere.rikkahub.data.model.McpServerConfig
+import me.rerere.rikkahub.data.ai.mcp.McpCommonOptions
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.service.PythonServerService
 import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentManager
 import me.rerere.rikkahub.service.workspace.WorkspaceEnvironmentTask

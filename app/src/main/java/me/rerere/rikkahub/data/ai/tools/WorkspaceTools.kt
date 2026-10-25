@@ -570,14 +570,16 @@ private fun createPythonServerStartTool(
             required = listOf("command"),
         )
     },
-    execute = { args ->
+    approvalMode = if (needsApproval("python_server_start")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
         val command = args["command"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val port = args["port"]?.jsonPrimitive?.intOrNull
         val name = args["name"]?.jsonPrimitive?.contentOrNull ?: "Python Server"
 
         val workspace = pythonPluginManager.getActiveWorkspace()
         if (workspace == null) {
-            """{"error": "No workspace active"}"""
+            buildJsonObject { put("error", "No workspace active") }
         } else {
             val proc = pythonPluginManager.startServer(workspace, name, command, port)
             buildJsonObject {
@@ -588,10 +590,9 @@ private fun createPythonServerStartTool(
                 if (proc.port != null) put("port", proc.port)
                 put("log_file", proc.logFilePath)
                 put("note", "Server started in background with persistent Android foreground notification.")
-            }.toString()
+            }
         }
     },
-    approvalMode = if (needsApproval("python_server_start")) ToolApprovalMode.Always else ToolApprovalMode.Never,
 )
 
 private fun createPythonServerStopTool(
@@ -612,7 +613,9 @@ private fun createPythonServerStopTool(
             required = listOf("target"),
         )
     },
-    execute = { args ->
+    approvalMode = if (needsApproval("python_server_stop")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
         val target = args["target"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val servers = pythonPluginManager.runningServers.value
         val matched = servers.values.firstOrNull {
@@ -620,12 +623,15 @@ private fun createPythonServerStopTool(
         }
         if (matched != null) {
             pythonPluginManager.stopServer(matched.id)
-            """{"status": "stopped", "server_id": "${matched.id}", "name": "${matched.name}"}"""
+            buildJsonObject {
+                put("status", "stopped")
+                put("server_id", matched.id)
+                put("name", matched.name)
+            }
         } else {
-            """{"error": "No running server matching '$target'"}"""
+            buildJsonObject { put("error", "No running server matching '$target'") }
         }
     },
-    approvalMode = if (needsApproval("python_server_stop")) ToolApprovalMode.Always else ToolApprovalMode.Never,
 )
 
 private fun createPythonServerListTool(
@@ -635,6 +641,7 @@ private fun createPythonServerListTool(
     name = "python_server_list",
     description = "List all active background Python servers running in the Linux PRoot workspace, including their port numbers and status.",
     parameters = { InputSchema.Obj(properties = buildJsonObject {}, required = emptyList()) },
+    approvalMode = if (needsApproval("python_server_list")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
     execute = {
         val servers = pythonPluginManager.runningServers.value.values.toList()
         buildJsonObject {
@@ -651,9 +658,8 @@ private fun createPythonServerListTool(
                     })
                 }
             })
-        }.toString()
+        }
     },
-    approvalMode = if (needsApproval("python_server_list")) ToolApprovalMode.Always else ToolApprovalMode.Never,
 )
 
 private fun createMcpAddLocalConnectionTool(
@@ -682,14 +688,21 @@ private fun createMcpAddLocalConnectionTool(
             required = listOf("name", "url"),
         )
     },
-    execute = { args ->
+    approvalMode = if (needsApproval("mcp_add_local_connection")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
         val name = args["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val url = args["url"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val transport = args["transport"]?.jsonPrimitive?.contentOrNull ?: "sse"
         pythonPluginManager.addLocalMcpServer(name, url, transport)
-        """{"status": "connected", "name": "$name", "url": "$url", "transport": "$transport", "note": "Local MCP server successfully registered in LastChat."}"""
+        buildJsonObject {
+            put("status", "connected")
+            put("name", name)
+            put("url", url)
+            put("transport", transport)
+            put("note", "Local MCP server successfully registered in LastChat.")
+        }
     },
-    approvalMode = if (needsApproval("mcp_add_local_connection")) ToolApprovalMode.Always else ToolApprovalMode.Never,
 )
 
 private fun createPythonExtensionManageTool(
@@ -719,13 +732,15 @@ private fun createPythonExtensionManageTool(
             required = listOf("action"),
         )
     },
-    execute = { args ->
+    approvalMode = if (needsApproval("python_extension_manage")) ToolApprovalMode.RequiresApproval else ToolApprovalMode.Auto,
+    execute = { rawArgs ->
+        val args = rawArgs.jsonObject
         val action = args["action"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val pluginName = args["plugin_name"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val code = args["code"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val ws = pythonPluginManager.getActiveWorkspace()
         if (ws == null) {
-            """{"error": "No workspace active"}"""
+            buildJsonObject { put("error", "No workspace active") }
         } else {
             when (action) {
                 "list" -> {
@@ -743,32 +758,40 @@ private fun createPythonExtensionManageTool(
                                 })
                             }
                         })
-                    }.toString()
+                    }
                 }
                 "enable" -> {
                     pythonPluginManager.setPluginEnabled(pluginName.removeSuffix(".py"), true)
-                    """{"status": "enabled", "plugin": "$pluginName"}"""
+                    buildJsonObject {
+                        put("status", "enabled")
+                        put("plugin", pluginName)
+                    }
                 }
                 "disable" -> {
                     pythonPluginManager.setPluginEnabled(pluginName.removeSuffix(".py"), false)
-                    """{"status": "disabled", "plugin": "$pluginName"}"""
+                    buildJsonObject {
+                        put("status", "disabled")
+                        put("plugin", pluginName)
+                    }
                 }
                 "read" -> {
                     val content = pythonPluginManager.readPluginCode(ws, if (pluginName.endsWith(".py")) pluginName else "$pluginName.py")
                     buildJsonObject {
                         put("file", pluginName)
                         put("content", content)
-                    }.toString()
+                    }
                 }
                 "create" -> {
                     val fName = if (pluginName.endsWith(".py")) pluginName else "$pluginName.py"
                     pythonPluginManager.savePluginCode(ws, fName, code)
-                    """{"status": "created", "file": "$fName"}"""
+                    buildJsonObject {
+                        put("status", "created")
+                        put("file", fName)
+                    }
                 }
-                else -> """{"error": "Unknown action '$action'"}"""
+                else -> buildJsonObject { put("error", "Unknown action '$action'") }
             }
         }
     },
-    approvalMode = if (needsApproval("python_extension_manage")) ToolApprovalMode.Always else ToolApprovalMode.Never,
 )
 

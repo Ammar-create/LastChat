@@ -56,6 +56,8 @@ import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.font.FontWeight
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.LastChatDestructiveConfirmDialog
 import androidx.compose.material3.Tab
@@ -1663,7 +1665,7 @@ private fun PythonExtensionsContent(
                             )
                         }
                         Text(
-                            text = "Linux PRoot environment is ready in '${status.workspace.name}', but Python 3 is not yet installed.",
+                            text = "Linux PRoot environment is ready in '${status.workspace?.name}', but Python 3 is not yet installed.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1721,7 +1723,7 @@ private fun PythonExtensionsContent(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Workspace: ${status.workspace.name} • /workspace/plugins",
+                                    text = "Workspace: ${status.workspace?.name} • /workspace/plugins",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
