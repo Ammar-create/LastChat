@@ -28,8 +28,8 @@ sealed interface ArtifactSanitizeResult {
  * - Safe data:image URIs only
  */
 object ArtifactSanitizer {
-    const val MAX_ARTIFACT_CHARS = 1600
-    const val MAX_TAG_COUNT = 120
+    const val MAX_ARTIFACT_CHARS = 24000
+    const val MAX_TAG_COUNT = 1000
 
     private val ALLOWED_TAGS = setOf(
         "div", "span", "p", "b", "i", "u", "s", "em", "strong", "small",
@@ -235,12 +235,14 @@ object ArtifactSanitizer {
                 (function() {
                   function report() {
                     try {
+                      var card = document.body.firstElementChild || document.body;
+                      var rect = card.getBoundingClientRect();
                       var h = Math.max(
                         document.body.scrollHeight || 0,
                         document.documentElement.scrollHeight || 0,
-                        document.body.offsetHeight || 0
+                        Math.ceil(rect.bottom + 8)
                       );
-                      if (h > 0 && window.AndroidInterface && window.AndroidInterface.onHeightChanged) {
+                      if (h > 40 && window.AndroidInterface && window.AndroidInterface.onHeightChanged) {
                         window.AndroidInterface.onHeightChanged(h);
                       }
                     } catch(e) {}
@@ -251,8 +253,12 @@ object ArtifactSanitizer {
                     window.addEventListener('DOMContentLoaded', report);
                     window.addEventListener('load', report);
                   }
+                  if (window.ResizeObserver) {
+                    new ResizeObserver(report).observe(document.body);
+                  }
                   setTimeout(report, 50);
                   setTimeout(report, 200);
+                  setTimeout(report, 600);
                 })();
               </script>
             </body>

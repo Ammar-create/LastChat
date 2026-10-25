@@ -1,5 +1,14 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import android.content.Intent
@@ -1018,12 +1027,19 @@ fun MarkdownBlock(
                 ) {
                     bubbleRuns.forEachIndexed { index, run ->
                         val rich = run.size == 1 && run.first().isStandalone(preprocessed)
+                        val isArtifactBlock = run.size == 1 && run.first().let { piece ->
+                            piece is MarkdownWholePiece && piece.node.type == MarkdownElementTypes.CODE_FENCE && run {
+                                val lang = piece.node.findChildOfTypeRecursive(MarkdownTokenTypes.FENCE_LANG)?.getTextInNode(preprocessed) ?: ""
+                                normalizeCodeBlockLanguage(lang) in listOf("artifact", "visual", "inworld")
+                            }
+                        }
                         me.rerere.rikkahub.ui.components.chat.GroupedMessageBubble(
                             position = me.rerere.rikkahub.ui.components.chat.getBubblePosition(
                                 index = bubbleLeadingCount + index,
                                 total = total,
                             ),
                             role = me.rerere.rikkahub.ui.components.chat.BubbleRole.ASSISTANT,
+                            containerColor = if (isArtifactBlock) Color.Transparent else null,
                             onClick = onBubbleClick,
                             contentPaddingHorizontal = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingHorizontal,
                             contentPaddingVertical = if (rich) 0.dp else me.rerere.rikkahub.ui.theme.AppShapes.MessageBubblePaddingVertical,
@@ -1893,20 +1909,32 @@ private fun MarkdownNode(
                             .fillMaxWidth(),
                     )
                 } else if (isArtifactFence) {
-                    if (hasEnd) {
-                        InWorldArtifact(
-                            code = code,
-                            modifier = modifier
-                                .mediaEdgePadding(node, paragraphSpacing)
-                                .fillMaxWidth(),
-                        )
-                    } else {
-                        // While the artifact is generating, render the pulsing glowing orb instead of raw code
-                        ArtifactOrbGenerating(
-                            modifier = modifier
-                                .mediaEdgePadding(node, paragraphSpacing)
-                                .fillMaxWidth(),
-                        )
+                    AnimatedContent(
+                        targetState = hasEnd,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)) +
+                             scaleIn(initialScale = 0.95f, animationSpec = tween(700, delayMillis = 120, easing = LinearOutSlowInEasing)))
+                                .togetherWith(
+                                    fadeOut(animationSpec = tween(450, easing = FastOutLinearInEasing)) +
+                                    scaleOut(targetScale = 1.08f, animationSpec = tween(450, easing = FastOutLinearInEasing))
+                                )
+                        },
+                        label = "ArtifactPhaseTransition"
+                    ) { finished ->
+                        if (finished) {
+                            InWorldArtifact(
+                                code = code,
+                                modifier = modifier
+                                    .mediaEdgePadding(node, paragraphSpacing)
+                                    .fillMaxWidth(),
+                            )
+                        } else {
+                            ArtifactOrbGenerating(
+                                modifier = modifier
+                                    .mediaEdgePadding(node, paragraphSpacing)
+                                    .fillMaxWidth(),
+                            )
+                        }
                     }
                 } else CompositionLocalProvider(
                     LocalCodeRevealAnchor provides if (hasEnd) null else codeContentEndOffset
