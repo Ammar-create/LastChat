@@ -77,7 +77,10 @@ import androidx.compose.foundation.content.consume
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Add
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.CameraAlt
@@ -1924,6 +1927,7 @@ private fun MinimalPickerContent(
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showPluginsPicker by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
+    val settingsStore: SettingsStore = koinInject()
     val modelCatalogService: ModelCatalogService = koinInject()
     val catalogSnapshot by modelCatalogService.snapshotFlow.collectAsStateWithLifecycle()
     val assistantDefaultSkillIds = assistant.enabledSkillIds.intersect(assistantAvailableSkillIds)
@@ -2180,16 +2184,22 @@ private fun MinimalPickerContent(
             )
         }
         
-        // Search picker - show selected provider if enabled (use effectiveProviderIndex to track current selection)
+        // Tools picker (Web Search + In-World Visual Artifacts)
         val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
             SearchServiceOptions.TYPES[searchService::class]
         } else null
+        val artifactsEnabled = settings.displaySetting.enableInWorldArtifacts
+        val isAnyToolActive = enableSearch || artifactsEnabled
+        val toolsSubtitle = when {
+            enableSearch && artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_all)
+            enableSearch -> stringResource(R.string.chat_tools_subtitle_search)
+            artifactsEnabled -> stringResource(R.string.chat_tools_subtitle_artifacts)
+            else -> stringResource(R.string.chat_tools_subtitle_none)
+        }
         
-        // Show provider icon when search is enabled and a provider is configured
         MinimalPickerItem(
             icon = {
-                // Only show provider icon when search is actually enabled
                 if (enableSearch && searchProviderName != null) {
                     SearchProviderIcon(
                         name = searchProviderName,
@@ -2199,15 +2209,15 @@ private fun MinimalPickerContent(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Rounded.Search,
+                        imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = null,
                         modifier = Modifier.size(24.dp),
-                        tint = if (enableSearch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (isAnyToolActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
-            title = if (enableSearch && searchProviderName != null) searchProviderName else stringResource(R.string.minimal_input_search),
-            subtitle = if (enableSearch) stringResource(R.string.web_search_enabled) else stringResource(R.string.minimal_input_search_desc),
+            title = stringResource(R.string.chat_tools_menu_title),
+            subtitle = toolsSubtitle,
             onClick = { 
                 showSearchPicker = true
             }
@@ -2432,14 +2442,62 @@ private fun MinimalPickerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.search_picker_title),
+                    text = stringResource(R.string.chat_tools_title),
                     style = MaterialTheme.typography.titleLarge
                 )
+
+                // In-World Visual Artifacts Quick Toggle
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                    shape = AppShapes.CardLarge,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (settings.displaySetting.enableInWorldArtifacts) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_title),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(R.string.setting_in_world_artifacts_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            HapticSwitch(
+                                checked = settings.displaySetting.enableInWorldArtifacts,
+                                onCheckedChange = { enabled ->
+                                    haptics.perform(HapticPattern.Pop)
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(
+                                                displaySetting = current.displaySetting.copy(
+                                                    enableInWorldArtifacts = enabled
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    )
+                }
                 
                 // Direct SearchPicker content
                 SearchPicker(

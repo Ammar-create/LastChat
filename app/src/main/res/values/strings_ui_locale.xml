@@ -320,6 +320,12 @@
     <string name="setting_rp_example_text">%1$sexample text%1$s</string>
 
     <!-- In-World Visual Artifacts -->
+    <string name="chat_tools_title">Chat Tools</string>
+    <string name="chat_tools_menu_title">Tools</string>
+    <string name="chat_tools_subtitle_all">Web Search &amp; Visual Artifacts active</string>
+    <string name="chat_tools_subtitle_search">Web Search active</string>
+    <string name="chat_tools_subtitle_artifacts">Visual Artifacts active</string>
+    <string name="chat_tools_subtitle_none">Web Search, Visual Artifacts</string>
     <string name="setting_in_world_artifacts_title">In-World Visual Artifacts</string>
     <string name="setting_in_world_artifacts_desc">Render self-contained HTML blocks as in-world objects (notes, letters, phone screens, receipts).</string>
     <string name="artifact_in_world_visual">In-World Visual</string>

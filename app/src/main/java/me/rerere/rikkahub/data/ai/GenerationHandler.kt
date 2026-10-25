@@ -56,6 +56,7 @@ import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.toTurnGroups
 import me.rerere.ai.ui.truncate
 import me.rerere.ai.ui.stripEphemeralToolImagePayloads
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_IN_WORLD_ARTIFACTS_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.tools.parseJsonElementWithRecovery
 import me.rerere.rikkahub.data.ai.tools.recoverInlineAskUserToolCall
@@ -1191,18 +1192,7 @@ class GenerationHandler(
         if (settings.displaySetting.enableInWorldArtifacts) {
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(
-                """
-                ### In-World Visuals
-                - When an in-world visual object appears on-page, render it as HTML: text messages, phone screens, letters, notes, signs, posters, menus, receipts, newspapers, item cards, game boards, etc.
-                - Wrap the visual object in ```visual ... ``` (or ```html ... ```).
-                - Narration and dialogue stay plain prose.
-                - One container div per visual, under ~1200 characters.
-                - Inline styles preferred. Animation allowed only via one short <style> block; prefix every class name uniquely (e.g. .v7-note), never style generic elements (div, p, span, body).
-                - No <script>, external images, links, or iframes.
-                - No blank lines and no indentation inside HTML.
-                - Always set both background and text color for readability.
-                - Match the object's real material (paper, screen, neon, chalk, ink) with CSS: color, border, font, gradient, shadow, rotation.
-                """.trimIndent()
+                settings.displaySetting.inWorldArtifactsPrompt.ifBlank { DEFAULT_IN_WORLD_ARTIFACTS_PROMPT }
             )
         }
 

@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.HorizontalDivider
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_IN_WORLD_ARTIFACTS_PROMPT
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.background
@@ -109,7 +112,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
             contentPadding = contentPadding + PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // In-World Visual Artifacts Toggle
+            // In-World Visual Artifacts
             item {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -117,34 +120,104 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                     ),
                     shape = AppShapes.CardLarge
                 ) {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = {
-                            Text(
-                                text = stringResource(R.string.setting_in_world_artifacts_title),
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                text = stringResource(R.string.setting_in_world_artifacts_desc),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingContent = {
-                            HapticSwitch(
-                                checked = displaySetting.enableInWorldArtifacts,
-                                onCheckedChange = { enabled ->
-                                    val newSetting = displaySetting.copy(enableInWorldArtifacts = enabled)
-                                    displaySetting = newSetting
-                                    vm.updateSettings { settings ->
-                                        settings.copy(displaySetting = settings.displaySetting.copy(enableInWorldArtifacts = enabled))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = if (displaySetting.enableInWorldArtifacts) 12.dp else 0.dp)
+                    ) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = {
+                                Text(
+                                    text = stringResource(R.string.setting_in_world_artifacts_title),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = stringResource(R.string.setting_in_world_artifacts_desc),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            trailingContent = {
+                                HapticSwitch(
+                                    checked = displaySetting.enableInWorldArtifacts,
+                                    onCheckedChange = { enabled ->
+                                        val newSetting = displaySetting.copy(enableInWorldArtifacts = enabled)
+                                        displaySetting = newSetting
+                                        vm.updateSettings { settings ->
+                                            settings.copy(displaySetting = settings.displaySetting.copy(enableInWorldArtifacts = enabled))
+                                        }
+                                    }
+                                )
+                            }
+                        )
+
+                        if (displaySetting.enableInWorldArtifacts) {
+                            var promptText by remember(displaySetting.inWorldArtifactsPrompt) {
+                                mutableStateOf(displaySetting.inWorldArtifactsPrompt.ifBlank { DEFAULT_IN_WORLD_ARTIFACTS_PROMPT })
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "System Prompt Instructions",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            promptText = DEFAULT_IN_WORLD_ARTIFACTS_PROMPT
+                                            val newSetting = displaySetting.copy(inWorldArtifactsPrompt = "")
+                                            displaySetting = newSetting
+                                            vm.updateSettings { settings ->
+                                                settings.copy(displaySetting = settings.displaySetting.copy(inWorldArtifactsPrompt = ""))
+                                            }
+                                        }
+                                    ) {
+                                        Text("Reset to Default")
                                     }
                                 }
-                            )
+
+                                OutlinedTextField(
+                                    value = promptText,
+                                    onValueChange = { newPrompt ->
+                                        promptText = newPrompt
+                                        val newSetting = displaySetting.copy(inWorldArtifactsPrompt = newPrompt)
+                                        displaySetting = newSetting
+                                        vm.updateSettings { settings ->
+                                            settings.copy(displaySetting = settings.displaySetting.copy(inWorldArtifactsPrompt = newPrompt))
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 120.dp, max = 260.dp),
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    shape = AppShapes.InputField,
+                                    placeholder = { Text(DEFAULT_IN_WORLD_ARTIFACTS_PROMPT) }
+                                )
+
+                                Text(
+                                    text = "Instructions sent to the AI when visual artifacts are enabled. Regular HTML coding blocks remain untouched.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                    )
+                    }
                 }
             }
 

@@ -251,6 +251,7 @@ data class DisplaySetting(
     val codeBlockAutoWrap: Boolean = false,
     val codeBlockAutoCollapse: Boolean = true,
     val enableInWorldArtifacts: Boolean = true,
+    val inWorldArtifactsPrompt: String = "",
     val rpStyleRules: List<RpStyleRule> = emptyList(),
         val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,

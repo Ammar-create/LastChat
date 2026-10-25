@@ -1880,11 +1880,8 @@ private fun MarkdownNode(
             val normalizedLanguage = normalizeCodeBlockLanguage(language)
             val hasEnd = node.findChildOfTypeRecursive(MarkdownTokenTypes.CODE_FENCE_END) != null
             val paragraphSpacing = LocalMarkdownParagraphSpacing.current
-            val isArtifact = hasEnd && (
-                normalizedLanguage in listOf("visual", "artifact", "inworld") ||
-                (normalizedLanguage == "html" && ArtifactSanitizer.isArtifactCandidate(code))
-            )
             val inWorldArtifactsEnabled = LocalSettings.current.getEffectiveDisplaySetting().enableInWorldArtifacts
+            val isArtifactFence = inWorldArtifactsEnabled && normalizedLanguage in listOf("artifact", "visual", "inworld")
 
             // Mermaid diagrams and in-world artifacts: render directly without HighlightCodeBlock wrapper
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -1895,13 +1892,22 @@ private fun MarkdownNode(
                             .mediaEdgePadding(node, paragraphSpacing)
                             .fillMaxWidth(),
                     )
-                } else if (isArtifact && inWorldArtifactsEnabled) {
-                    InWorldArtifact(
-                        code = code,
-                        modifier = modifier
-                            .mediaEdgePadding(node, paragraphSpacing)
-                            .fillMaxWidth(),
-                    )
+                } else if (isArtifactFence) {
+                    if (hasEnd) {
+                        InWorldArtifact(
+                            code = code,
+                            modifier = modifier
+                                .mediaEdgePadding(node, paragraphSpacing)
+                                .fillMaxWidth(),
+                        )
+                    } else {
+                        // While the artifact is generating, render the pulsing glowing orb instead of raw code
+                        ArtifactOrbGenerating(
+                            modifier = modifier
+                                .mediaEdgePadding(node, paragraphSpacing)
+                                .fillMaxWidth(),
+                        )
+                    }
                 } else CompositionLocalProvider(
                     LocalCodeRevealAnchor provides if (hasEnd) null else codeContentEndOffset
                 ) {
