@@ -111,4 +111,13 @@ val repositoryModule = module {
             workspaceRepository = get(),
         )
     }
+
+    single {
+        me.rerere.rikkahub.data.repository.PythonPluginManager(
+            context = get(),
+            workspaceRepository = get(),
+            workspaceDao = get(),
+            environmentManager = get(),
+        )
+    }
 }
