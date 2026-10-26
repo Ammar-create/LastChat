@@ -272,6 +272,7 @@ Synthesizes fragmented episodic and semantic user memories into an elegant, high
 | `40193838844` | `:app:compileStableReleaseKotlin` | Lexer unclosed comment in sanitizer, unresolved `LocalActivity`, clipboard type mismatch | Replaced with `writeClipboardText`, correct `LocalActivity` import, fixed sanitizer comments |
 | `40198900827` | `:app:compileStableReleaseKotlin` | Missing `FontWeight` import in `MinimalChatInput.kt` | Added explicit `androidx.compose.ui.text.font.FontWeight` import |
 | `40202942117` | `:app:compileStableReleaseKotlin` | Scope collision between `android.webkit.WebSettings` and `LocalSettings` in `AndroidView` factory | Wrapped in `with(this.settings) { ... }` to disambiguate receiver |
+| `40221883406` | `:app:compileStableReleaseKotlin` | Mismatch in `Tool.execute` returning `String` vs `JsonElement`, `ToolApprovalMode` referenced as `Always`/`Never`, misplaced `McpConfig` package imports, and missing Compose imports (`FontWeight`, `LaunchedEffect`) | Unwrapped `rawArgs.jsonObject` and returned `buildJsonObject`, used `ToolApprovalMode.RequiresApproval`/`Auto`, imported `me.rerere.rikkahub.data.ai.mcp.*`, imported Compose primitives and applied safe-calls. Run `40222980421` succeeded with 66.39 MB minified stable release APK |
 | `[PENDING]` | Provider model fetch UI hang | Under investigation (suspect network timeout in `listModels` or recomposition storm in provider settings) | Next session diagnostic checklist documented in Section 9 |
 
 ---
