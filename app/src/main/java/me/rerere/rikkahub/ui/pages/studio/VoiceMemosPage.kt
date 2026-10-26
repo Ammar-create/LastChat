@@ -213,7 +213,7 @@ fun VoiceMemosPage() {
                                     if (isRecording) {
                                         haptics.perform(HapticPattern.Tick)
                                         isRecording = false
-                                        toaster.info("Recording discarded")
+                                        toaster.show("Recording discarded")
                                     }
                                 }
                             ) {
@@ -233,7 +233,7 @@ fun VoiceMemosPage() {
                                         haptics.perform(HapticPattern.Pop)
                                         isRecording = !isRecording
                                         if (!isRecording) {
-                                            toaster.success("Audio saved locally. Whisper transcript ready.")
+                                            toaster.show("Audio saved locally. Whisper transcript ready.")
                                         }
                                     }
                             ) {
@@ -251,7 +251,7 @@ fun VoiceMemosPage() {
                                 onClick = {
                                     if (isRecording) {
                                         haptics.perform(HapticPattern.Tick)
-                                        toaster.info("Recording paused")
+                                        toaster.show("Recording paused")
                                     }
                                 }
                             ) {
@@ -344,7 +344,7 @@ fun VoiceMemosPage() {
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(onClick = { toaster.info("Rewind 15s") }) {
+                            IconButton(onClick = { toaster.show("Rewind 15s") }) {
                                 Icon(Icons.Rounded.FastRewind, null)
                             }
                             Spacer(Modifier.width(8.dp))
@@ -355,7 +355,7 @@ fun VoiceMemosPage() {
                                     .size(48.dp)
                                     .clickable {
                                         isPlaying = !isPlaying
-                                        toaster.info(if (isPlaying) "Playing audio" else "Playback paused")
+                                        toaster.show(if (isPlaying) "Playing audio" else "Playback paused")
                                     }
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -367,7 +367,7 @@ fun VoiceMemosPage() {
                                 }
                             }
                             Spacer(Modifier.width(8.dp))
-                            IconButton(onClick = { toaster.info("Forward 15s") }) {
+                            IconButton(onClick = { toaster.show("Forward 15s") }) {
                                 Icon(Icons.Rounded.FastForward, null)
                             }
                         }
@@ -416,7 +416,7 @@ fun VoiceMemosPage() {
                                     .clickable {
                                         haptics.perform(HapticPattern.Tick)
                                         selectedTranscriptLine = index
-                                        toaster.info("Jumping audio to $time")
+                                        toaster.show("Jumping audio to $time")
                                     }
                             ) {
                                 Row(
@@ -457,7 +457,7 @@ fun VoiceMemosPage() {
                     AssistChip(
                         onClick = {
                             haptics.perform(HapticPattern.Pop)
-                            toaster.success("Exporting voice transcript into Story Studio Outline...")
+                            toaster.show("Exporting voice transcript into Story Studio Outline...")
                             navController.navigate(Screen.StoryStudio)
                         },
                         label = { Text("Send to Story Studio") },
@@ -474,7 +474,7 @@ fun VoiceMemosPage() {
                     AssistChip(
                         onClick = {
                             haptics.perform(HapticPattern.Tick)
-                            toaster.info("Bullet summary copied to clipboard")
+                            toaster.show("Bullet summary copied to clipboard")
                         },
                         label = { Text("Bullet Summary") },
                         leadingIcon = {
@@ -485,7 +485,7 @@ fun VoiceMemosPage() {
                     AssistChip(
                         onClick = {
                             haptics.perform(HapticPattern.Tick)
-                            toaster.info("Extracted 3 action items")
+                            toaster.show("Extracted 3 action items")
                         },
                         label = { Text("Action Items") },
                         leadingIcon = {

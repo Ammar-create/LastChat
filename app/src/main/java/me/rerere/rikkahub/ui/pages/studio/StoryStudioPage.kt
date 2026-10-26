@@ -144,7 +144,7 @@ fun StoryStudioPage() {
                                     onClick = {
                                         haptics.perform(HapticPattern.Tick)
                                         isGenerating = !isGenerating
-                                        toaster.info(if (isGenerating) "Resuming generation" else "Generation paused")
+                                        toaster.show(if (isGenerating) "Resuming generation" else "Generation paused")
                                     }
                                 ) {
                                     Icon(
@@ -157,7 +157,7 @@ fun StoryStudioPage() {
                                 IconButton(
                                     onClick = {
                                         haptics.perform(HapticPattern.Pop)
-                                        toaster.success("Finalizing beat and queueing Beat 3")
+                                        toaster.show("Finalizing beat and queueing Beat 3")
                                     }
                                 ) {
                                     Icon(
@@ -210,7 +210,7 @@ fun StoryStudioPage() {
                                 onClick = {
                                     if (steerText.isNotBlank()) {
                                         haptics.perform(HapticPattern.Tick)
-                                        toaster.success("Steer prompt injected into next beat chunk")
+                                        toaster.show("Steer prompt injected into next beat chunk")
                                         steerText = ""
                                     }
                                 },
