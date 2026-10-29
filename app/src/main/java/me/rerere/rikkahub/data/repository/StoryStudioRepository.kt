@@ -188,7 +188,7 @@ class StoryStudioRepository(
                 )
             )
 
-            val text = resp.text
+            val text = resp.choices.firstOrNull()?.message?.toContentText().orEmpty()
             val cleanJson = text.substringAfter("{").substringBeforeLast("}")
             val json = JSONObject("{$cleanJson}")
 
@@ -321,7 +321,7 @@ class StoryStudioRepository(
                     maxTokens = 3000
                 )
             ).collect { chunk ->
-                val delta = chunk.text
+                val delta = chunk.choices.firstOrNull()?.delta?.toContentText().orEmpty()
                 if (delta.isNotBlank()) {
                     proseBuilder.append(delta)
                     onChunk(delta)

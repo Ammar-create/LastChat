@@ -958,7 +958,7 @@ private suspend fun transcribeAudio(
             file.name,
             file.asRequestBody("audio/m4a".toMediaType())
         )
-        .addFormDataPart("model", model.idInProvider)
+        .addFormDataPart("model", model.modelId)
         .build()
 
     val request = Request.Builder()
@@ -1020,7 +1020,7 @@ private suspend fun analyzeTranscript(
         )
     )
 
-    val text = resp.text
+    val text = resp.choices.firstOrNull()?.message?.toContentText().orEmpty()
     val cleanJson = text.substringAfter("{").substringBeforeLast("}")
     val json = runCatching { JSONObject("{$cleanJson}") }.getOrNull()
 

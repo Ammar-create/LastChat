@@ -427,7 +427,7 @@ fun MinimalChatInput(
                                             maxTokens = 1000
                                         )
                                     )
-                                    resp.text.trim().ifBlank { transcript }
+                                    resp.choices.firstOrNull()?.message?.toContentText()?.trim().orEmpty().ifBlank { transcript }
                                 }.getOrDefault(transcript)
 
                                 kotlinx.coroutines.withContext(Dispatchers.Main) {
