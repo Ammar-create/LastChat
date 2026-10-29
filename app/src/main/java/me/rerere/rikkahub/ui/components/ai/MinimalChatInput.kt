@@ -35,6 +35,10 @@ import me.rerere.rikkahub.ui.components.ui.SearchProviderIcon
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.clip
@@ -278,6 +282,7 @@ fun MinimalChatInput(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
     val modelCatalog = koinInject<ModelCatalogService>()
+    val settingsStore = koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
     val providerManager = koinInject<me.rerere.ai.provider.ProviderManager>()
     val secretKeyManager = koinInject<me.rerere.rikkahub.data.datastore.SecretKeyManager>()
     var showSmartMicProfiles by remember { mutableStateOf(false) }
@@ -413,12 +418,16 @@ fun MinimalChatInput(
                                     val resp = handler.generateText(
                                         providerSetting = prov,
                                         messages = listOf(
-                                            me.rerere.ai.domain.UIMessage.system(activeProfile.prompt),
-                                            me.rerere.ai.domain.UIMessage.user(transcript)
+                                            UIMessage.system(activeProfile.prompt),
+                                            UIMessage.user(transcript)
                                         ),
-                                        params = me.rerere.ai.provider.GenerationParams(temperature = 0.2f, maxTokens = 1000)
+                                        params = TextGenerationParams(
+                                            model = postModel,
+                                            temperature = 0.2f,
+                                            maxTokens = 1000
+                                        )
                                     )
-                                    resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: transcript
+                                    resp.text.trim().ifBlank { transcript }
                                 }.getOrDefault(transcript)
 
                                 kotlinx.coroutines.withContext(Dispatchers.Main) {

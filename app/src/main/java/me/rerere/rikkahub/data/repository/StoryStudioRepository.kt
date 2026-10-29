@@ -10,12 +10,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.rerere.ai.domain.UIMessage
-import me.rerere.ai.domain.UIMessagePart
-import me.rerere.ai.provider.GenerationParams
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.utils.JsonInstant
 import org.json.JSONArray
@@ -180,10 +181,14 @@ class StoryStudioRepository(
             val resp = handler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = GenerationParams(temperature = 0.5f, maxTokens = 2000)
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.5f,
+                    maxTokens = 2000
+                )
             )
 
-            val text = resp.choices.firstOrNull()?.message?.toContentText() ?: ""
+            val text = resp.text
             val cleanJson = text.substringAfter("{").substringBeforeLast("}")
             val json = JSONObject("{$cleanJson}")
 
@@ -307,12 +312,16 @@ class StoryStudioRepository(
             }
 
             val proseBuilder = StringBuilder()
-            handler.chatStream(
+            handler.streamText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(prompt)),
-                params = GenerationParams(temperature = 0.7f, maxTokens = 3000)
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.7f,
+                    maxTokens = 3000
+                )
             ).collect { chunk ->
-                val delta = chunk.choices.firstOrNull()?.delta?.content ?: ""
+                val delta = chunk.text
                 if (delta.isNotBlank()) {
                     proseBuilder.append(delta)
                     onChunk(delta)

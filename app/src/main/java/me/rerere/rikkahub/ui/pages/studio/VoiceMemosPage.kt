@@ -83,17 +83,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.rerere.ai.domain.UIMessage
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.repository.RecordingState
 import me.rerere.rikkahub.data.repository.VoiceMemoItem
 import me.rerere.rikkahub.data.repository.VoiceMemoRepository
@@ -740,7 +744,7 @@ fun VoiceMemosPage() {
                                         Text(
                                             text = activeMemo.transcript,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            lineHeight = androidx.compose.ui.unit.sp(20),
+                                            lineHeight = 20.sp,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                                         )
                                     }
@@ -900,9 +904,9 @@ fun VoiceMemosPage() {
     memoToDelete?.let { memo ->
         LastChatDestructiveConfirmDialog(
             title = "Delete Recording",
-            message = "Are you sure you want to delete \"${memo.title}\"? The audio file will be permanently removed from your device storage.",
-            confirmText = "Delete",
-            dismissText = "Cancel",
+            consequence = "Are you sure you want to delete \"${memo.title}\"? The audio file will be permanently removed from your device storage.",
+            confirmLabel = "Delete",
+            cancelLabel = "Cancel",
             onDismiss = { memoToDelete = null },
             onConfirm = {
                 scope.launch {
@@ -934,8 +938,18 @@ private suspend fun transcribeAudio(
         ?: return@withContext "Error: Provider not found for STT model ${model.displayName}."
     val provider = secretKeyManager.populateProviderSecrets(rawProvider)
 
-    val baseUrl = provider.apiHost.trimEnd('/')
-    val url = if (baseUrl.endsWith("/audio/transcriptions")) baseUrl else "$baseUrl/audio/transcriptions"
+    val (baseUrl, apiKey) = when (val p = provider) {
+        is me.rerere.ai.provider.ProviderSetting.OpenAI -> p.baseUrl to p.apiKey
+        is me.rerere.ai.provider.ProviderSetting.Claude -> "https://api.anthropic.com" to p.apiKey
+        is me.rerere.ai.provider.ProviderSetting.Google -> "https://generativelanguage.googleapis.com" to p.apiKey
+        else -> "" to ""
+    }
+
+    if (baseUrl.isBlank() || apiKey.isBlank()) {
+        return@withContext "Error: Provider baseUrl or apiKey is missing."
+    }
+
+    val url = if (baseUrl.endsWith("/audio/transcriptions")) baseUrl else "${baseUrl.trimEnd('/')}/audio/transcriptions"
 
     val requestBody = MultipartBody.Builder()
         .setType(MultipartBody.FORM)
@@ -949,7 +963,7 @@ private suspend fun transcribeAudio(
 
     val request = Request.Builder()
         .url(url)
-        .header("Authorization", "Bearer ${provider.apiKey}")
+        .header("Authorization", "Bearer $apiKey")
         .post(requestBody)
         .build()
 
@@ -999,13 +1013,14 @@ private suspend fun analyzeTranscript(
     val resp = handler.generateText(
         providerSetting = provider,
         messages = listOf(UIMessage.user(prompt)),
-        params = me.rerere.ai.provider.GenerationParams(
+        params = TextGenerationParams(
+            model = model,
             temperature = 0.2f,
             maxTokens = 800
         )
     )
 
-    val text = resp.choices.firstOrNull()?.message?.toContentText() ?: ""
+    val text = resp.text
     val cleanJson = text.substringAfter("{").substringBeforeLast("}")
     val json = runCatching { JSONObject("{$cleanJson}") }.getOrNull()
 
