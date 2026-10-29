@@ -121,4 +121,31 @@ val repositoryModule = module {
             settingsStore = get(),
         )
     }
+
+    single {
+        me.rerere.rikkahub.data.repository.VoiceRecordingManager(
+            context = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.VoicePlaybackManager()
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.VoiceMemoRepository(
+            context = get(),
+            workspaceDao = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.repository.StoryStudioRepository(
+            context = get(),
+            workspaceDao = get(),
+            settingsStore = get(),
+            providerManager = get(),
+            secretKeyManager = get(),
+        )
+    }
 }

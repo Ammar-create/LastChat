@@ -103,11 +103,63 @@ data class Settings(
     val chatStorage: ChatStorageSettings = ChatStorageSettings(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val assistantOverlayConfig: AssistantOverlayConfig = AssistantOverlayConfig(),
+    val enableVoiceMemosMemoryBridge: Boolean = true,
+    val smartMicProfiles: List<SmartMicProfile> = DEFAULT_SMART_MIC_PROFILES,
+    val selectedSmartMicProfileId: String = "raw_dictation",
 ) {
     companion object {
         fun dummy() = Settings(init = true)
     }
 }
+
+@Serializable
+data class SmartMicProfile(
+    val id: String = kotlin.uuid.Uuid.random().toString(),
+    val name: String,
+    val description: String = "",
+    val modelId: kotlin.uuid.Uuid? = null,
+    val prompt: String = "",
+    val isDefault: Boolean = false,
+)
+
+val DEFAULT_SMART_MIC_PROFILES = listOf(
+    SmartMicProfile(
+        id = "raw_dictation",
+        name = "Raw Dictation",
+        description = "Direct speech-to-text without LLM post-processing",
+        modelId = null,
+        prompt = "",
+        isDefault = true,
+    ),
+    SmartMicProfile(
+        id = "clean_and_fix",
+        name = "Clean & Fix",
+        description = "Fixes voice dictation mangles, adds punctuation, and cleans stuttering",
+        modelId = null,
+        prompt = "Clean up and lightly edit this voice dictation transcript. Fix punctuation, capitalization, obvious phonetic misrecognitions of technical names, and stuttering. Return ONLY the cleaned text.",
+    ),
+    SmartMicProfile(
+        id = "bullet_points",
+        name = "Bullet Points",
+        description = "Formats spoken thoughts into concise, structured bullet points",
+        modelId = null,
+        prompt = "Format the following spoken thoughts into clear, organized bullet points. Return ONLY the bullet points.",
+    ),
+    SmartMicProfile(
+        id = "prompt_polish",
+        name = "Prompt Polish",
+        description = "Transforms a spoken idea into a structured prompt",
+        modelId = null,
+        prompt = "Transform the following spoken idea into a structured, production-ready prompt for an AI assistant. Output ONLY the polished prompt.",
+    ),
+    SmartMicProfile(
+        id = "translate_en",
+        name = "Translate to English",
+        description = "Translates spoken speech directly into fluent English",
+        modelId = null,
+        prompt = "Translate the following spoken message accurately into fluent, natural English. Output ONLY the translation.",
+    ),
+)
 
 data class ConversationContext(
     val assistantId: Uuid,

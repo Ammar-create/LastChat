@@ -1196,6 +1196,19 @@ class GenerationHandler(
             )
         }
 
+        if (settings.enableVoiceMemosMemoryBridge) {
+            baseSystemPromptBuilder.appendLine()
+            baseSystemPromptBuilder.append(
+                """
+                ## Voice Memos & Audio Transcripts
+                - The user records voice memos and audio notes directly on their device.
+                - Transcripts and summaries are synced to `/workspace/transcripts/`.
+                - A lightweight catalog index is available at `/workspace/transcripts/index.json` containing memo titles, dates, durations, and brief summaries.
+                - When the user asks about their recordings, voice notes, or spoken ideas, inspect `/workspace/transcripts/index.json` and read the relevant transcript markdown file at `/workspace/transcripts/<id>.md`.
+                """.trimIndent()
+            )
+        }
+
         val visualToolNames = setOf("search_web", "workspace_view_image", "workspace_read_file", "look_at_screen")
         val hasVisualToolResults = messages.any { msg ->
             msg.role == MessageRole.TOOL && msg.parts.any { it is UIMessagePart.ToolResult && it.inspectedImages.isNotEmpty() }

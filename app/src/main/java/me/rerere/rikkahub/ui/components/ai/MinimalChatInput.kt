@@ -278,6 +278,9 @@ fun MinimalChatInput(
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
     val workspaceRepository = koinInject<WorkspaceRepository>()
     val modelCatalog = koinInject<ModelCatalogService>()
+    val providerManager = koinInject<me.rerere.ai.provider.ProviderManager>()
+    val secretKeyManager = koinInject<me.rerere.rikkahub.data.datastore.SecretKeyManager>()
+    var showSmartMicProfiles by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val availableSkills = remember(settings.skills) {
@@ -399,13 +402,44 @@ fun MinimalChatInput(
                 ) {
                     val transcript = sttDraft.trim()
                     if (transcript.isNotBlank()) {
-                        state.setMessageText(
-                            mergeCommittedSttTranscript(
-                                existing = state.textContent.text.toString(),
-                                transcript = transcript,
+                        val activeProfile = settings.smartMicProfiles.firstOrNull { it.id == settings.selectedSmartMicProfileId }
+                        val postModel = activeProfile?.modelId?.let { settings.findModelById(it) }
+                        if (activeProfile != null && postModel != null && activeProfile.prompt.isNotBlank()) {
+                            scope.launch(Dispatchers.IO) {
+                                val processed = runCatching {
+                                    val rawProv = postModel.findProvider(settings.providers) ?: return@runCatching transcript
+                                    val prov = secretKeyManager.populateProviderSecrets(rawProv)
+                                    val handler = providerManager.getProviderByType(prov)
+                                    val resp = handler.generateText(
+                                        providerSetting = prov,
+                                        messages = listOf(
+                                            me.rerere.ai.domain.UIMessage.system(activeProfile.prompt),
+                                            me.rerere.ai.domain.UIMessage.user(transcript)
+                                        ),
+                                        params = me.rerere.ai.provider.GenerationParams(temperature = 0.2f, maxTokens = 1000)
+                                    )
+                                    resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: transcript
+                                }.getOrDefault(transcript)
+
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    state.setMessageText(
+                                        mergeCommittedSttTranscript(
+                                            existing = state.textContent.text.toString(),
+                                            transcript = processed,
+                                        )
+                                    )
+                                    runCatching { state.focusRequester.requestFocus() }
+                                }
+                            }
+                        } else {
+                            state.setMessageText(
+                                mergeCommittedSttTranscript(
+                                    existing = state.textContent.text.toString(),
+                                    transcript = transcript,
+                                )
                             )
-                        )
-                        runCatching { state.focusRequester.requestFocus() }
+                            runCatching { state.focusRequester.requestFocus() }
+                        }
                     }
                 }
             }
@@ -777,6 +811,55 @@ fun MinimalChatInput(
                 }
             }
             
+            // Floating Smart Mic Profiles Pill Strip
+            AnimatedVisibility(
+                visible = showSmartMicProfiles && !sttRecording,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                Surface(
+                    shape = AppShapes.ButtonPill,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        settings.smartMicProfiles.forEach { profile ->
+                            val isSelected = profile.id == settings.selectedSmartMicProfileId
+                            Surface(
+                                shape = AppShapes.ButtonPill,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                modifier = Modifier.clickable {
+                                    haptics.perform(HapticPattern.Tick)
+                                    scope.launch {
+                                        settingsStore.update { current ->
+                                            current.copy(selectedSmartMicProfileId = profile.id)
+                                        }
+                                    }
+                                    showSmartMicProfiles = false
+                                    startSttRecording()
+                                }
+                            ) {
+                                Text(
+                                    text = profile.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Minimal input bar - plus button + text field with embedded action button
             LastChatComposerRow {
                 // Plus button - 48dp pill button
@@ -785,7 +868,7 @@ fun MinimalChatInput(
                         onLongClick = {
                             if (!sttRecording && !sttFinalizing && hasSelectedSttProvider) {
                                 haptics.perform(HapticPattern.Pop)
-                                startSttRecording()
+                                showSmartMicProfiles = !showSmartMicProfiles
                             }
                         },
                         onClick = {
