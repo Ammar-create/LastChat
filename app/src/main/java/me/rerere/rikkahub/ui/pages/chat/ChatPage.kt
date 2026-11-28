@@ -20,6 +20,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
+import android.net.Uri
 import androidx.core.net.toUri
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
