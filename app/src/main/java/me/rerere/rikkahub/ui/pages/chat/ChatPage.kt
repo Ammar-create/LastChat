@@ -439,6 +439,7 @@ internal data class ChatInputDraft(
 
 internal object ChatSessionDraftStore {
     private val drafts = mutableMapOf<Uuid, ChatInputDraft>()
+    private val consumedRouteSeeds = mutableSetOf<String>()
 
     fun get(conversationId: Uuid): ChatInputDraft? {
         return drafts[conversationId]
@@ -452,6 +453,18 @@ internal object ChatSessionDraftStore {
         }
     }
 
+    fun consumeRouteSeed(conversationId: Uuid, text: String?, files: List<Uri>): Boolean {
+        if (text.isNullOrBlank() && files.isEmpty()) return false
+        val key = buildString {
+            append(conversationId)
+            append('|')
+            append(text.orEmpty())
+            append('|')
+            files.forEach { append(it.toString()).append(';') }
+        }
+        return consumedRouteSeeds.add(key)
+    }
+
     fun moveDraft(fromConversationId: Uuid, toConversationId: Uuid, draft: ChatInputDraft) {
         drafts.remove(fromConversationId)
         put(toConversationId, draft.forAssistantSwitch())
@@ -459,6 +472,7 @@ internal object ChatSessionDraftStore {
 
     fun clear() {
         drafts.clear()
+        consumedRouteSeeds.clear()
     }
 }
 
@@ -804,40 +818,45 @@ fun ChatPage(
     LaunchedEffect(id, text, files) {
         inputRestored = false
         inputState.clearInput()
-        val decodedText = decodeChatRouteText(text)
-        val importedParts = if (files.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                buildList {
-                    files.forEach { sourceFile ->
-                        val mimeType = context.getFileMimeType(sourceFile)
-                        val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
-                        val localFile = ChatAttachmentManager.importChatFile(
-                            uri = sourceFile,
-                            fileNameHint = fileName,
-                            mimeHint = mimeType,
-                        )?.uri ?: return@forEach
-                        when {
-                            mimeType?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localFile.toString()))
-                            mimeType?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localFile.toString()))
-                            mimeType?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localFile.toString()))
-                            else -> add(
-                                UIMessagePart.Document(
-                                    url = localFile.toString(),
-                                    fileName = fileName,
-                                    mime = mimeType ?: "application/octet-stream"
+        val shouldApplyRouteSeed = ChatSessionDraftStore.consumeRouteSeed(id, text, files)
+        val routeDraft = if (shouldApplyRouteSeed) {
+            val decodedText = decodeChatRouteText(text)
+            val importedParts = if (files.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    buildList {
+                        files.forEach { sourceFile ->
+                            val mimeType = context.getFileMimeType(sourceFile)
+                            val fileName = context.getFileNameFromUri(sourceFile) ?: "file"
+                            val localFile = ChatAttachmentManager.importChatFile(
+                                uri = sourceFile,
+                                fileNameHint = fileName,
+                                mimeHint = mimeType,
+                            )?.uri ?: return@forEach
+                            when {
+                                mimeType?.startsWith("image/") == true -> add(UIMessagePart.Image(url = localFile.toString()))
+                                mimeType?.startsWith("video/") == true -> add(UIMessagePart.Video(url = localFile.toString()))
+                                mimeType?.startsWith("audio/") == true -> add(UIMessagePart.Audio(url = localFile.toString()))
+                                else -> add(
+                                    UIMessagePart.Document(
+                                        url = localFile.toString(),
+                                        fileName = fileName,
+                                        mime = mimeType ?: "application/octet-stream"
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
+            } else {
+                emptyList()
             }
+            ChatInputDraft(
+                text = decodedText,
+                messageContent = importedParts,
+            )
         } else {
-            emptyList()
+            ChatInputDraft()
         }
-        val routeDraft = ChatInputDraft(
-            text = decodedText,
-            messageContent = importedParts,
-        )
         val draft = routeDraft.takeUnless { it.isEmpty }
             ?: ChatSessionDraftStore.get(id)
             ?: ChatInputDraft()

@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.studio
 
+import android.content.Context
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -194,6 +196,11 @@ private enum class StudioFilter(val label: String) {
     ARCHIVED("Archived"),
 }
 
+private fun resolveGenMediaFile(context: Context, rawPath: String): File {
+    val direct = File(rawPath)
+    return if (direct.isAbsolute && direct.exists()) direct else File(context.filesDir, rawPath)
+}
+
 private fun studioGreetingForHour(hour: Int): String = when (hour) {
     in 5..11 -> "Good morning"
     in 12..16 -> "Good afternoon"
@@ -290,6 +297,7 @@ fun StudioPage(
     var quickActionItem by remember { mutableStateOf<StudioHubItem?>(null) }
     var colorThemeItem by remember { mutableStateOf<StudioHubItem?>(null) }
     var itemToDelete by remember { mutableStateOf<StudioHubItem?>(null) }
+    var genMediaToDelete by remember { mutableStateOf<GenMediaEntity?>(null) }
     var showAppearanceSettings by remember { mutableStateOf(false) }
     var zoomImages by remember { mutableStateOf<Pair<List<String>, String?>?>(null) }
     var handledInitialItem by remember(initialItemId) { mutableStateOf(false) }
@@ -323,12 +331,47 @@ fun StudioPage(
         }
     }
 
-    val allEntries = remember(hubItems, stories, voiceMemos, generatedImages) {
+    val showVoiceMemos = settings.studioAppearance.showVoiceMemosInHub
+    val showStories = settings.studioAppearance.showStoriesInHub
+    val showGeneratedImages = settings.studioAppearance.showGeneratedImagesInHub
+
+    val visibleFilters = remember(showVoiceMemos, showStories, showGeneratedImages, hubItems) {
+        val hasImageNotes = hubItems.any { !it.isArchived && it.attachmentPaths.isNotEmpty() }
+        StudioFilter.entries.filter { filter ->
+            when (filter) {
+                StudioFilter.VOICE_MEMOS -> showVoiceMemos
+                StudioFilter.STORIES -> showStories
+                StudioFilter.IMAGES -> showGeneratedImages || hasImageNotes
+                else -> true
+            }
+        }
+    }
+    LaunchedEffect(visibleFilters) {
+        if (selectedFilter !in visibleFilters) {
+            selectedFilter = StudioFilter.ALL
+        }
+    }
+
+    val allEntries = remember(
+        hubItems,
+        stories,
+        voiceMemos,
+        generatedImages,
+        showVoiceMemos,
+        showStories,
+        showGeneratedImages,
+    ) {
         buildList<StudioFeedEntry> {
             hubItems.forEach { add(StudioFeedEntry.HubItem(it)) }
-            voiceMemos.forEach { add(StudioFeedEntry.VoiceMemo(it)) }
-            stories.forEach { add(StudioFeedEntry.Story(it)) }
-            generatedImages.forEach { add(StudioFeedEntry.GeneratedImage(it)) }
+            if (showVoiceMemos) {
+                voiceMemos.forEach { add(StudioFeedEntry.VoiceMemo(it)) }
+            }
+            if (showStories) {
+                stories.forEach { add(StudioFeedEntry.Story(it)) }
+            }
+            if (showGeneratedImages) {
+                generatedImages.forEach { add(StudioFeedEntry.GeneratedImage(it)) }
+            }
         }
     }
 
@@ -450,9 +493,27 @@ fun StudioPage(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    val hubPalette = rememberStudioPalette(settings.studioAppearance.hubBackgroundColorToken)
+    val animatedHubBg by animateColorAsState(
+        targetValue = if (hubPalette.isCustomColored) hubPalette.container else MaterialTheme.colorScheme.background,
+        animationSpec = tween(if (reduceMotion) 0 else 240),
+        label = "studio_hub_bg",
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(animatedHubBg),
+    ) {
+        StudioCanvasThemeBackdrop(
+            themeId = settings.studioAppearance.hubThemeId,
+            inkColor = hubPalette.onContainer,
+            accentColor = hubPalette.accent,
+            isCardPreview = false,
+            modifier = Modifier.matchParentSize(),
+        )
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = Color.Transparent,
         ) { _ ->
             Box(
                 modifier = Modifier
@@ -480,7 +541,7 @@ fun StudioPage(
                                     fontWeight = FontWeight.SemiBold,
                                     letterSpacing = (-0.3).sp,
                                 ),
-                                color = MaterialTheme.colorScheme.onBackground,
+                                color = if (hubPalette.isCustomColored) hubPalette.onContainer else MaterialTheme.colorScheme.onBackground,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -491,7 +552,7 @@ fun StudioPage(
                             Text(
                                 text = subtitle,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (hubPalette.isCustomColored) hubPalette.onContainerMuted else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -636,7 +697,7 @@ fun StudioPage(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(StudioFilter.entries, key = { it.name }) { filter ->
+                        items(visibleFilters, key = { it.name }) { filter ->
                             val count = filterCounts[filter] ?: 0
                             val selected = selectedFilter == filter
                             FilterChip(
@@ -772,6 +833,7 @@ fun StudioPage(
                                                 onOpenVoiceMemos = { navController.navigate(Screen.VoiceMemos) },
                                                 onOpenStory = { storyId -> navController.navigate(Screen.StoryStudio(storyId = storyId)) },
                                                 onZoomImages = { urls, caption -> zoomImages = urls to caption },
+                                                onDeleteGeneratedImage = { media -> genMediaToDelete = media },
                                                 modifier = if (reduceMotion) Modifier else Modifier.animateItem(),
                                             )
                                         }
@@ -808,6 +870,7 @@ fun StudioPage(
                                             onOpenVoiceMemos = { navController.navigate(Screen.VoiceMemos) },
                                             onOpenStory = { storyId -> navController.navigate(Screen.StoryStudio(storyId = storyId)) },
                                             onZoomImages = { urls, caption -> zoomImages = urls to caption },
+                                            onDeleteGeneratedImage = { media -> genMediaToDelete = media },
                                             modifier = if (reduceMotion) Modifier else Modifier.animateItem(),
                                         )
                                     }
@@ -847,6 +910,7 @@ fun StudioPage(
                                                 onOpenVoiceMemos = { navController.navigate(Screen.VoiceMemos) },
                                                 onOpenStory = { storyId -> navController.navigate(Screen.StoryStudio(storyId = storyId)) },
                                                 onZoomImages = { urls, caption -> zoomImages = urls to caption },
+                                                onDeleteGeneratedImage = { media -> genMediaToDelete = media },
                                                 modifier = if (reduceMotion) Modifier else Modifier.animateItem(),
                                             )
                                         }
@@ -881,6 +945,7 @@ fun StudioPage(
                                             onOpenVoiceMemos = { navController.navigate(Screen.VoiceMemos) },
                                             onOpenStory = { storyId -> navController.navigate(Screen.StoryStudio(storyId = storyId)) },
                                             onZoomImages = { urls, caption -> zoomImages = urls to caption },
+                                            onDeleteGeneratedImage = { media -> genMediaToDelete = media },
                                             modifier = if (reduceMotion) Modifier else Modifier.animateItem(),
                                         )
                                     }
@@ -1391,6 +1456,28 @@ fun StudioPage(
         )
     }
 
+    genMediaToDelete?.let { target ->
+        LastChatDestructiveConfirmDialog(
+            title = "Delete Generated Image",
+            consequence = "This will permanently remove this image from Image Studio and your Library.",
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching { genMediaRepo.deleteMedia(target.id) }
+                        runCatching {
+                            val file = resolveGenMediaFile(context, target.path)
+                            if (file.exists()) file.delete()
+                        }
+                    }
+                    generatedImages = generatedImages.filterNot { it.id == target.id }
+                    genMediaToDelete = null
+                    toaster.show("Deleted image")
+                }
+            },
+            onDismiss = { genMediaToDelete = null },
+        )
+    }
+
     zoomImages?.let { (urls, promptCaption) ->
         ImagePreviewDialog(
             images = urls,
@@ -1545,6 +1632,7 @@ private fun StudioFeedCard(
     onOpenVoiceMemos: () -> Unit,
     onOpenStory: (String) -> Unit,
     onZoomImages: (List<String>, String?) -> Unit,
+    onDeleteGeneratedImage: (GenMediaEntity) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1788,6 +1876,8 @@ private fun StudioFeedCard(
 
         is StudioFeedEntry.GeneratedImage -> {
             val media = entry.media
+            val context = LocalContext.current
+            val imageFile = remember(media.path) { resolveGenMediaFile(context, media.path) }
             val bg = MaterialTheme.colorScheme.surfaceContainerLow
             Surface(
                 shape = AppShapes.CardSmall,
@@ -1800,21 +1890,42 @@ private fun StudioFeedCard(
                         scaleY = pressScale
                     }
                     .clip(AppShapes.CardSmall)
-                    .clickable(
+                    .combinedClickable(
                         interactionSource = interactionSource,
                         indication = null,
-                        onClick = { onZoomImages(listOf(media.path), media.prompt) },
+                        onClick = { onZoomImages(listOf(imageFile.absolutePath), media.prompt) },
+                        onLongClick = { onDeleteGeneratedImage(media) },
                     ),
             ) {
                 Column {
-                    AsyncImage(
-                        model = media.path,
-                        contentDescription = media.prompt,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f),
-                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        AsyncImage(
+                            model = imageFile,
+                            contentDescription = media.prompt,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f),
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.52f),
+                            onClick = { onDeleteGeneratedImage(media) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(28.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = "Delete image",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
+                        }
+                    }
                     if (media.prompt.isNotBlank()) {
                         Text(
                             text = media.prompt,

@@ -133,7 +133,12 @@ data class StudioAppearanceSettings(
     val attributionLabelFormat: String = "Created by {name}",
     val defaultNoteColorToken: String? = null,
     val defaultNoteThemeId: String? = null,
+    val hubBackgroundColorToken: String? = null,
+    val hubThemeId: String? = null,
     val showGreetingHeader: Boolean = true,
+    val showVoiceMemosInHub: Boolean = true,
+    val showStoriesInHub: Boolean = true,
+    val showGeneratedImagesInHub: Boolean = true,
 )
 
 @Serializable

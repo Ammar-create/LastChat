@@ -83,6 +83,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.LightbulbCircle
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.DownloadForOffline
 
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
@@ -820,7 +821,7 @@ private fun DefaultStudioEnhanceModelSetting(
             Text("Model used to polish and organize Studio notes and checklists (defaults to active chat model)")
         },
         icon = {
-            Icon(Icons.Rounded.AutoAwesome, null)
+            Icon(Icons.Rounded.EditNote, null)
         },
         actions = {
             Box(modifier = Modifier.weight(1f)) {

@@ -173,7 +173,14 @@ internal fun StudioItemEditorScreen(
         mutableStateOf(initialItem.type == StudioItemType.TASK_LIST || initialItem.checklist.isNotEmpty())
     }
     var checkedExpanded by remember(initialItem.id) { mutableStateOf(false) }
-    var isReaderMode by remember(initialItem.id) { mutableStateOf(false) }
+    var isReaderMode by remember(initialItem.id) {
+        mutableStateOf(
+            initialItem.title.isNotBlank() ||
+                initialItem.body.isNotBlank() ||
+                initialItem.checklist.isNotEmpty() ||
+                initialItem.attachmentPaths.isNotEmpty()
+        )
+    }
 
     var showColorThemeSheet by remember { mutableStateOf(false) }
     var showInsertSheet by remember { mutableStateOf(false) }

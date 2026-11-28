@@ -1078,6 +1078,210 @@ internal fun StudioAppearanceSettingsSheet(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
+            // Main Studio Hub Page Theme (Color + Canvas Texture)
+            val isDark = LocalDarkMode.current
+            val amoled by rememberAmoledDarkMode()
+            val hubPreviewPalette = rememberStudioPalette(appearance.hubBackgroundColorToken)
+            val normalizedHubColor = normalizeColorToken(appearance.hubBackgroundColorToken)
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "STUDIO PAGE THEME",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(STUDIO_NOTE_COLORS, key = { "hub_color_${it.token ?: "default"}" }) { spec ->
+                        val isSelected = normalizedHubColor == spec.token
+                        val swatchColor = if (spec.token == null) {
+                            MaterialTheme.colorScheme.surfaceContainerHighest
+                        } else when {
+                            amoled && isDark -> spec.amoledBg
+                            isDark -> spec.darkBg
+                            else -> spec.lightBg
+                        }
+                        val checkTint = if (spec.token == null) {
+                            MaterialTheme.colorScheme.primary
+                        } else if (isDark) spec.darkInk else spec.lightInk
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    haptics.perform(HapticPattern.Selection)
+                                    onUpdateAppearance(appearance.copy(hubBackgroundColorToken = spec.token))
+                                }
+                                .padding(2.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(swatchColor)
+                                    .border(
+                                        width = if (isSelected) 2.5.dp else 1.dp,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.outlineVariant
+                                        },
+                                        shape = CircleShape,
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                when {
+                                    isSelected -> Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = spec.label,
+                                        tint = checkTint,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    spec.token == null -> Icon(
+                                        imageVector = Icons.Rounded.FormatColorReset,
+                                        contentDescription = "Default",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                            Text(
+                                text = spec.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(STUDIO_CANVAS_THEMES, key = { "hub_theme_${it.id ?: "clean"}" }) { theme ->
+                        val isSelected = appearance.hubThemeId == theme.id
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    haptics.perform(HapticPattern.Selection)
+                                    onUpdateAppearance(appearance.copy(hubThemeId = theme.id))
+                                },
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 66.dp, height = 48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(hubPreviewPalette.container)
+                                    .border(
+                                        width = if (isSelected) 2.5.dp else 1.dp,
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            hubPreviewPalette.border
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                    ),
+                            ) {
+                                StudioCanvasThemeBackdrop(
+                                    themeId = theme.id,
+                                    inkColor = hubPreviewPalette.onContainer,
+                                    accentColor = hubPreviewPalette.accent,
+                                    isCardPreview = true,
+                                )
+                                if (isSelected) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(4.dp)
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(11.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = theme.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+            // Feed Visibility Controls (hide Voice Memos / Stories / Generated Images from main hub)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "SHOW IN STUDIO FEED",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "Hidden categories stay accessible in their own hubs and the + menu",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                StudioSettingsToggleRow(
+                    title = "Voice Memos",
+                    subtitle = "Include recordings from Voice Memos",
+                    checked = appearance.showVoiceMemosInHub,
+                    onCheckedChange = { enabled ->
+                        haptics.perform(HapticPattern.Pop)
+                        onUpdateAppearance(appearance.copy(showVoiceMemosInHub = enabled))
+                    },
+                )
+                StudioSettingsToggleRow(
+                    title = "Stories",
+                    subtitle = "Include story projects from Story Studio",
+                    checked = appearance.showStoriesInHub,
+                    onCheckedChange = { enabled ->
+                        haptics.perform(HapticPattern.Pop)
+                        onUpdateAppearance(appearance.copy(showStoriesInHub = enabled))
+                    },
+                )
+                StudioSettingsToggleRow(
+                    title = "Generated Images",
+                    subtitle = "Include images created in Image Studio",
+                    checked = appearance.showGeneratedImagesInHub,
+                    onCheckedChange = { enabled ->
+                        haptics.perform(HapticPattern.Pop)
+                        onUpdateAppearance(appearance.copy(showGeneratedImagesInHub = enabled))
+                    },
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
             // Default AI Enhance Model shortcut
             Surface(
                 shape = AppShapes.CardSmall,
@@ -1151,5 +1355,37 @@ internal fun StudioAppearanceSettingsSheet(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StudioSettingsToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
     }
 }
